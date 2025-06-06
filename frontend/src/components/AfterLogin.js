@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
   FaInfoCircle,
   FaCloudUploadAlt,
@@ -28,6 +29,7 @@ import {
   FaTimes,
   FaUsers,
 } from "react-icons/fa";
+import { MdDashboard } from "react-icons/md";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -740,6 +742,28 @@ const AfterLogin = ({ username, onLogout, isAuthenticated = true, userType }) =>
   const canViewAgentManagement = ["Super Admin", "Admin", "Manager"].includes(userType);
   const canViewUserManagement = ["Super Admin", "Admin", "Manager"].includes(userType);
 
+  const navItems = useMemo(() => {
+    const items = [
+      { label: "About Us", path: "/about", icon: <FaInfoCircle />, gradient: "linear-gradient(90deg, #00adb5, #00cc00)" },
+      { label: "Audio Upload", path: "/upload", icon: <FaCloudUploadAlt />, gradient: "linear-gradient(90deg, #ff5722, #ffa500)" },
+      { label: "Settings", path: "/settings", icon: <FaCog />, gradient: "linear-gradient(90deg, #2196f3, #42a5f5)" },
+    ];
+    if (canViewSystemMonitoring) {
+      items.push({ label: "System Monitor", path: "/system-monitoring", icon: <FaTachometerAlt />, gradient: "linear-gradient(90deg, #ff9800, #ffb300)" });
+    }
+    items.push({ label: "Report", path: "/reports/details", icon: <FaChartBar />, gradient: "linear-gradient(90deg, #f48fb1, #f06292)" });
+    if (canViewAgentManagement) {
+      items.push({ label: "Agent Management", path: "/agents", icon: <FaUserFriends />, gradient: "linear-gradient(90deg, #4caf50, #81c784)" });
+    }
+    if (canViewUserManagement) {
+      items.push({ label: "User Management", path: "/user-management", icon: <FaUsers />, gradient: "linear-gradient(90deg, #673ab7, #9575cd)" });
+    }
+    if (userType === "Team Leader" || userType === "Super Admin") {
+      items.push({ label: "Team Leader Section", path: "/team-leader-section", icon: <FaUserShield />, gradient: "linear-gradient(90deg, #ab47bc, #ce93d8)" });
+    }
+    return items;
+  }, [canViewSystemMonitoring, canViewAgentManagement, canViewUserManagement, userType]);
+
   const ToneChart = useMemo(
     () => (
       <Doughnut
@@ -853,11 +877,16 @@ const AfterLogin = ({ username, onLogout, isAuthenticated = true, userType }) =>
   const isNoData = !metricsLoading && !metricsError && totalCallsProcessed === 0;
 
   return (
-    <div className="dark-container fadeInUp improved-afterlogin modern-page-animation" style={{
+    <motion.div
+      className="dark-container fadeInUp improved-afterlogin modern-page-animation"
+      style={{
       background: "linear-gradient(135deg, #1a1a1a 0%, #222831 100%)",
       padding: "2rem 1.5rem",
       minHeight: "100vh"
-    }}>
+      }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
        {/* ============ NAVBAR ============ */}
       <nav className="navbar improved-navbar" style={{
         background: "linear-gradient(90deg, #393e46 0%, #2e333b 100%)",
@@ -871,290 +900,35 @@ const AfterLogin = ({ username, onLogout, isAuthenticated = true, userType }) =>
         position: "relative",
         minHeight: "60px", // Ensure the navbar has a minimum height to accommodate wrapped content
       }}>
-        <ul className="nav-links" style={{ 
-          display: "flex", 
+        <div className="logo modern-logo">
+          <MdDashboard className="pulse-icon" />
+          <span>AI Dashboard</span>
+        </div>
+        <ul className="nav-links" style={{
+          display: "flex",
           flexWrap: "wrap",
-          gap: "0.8rem", 
+          gap: "0.8rem",
           margin: 0,
           padding: 0,
-          justifyContent: "flex-start", // Align buttons to the left
+          justifyContent: "flex-start",
           alignItems: "center",
           listStyle: "none",
-          flex: 1, // Allow the ul to take up remaining space
-          paddingRight: "150px", // Add padding to prevent overlap with the profile section
+          flex: 1,
+          paddingRight: "150px",
         }}>
-          <li>
-            <button
-              style={{
-                background: "linear-gradient(90deg, #00adb5, #00cc00)",
-                border: "none",
-                color: "#FFFFFF",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                padding: "0.5rem 1rem",
-                borderRadius: "6px",
-                cursor: "pointer",
-                transition: "transform 0.3s, background 0.3s",
-                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.3rem",
-                minWidth: "110px",
-                whiteSpace: "nowrap"
-              }}
-              onClick={() => navigate("/about")}
-              onMouseOver={(e) => {
-                e.target.style.transform = "scale(1.05)";
-                e.target.style.background = "linear-gradient(90deg, #00cc00, #00adb5)";
-              }}
-              onMouseOut={(e) => {
-                e.target.style.transform = "scale(1)";
-                e.target.style.background = "linear-gradient(90deg, #00adb5, #00cc00)";
-              }}
-              aria-label="Go to About Us"
-            >
-              <FaInfoCircle /> About Us
-            </button>
-          </li>
-          <li>
-            <button
-              style={{
-                background: "linear-gradient(90deg, #ff5722, #ffa500)",
-                border: "none",
-                color: "#FFFFFF",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                padding: "0.5rem 1rem",
-                borderRadius: "6px",
-                cursor: "pointer",
-                transition: "transform 0.3s, background 0.3s",
-                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.3rem",
-                minWidth: "110px",
-                whiteSpace: "nowrap"
-              }}
-              onClick={() => navigate("/upload")}
-              onMouseOver={(e) => {
-                e.target.style.transform = "scale(1.05)";
-                e.target.style.background = "linear-gradient(90deg, #ffa500, #ff5722)";
-              }}
-              onMouseOut={(e) => {
-                e.target.style.transform = "scale(1)";
-                e.target.style.background = "linear-gradient(90deg, #ff5722, #ffa500)";
-              }}
-              aria-label="Go to Audio Upload"
-            >
-              <FaCloudUploadAlt /> Audio Upload
-            </button>
-          </li>
-          <li>
-            <button
-              style={{
-                background: "linear-gradient(90deg, #2196f3, #42a5f5)",
-                border: "none",
-                color: "#FFFFFF",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                padding: "0.5rem 1rem",
-                borderRadius: "6px",
-                cursor: "pointer",
-                transition: "transform 0.3s, background 0.3s",
-                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.3rem",
-                minWidth: "110px",
-                whiteSpace: "nowrap"
-              }}
-              onClick={() => navigate("/settings")}
-              onMouseOver={(e) => {
-                e.target.style.transform = "scale(1.05)";
-                e.target.style.background = "linear-gradient(90deg, #42a5f5, #2196f3)";
-              }}
-              onMouseOut={(e) => {
-                e.target.style.transform = "scale(1)";
-                e.target.style.background = "linear-gradient(90deg, #2196f3, #42a5f5)";
-              }}
-              aria-label="Go to Settings"
-            >
-              <FaCog /> Settings
-            </button>
-          </li>
-          {canViewSystemMonitoring && (
-            <li>
-              <button
-                style={{
-                  background: "linear-gradient(90deg, #ff9800, #ffb300)",
-                  border: "none",
-                  color: "#FFFFFF",
-                  fontSize: "0.9rem",
-                  fontWeight: "500",
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  transition: "transform 0.3s, background 0.3s",
-                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.3rem",
-                  minWidth: "110px",
-                  whiteSpace: "nowrap"
-                }}
-                onClick={() => navigate("/system-monitoring")}
-                onMouseOver={(e) => {
-                  e.target.style.transform = "scale(1.05)";
-                  e.target.style.background = "linear-gradient(90deg, #ffb300, #ff9800)";
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.transform = "scale(1)";
-                  e.target.style.background = "linear-gradient(90deg, #ff9800, #ffb300)";
-                }}
-                aria-label="Go to System Monitoring"
+          {navItems.map(({ label, path, icon, gradient }) => (
+            <li key={path}>
+              <motion.button
+                className="modern-3d-btn"
+                whileHover={{ scale: 1.05 }}
+                style={{ background: gradient, minWidth: "110px", whiteSpace: "nowrap" }}
+                onClick={() => navigate(path)}
+                aria-label={`Go to ${label}`}
               >
-                <FaTachometerAlt /> System Monitoring
-              </button>
+                {icon} <span>{label}</span>
+              </motion.button>
             </li>
-          )}
-          <li>
-            <button
-              style={{
-                background: "linear-gradient(90deg, #f48fb1, #f06292)",
-                border: "none",
-                color: "#FFFFFF",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                padding: "0.5rem 1rem",
-                borderRadius: "6px",
-                cursor: "pointer",
-                transition: "transform 0.3s, background 0.3s",
-                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.3rem",
-                minWidth: "110px",
-                whiteSpace: "nowrap"
-              }}
-              onClick={() => navigate("/reports/details")}
-              onMouseOver={(e) => {
-                e.target.style.transform = "scale(1.05)";
-                e.target.style.background = "linear-gradient(90deg, #f06292, #f48fb1)";
-              }}
-              onMouseOut={(e) => {
-                e.target.style.transform = "scale(1)";
-                e.target.style.background = "linear-gradient(90deg, #f48fb1, #f06292)";
-              }}
-              aria-label="Go to Reports"
-            >
-              <FaChartBar /> Report
-            </button>
-          </li>
-          {canViewAgentManagement && (
-            <li>
-              <button
-                style={{
-                  background: "linear-gradient(90deg, #4caf50, #81c784)",
-                  border: "none",
-                  color: "#FFFFFF",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  transition: "transform 0.3s, background 0.3s",
-                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.3rem",
-                  minWidth: "110px",
-                  whiteSpace: "nowrap"
-                }}
-                onClick={() => navigate("/agents")}
-                onMouseOver={(e) => {
-                  e.target.style.transform = "scale(1.05)";
-                  e.target.style.background = "linear-gradient(90deg, #81c784, #4caf50)";
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.transform = "scale(1)";
-                  e.target.style.background = "linear-gradient(90deg, #4caf50, #81c784)";
-                }}
-                aria-label="Go to Agent Management"
-              >
-                <FaUserFriends /> Agent Management
-              </button>
-            </li>
-          )}
-          {canViewUserManagement && (
-            <li>
-              <button
-                style={{
-                  background: "linear-gradient(90deg, #673ab7, #9575cd)",
-                  border: "none",
-                  color: "#FFFFFF",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  transition: "transform 0.3s, background 0.3s",
-                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.3rem",
-                  minWidth: "110px",
-                  whiteSpace: "nowrap"
-                }}
-                onClick={() => navigate("/user-management")}
-                onMouseOver={(e) => {
-                  e.target.style.transform = "scale(1.05)";
-                  e.target.style.background = "linear-gradient(90deg, #9575cd, #673ab7)";
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.transform = "scale(1)";
-                  e.target.style.background = "linear-gradient(90deg, #673ab7, #9575cd)";
-                }}
-                aria-label="Go to User Management"
-              >
-                <FaUsers /> User Management
-              </button>
-            </li>
-          )}
-          {(userType === "Team Leader" || userType === "Super Admin") && (
-            <li>
-              <button
-                style={{
-                  background: "linear-gradient(90deg, #ab47bc, #ce93d8)",
-                  border: "none",
-                  color: "#FFFFFF",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  transition: "transform 0.3s, background 0.3s",
-                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.3rem",
-                  minWidth: "110px",
-                  whiteSpace: "nowrap"
-                }}
-                onClick={() => navigate("/team-leader-section")}
-                onMouseOver={(e) => {
-                  e.target.style.transform = "scale(1.05)";
-                  e.target.style.background = "linear-gradient(90deg, #ce93d8, #ab47bc)";
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.transform = "scale(1)";
-                  e.target.style.background = "linear-gradient(90deg, #ab47bc, #ce93d8)";
-                }}
-                aria-label="Go to Team Leader Section"
-              >
-                <FaUserShield /> Team Leader Section
-              </button>
-            </li>
-          )}
+          ))}
         </ul>
         <div
           className="profile-section profile-logo-anime"
@@ -1875,7 +1649,7 @@ const AfterLogin = ({ username, onLogout, isAuthenticated = true, userType }) =>
           </button>
         </div>
       </section>
-    </div>
+    </motion.div>
   );
 };
 
