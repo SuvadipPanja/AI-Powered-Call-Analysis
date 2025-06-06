@@ -1,0 +1,288 @@
+/* Floating chatbot button */
+.chatbot-floating-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(0, 173, 181, 0.5);
+  animation: pulse 2s infinite;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  cursor: pointer;
+}
+
+/* 
+   The main container for the chatbot popup, welcome section, and options section
+   Uses background: #CFEAE5 (pastel)
+*/
+.chatbot-popup,
+.welcome-section,
+.options-section {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  min-height: 400px;
+  background: #CFEAE5; 
+  color: #000000;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Title bar with 3 icons: minimize, maximize, close (but we only show close) */
+.chatbot-title-bar {
+  width: 100%;
+  height: 32px;
+  background-color: transparent; 
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  padding-right: 8px;
+}
+
+/* Container for the (now single) window control in the top-right corner */
+.window-controls {
+  display: flex;
+  gap: 14px; 
+}
+
+/* Style for each control (originally minimize, maximize, close) */
+.window-control {
+  cursor: pointer;
+  color: #333;
+  font-size: 16px;
+  line-height: 32px;
+  text-align: center;
+  width: 20px; 
+  user-select: none;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Hover effect on the icon */
+.window-control:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+/* The main area under the title bar for your chatbot's content */
+.chatbot-content {
+  flex: 1;
+  width: 100%;
+  padding: 1rem;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* Chatbot avatar image */
+.chatbot-image {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease;
+}
+
+.chatbot-image:hover {
+  transform: scale(1.05);
+}
+
+/* Headings in the chatbot content */
+.chatbot-content h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #000000;
+}
+
+/* Paragraph styling */
+.chatbot-content p {
+  font-size: 0.9rem;
+  margin: 0.3rem 0;
+  color: #000000;
+}
+
+/* Input checkboxes or text fields */
+.chatbot-content input {
+  margin-right: 0.5rem;
+}
+
+/* Buttons inside chatbot/welcome/options sections */
+.chatbot-popup button,
+.welcome-section button,
+.options-section button {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  background: #FFFFFF;
+  color: #00AEEF;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chatbot-popup button:disabled,
+.welcome-section button:disabled,
+.options-section button:disabled {
+  background: #CCCCCC;
+  color: #666666;
+  cursor: not-allowed;
+}
+
+/* Additional "welcome-btn" style - modified to be smaller */
+.welcome-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 0.3rem; /* Reduced margin to fit more buttons */
+  background: #FFFFFF;
+  color: #00AEEF;
+  border: none;
+  border-radius: 6px; /* Slightly smaller border-radius */
+  padding: 0.5rem; /* Reduced padding */
+  font-size: 0.9rem; /* Smaller font size */
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); /* Slightly smaller shadow */
+}
+
+.welcome-btn:hover {
+  background: #E0F7FA;
+  transform: translateY(-1px);
+}
+
+/* New class for Chat with Supervisor and Chat with AI buttons */
+.chat-special-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 0.3rem;
+  background: linear-gradient(90deg, #ADD8E6 0%, #90EE90 100%); /* Light blue to light green gradient */
+  color: #000000; /* Black text for better contrast */
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.chat-special-btn:hover {
+  background: linear-gradient(90deg, #B0E0E6 0%, #98FB98 100%); /* Slightly brighter gradient on hover */
+  transform: translateY(-1px);
+}
+
+/* 
+  Terms & Conditions overlay 
+  - Now opaque so the text behind it does NOT show through
+*/
+.terms-prompt {
+  position: absolute;
+  top: 32px; /* remain below the title bar */
+  left: 0;
+  width: 100%;
+  height: calc(100% - 32px);
+  background: #CFEAE5; /* changed from rgba(0, 0, 0, 0.6) to an opaque pastel */
+  color: #000000;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+  padding: 1rem;
+  z-index: 999999; 
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow-y: auto;
+}
+
+.terms-prompt h4 {
+  margin: 0 0 1rem 0;
+}
+
+.terms-prompt p {
+  font-size: 0.9rem;
+  margin: 0 0 1rem 0;
+}
+
+.terms-prompt ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.terms-prompt li {
+  margin-bottom: 0.5rem;
+}
+
+/* The button inside the terms prompt reuses the .welcome-btn style */
+.terms-prompt .welcome-btn {
+  margin-top: auto;
+}
+
+/* Typing animation (three bouncing dots) */
+.typing-dots {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.typing-dot {
+  width: 10px;
+  height: 10px;
+  background-color: #000000;
+  border-radius: 50%;
+  display: inline-block;
+  animation: bounce 1.2s infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(-6px);
+    opacity: 0.7;
+  }
+  60% {
+    transform: translateY(-3px);
+    opacity: 0.9;
+  }
+}
+
+/* Ensure the chat body has proper scrolling behavior */
+.ai-chat-section .chatbot-content {
+  padding: 0;
+}
+
+.ai-chat-section input:focus {
+  outline: none;
+  box-shadow: 0 0 5px rgba(0, 173, 181, 0.5);
+}
+
+.ai-chat-section button:hover {
+  background: #0097a7;
+}

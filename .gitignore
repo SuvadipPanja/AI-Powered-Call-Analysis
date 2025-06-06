@@ -1,0 +1,12 @@
+# Ignore backend dependencies
+backend/node_modules/
+backend/logs/
+backend/.env
+
+# Ignore frontend dependencies
+frontend/node_modules/
+frontend/.env
+frontend/.cache/
+frontend/.next/
+frontend/dist/
+frontend/build/
