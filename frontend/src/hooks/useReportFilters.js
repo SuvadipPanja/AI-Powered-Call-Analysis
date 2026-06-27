@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import config from "../utils/envConfig";
+import { apiGet } from "../utils/apiHelpers";
 import useLocations from "./useLocations";
 import {
   DEFAULT_DASHBOARD_FILTERS,
@@ -82,12 +82,8 @@ export default function useReportFilters({
   const fetchTlList = useCallback(async (location) => {
     setTlLoading(true);
     try {
-      const url = location && location !== "All"
-        ? `${config.apiBaseUrl}/api/team-leaders?location=${encodeURIComponent(location)}`
-        : `${config.apiBaseUrl}/api/team-leaders`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
+      const params = location && location !== "All" ? { location } : undefined;
+      const data = await apiGet("/api/team-leaders", { params, label: "team-leaders" });
       setTlList(data.success ? (data.teamLeaders || []) : []);
     } catch (err) {
       console.error("[useReportFilters] team leaders:", err);
@@ -100,9 +96,7 @@ export default function useReportFilters({
   const fetchAgentList = useCallback(async () => {
     setAgentsLoading(true);
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/agents`);
-      if (!response.ok) throw new Error("Failed to fetch agents");
-      const data = await response.json();
+      const data = await apiGet("/api/agents", { label: "agents" });
       const names = Array.isArray(data)
         ? [...new Set(data.map((a) => a.agent_name || a.Agent_Name).filter(Boolean))].sort()
         : [];

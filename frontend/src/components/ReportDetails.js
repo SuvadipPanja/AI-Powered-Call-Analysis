@@ -42,6 +42,7 @@ import {
   formatVolumeTrendLabels,
 } from './reports/reportsChartConfig';
 import { appendReportFilters } from '../utils/dashboardFilters';
+import { parseReportResponse as parseReportApiResponse } from '../utils/apiHelpers';
 import useReportFilters from '../hooks/useReportFilters';
 import { LuChartBar } from 'react-icons/lu';
 const ReportDetails = () => {
@@ -257,15 +258,6 @@ const ReportDetails = () => {
     return queryParams;
   };
 
-  const parseReportResponse = async (response, label) => {
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      console.error(`[Reports] ${label} failed: HTTP ${response.status}`, body);
-      return null;
-    }
-    return response.json();
-  };
-
 
   const fetchRealTimeMetrics = async (f = filtersRef.current) => {
     try {
@@ -275,7 +267,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/realtime-metrics?${queryParams}`);
-      const result = await parseReportResponse(response, 'realtime-metrics');
+      const result = await parseReportApiResponse(response, 'realtime-metrics');
       if (result?.success && result.data) {
         setRealTimeStats(result.data);
       }
@@ -294,7 +286,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/performance-comparison?${queryParams}`);
-      const result = await parseReportResponse(response, 'performance-comparison');
+      const result = await parseReportApiResponse(response, 'performance-comparison');
       if (result?.success && result.data) {
         setPerformanceComparison(result.data);
       }
@@ -318,7 +310,7 @@ const ReportDetails = () => {
       if (f.agent && f.agent !== 'All') queryParams.append('agent', f.agent);
 
       const response = await fetch(`${API_BASE_URL}/api/metrics-overview?${queryParams}`);
-      const result = await parseReportResponse(response, 'metrics-overview');
+      const result = await parseReportApiResponse(response, 'metrics-overview');
       if (result?.success) {
         setMetricsOverview({
           avgAiScoring: result.avgAiScoring ?? null,
@@ -340,7 +332,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/language-preferences?${queryParams}`);
-      const result = await parseReportResponse(response, 'language-preferences');
+      const result = await parseReportApiResponse(response, 'language-preferences');
       if (result?.success && result.data?.length > 0) {
         setLanguagePreferencesData(buildModernDoughnutData(
           result.data.map((item) => item.language || 'Unknown'),
@@ -364,7 +356,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/call-volume-by-time?${queryParams}`);
-      const result = await parseReportResponse(response, 'call-volume-by-time');
+      const result = await parseReportApiResponse(response, 'call-volume-by-time');
       if (result?.success && result.data?.length) {
         const labels = result.data.map((item) => item.timePeriod);
         const values = result.data.map((item) => item.callCount || 0);
@@ -401,7 +393,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/call-volume-trends-enhanced?${queryParams}`);
-      const result = await parseReportResponse(response, 'call-volume-trends');
+      const result = await parseReportApiResponse(response, 'call-volume-trends');
       if (result?.success && result.data?.length > 0) {
         const sorted = [...result.data].reverse();
         const labels = formatVolumeTrendLabels(sorted, days);
@@ -442,7 +434,7 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
       const response = await fetch(`${API_BASE_URL}/api/reports/rubric-comparison?${queryParams}`);
-      const result = await parseReportResponse(response, 'rubric-comparison');
+      const result = await parseReportApiResponse(response, 'rubric-comparison');
       if (result?.success && result.data?.length) {
         const rows = result.data.filter((d) => d.ai != null || d.manual != null);
         setRubricRows(rows.map((d) => ({
@@ -472,7 +464,7 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
       const response = await fetch(`${API_BASE_URL}/api/reports/tone-sentiment-summary?${queryParams}`);
-      const result = await parseReportResponse(response, 'tone-sentiment');
+      const result = await parseReportApiResponse(response, 'tone-sentiment');
       if (result?.success && result.data?.length) {
         setToneChartData(buildSentimentSummaryChart(result.data));
       } else {
@@ -490,7 +482,7 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
       const response = await fetch(`${API_BASE_URL}/api/reports/lead-classification?${queryParams}`);
-      const result = await parseReportResponse(response, 'lead-classification');
+      const result = await parseReportApiResponse(response, 'lead-classification');
       if (result?.success && result.data?.length) {
         setLeadChartData(buildModernDoughnutData(
           result.data.map((item) => item.label || 'Unknown'),
@@ -511,7 +503,7 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
       const response = await fetch(`${API_BASE_URL}/api/reports/query-type-distribution?${queryParams}`);
-      const result = await parseReportResponse(response, 'query-type-distribution');
+      const result = await parseReportApiResponse(response, 'query-type-distribution');
       if (result?.success && result.data?.length) {
         setQueryTypeData(buildColoredDoughnutData(
           result.data.map((item) => item.label || 'Unclassified'),
@@ -533,7 +525,7 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
       const response = await fetch(`${API_BASE_URL}/api/reports/escalation-summary?${queryParams}`);
-      const result = await parseReportResponse(response, 'escalation-summary');
+      const result = await parseReportApiResponse(response, 'escalation-summary');
       if (result?.success && result.data) {
         setEscalationData(result.data.totals || null);
         const cats = result.data.byCategory || [];
@@ -644,7 +636,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/call-resolution-status?${queryParams}`);
-      const result = await parseReportResponse(response, 'call-resolution-status');
+      const result = await parseReportApiResponse(response, 'call-resolution-status');
       if (result?.success && result.data?.length > 0) {
         setResolutionData(buildModernDoughnutData(
           result.data.map((item) => item.resolutionStatus || 'Unknown'),
@@ -669,7 +661,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/agent-performance-metrics?${queryParams}`);
-      const result = await parseReportResponse(response, 'agent-performance-metrics');
+      const result = await parseReportApiResponse(response, 'agent-performance-metrics');
       if (result?.success && result.data?.length > 0) {
         const sortedData = [...result.data]
           .sort((a, b) => parseFloat(b.avgAIScore || 0) - parseFloat(a.avgAIScore || 0))
@@ -697,7 +689,7 @@ const ReportDetails = () => {
       stampReportFilters(queryParams, f);
 
       const response = await fetch(`${API_BASE_URL}/api/reports/agent-handling-summary?${queryParams}`);
-      const result = await parseReportResponse(response, 'agent-handling-summary');
+      const result = await parseReportApiResponse(response, 'agent-handling-summary');
       if (result?.success) {
         setAgentSummaryData(result.data || []);
       } else {

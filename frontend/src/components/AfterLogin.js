@@ -15,8 +15,8 @@ import "react-datepicker/dist/react-datepicker.css";
 import "./AfterLogin.css";
 import "./reports/reports-page.css";
 import { useWebSocket } from "../context/WebSocketContext";
-import config from "../utils/envConfig";
 import { buildDashboardQueryParams, DEFAULT_DASHBOARD_FILTERS, resolveDashboardDateRange } from "../utils/dashboardFilters";
+import { apiGetQuery } from "../utils/apiHelpers";
 import useReportFilters from "../hooks/useReportFilters";
 import useDashboardMetrics from "../hooks/useDashboardMetrics";
 import { PageSection, Button, Badge, Spinner } from "./ui/index";
@@ -88,8 +88,7 @@ const AfterLogin = () => {
   const fetchToneAnalysis7days = useCallback(async (filters) => {
     try {
       const qs = buildDashboardQueryParams(filters);
-      const res = await fetch(`${config.apiBaseUrl}/api/tone-analysis-7days?${qs}`);
-      const data = await res.json();
+      const data = await apiGetQuery("/api/tone-analysis-7days", qs, { label: "tone-analysis-7days" });
       if (data.success && data.labels && data.values) {
         const [pos, neu, neg] = data.values;
         if (pos === 0 && neg === 0 && neu > 0) {
@@ -107,8 +106,7 @@ const AfterLogin = () => {
   const fetchAgentWiseData = useCallback(async (filters) => {
     try {
       const qs = buildDashboardQueryParams(filters);
-      const res = await fetch(`${config.apiBaseUrl}/api/agent-wise-ai-scoring?${qs}`);
-      const data = await res.json();
+      const data = await apiGetQuery("/api/agent-wise-ai-scoring", qs, { label: "agent-wise-ai-scoring" });
       if (data.success && data.agentLabels && data.agentScores) {
         setAgentWiseData({
           labels: data.agentLabels,
@@ -130,8 +128,7 @@ const AfterLogin = () => {
   const fetchQueryTypeData = useCallback(async (filters) => {
     try {
       const qs = buildDashboardQueryParams(filters);
-      const res = await fetch(`${config.apiBaseUrl}/api/reports/query-type-distribution?${qs}`);
-      const data = await res.json();
+      const data = await apiGetQuery("/api/reports/query-type-distribution", qs, { label: "query-type-distribution" });
       if (data.success && Array.isArray(data.data) && data.data.length) {
         setQueryTypeData(buildColoredDoughnutData(
           data.data.map((d) => d.label || "Unclassified"),
@@ -149,8 +146,7 @@ const AfterLogin = () => {
   const fetchEscalationData = useCallback(async (filters) => {
     try {
       const qs = buildDashboardQueryParams(filters);
-      const res = await fetch(`${config.apiBaseUrl}/api/reports/escalation-summary?${qs}`);
-      const data = await res.json();
+      const data = await apiGetQuery("/api/reports/escalation-summary", qs, { label: "escalation-summary" });
       if (data.success && data.data && data.data.totals) {
         setEscalationTotals(data.data.totals);
       } else {

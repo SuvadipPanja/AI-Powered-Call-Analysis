@@ -7,9 +7,9 @@ import {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import config from "../utils/envConfig";
 import { clearAuthStorage } from "../utils/uiPreferences";
 import { useWebSocket } from "./WebSocketContext";
+import { apiGet, apiPost, apiUrl } from "../utils/apiHelpers";
 
 const AuthContext = createContext(null);
 
@@ -40,13 +40,10 @@ export function AuthProvider({ children }) {
   const validateLicense = useCallback(async () => {
     try {
       logAuth("Validating license…");
-      const response = await fetch(`${config.apiBaseUrl}/api/verify-license`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+      const result = await apiPost("/api/verify-license", {}, {
+        label: "verify-license",
         signal: AbortSignal.timeout(15000),
       });
-      const result = await response.json();
       logAuth("License validation response", result);
 
       if (result.success) {
@@ -65,12 +62,10 @@ export function AuthProvider({ children }) {
   const fetchLicenseStatus = useCallback(async () => {
     try {
       logAuth("Fetching license status…");
-      const response = await fetch(`${config.apiBaseUrl}/api/license-status`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
+      const result = await apiGet("/api/license-status", {
+        label: "license-status",
         signal: AbortSignal.timeout(15000),
       });
-      const result = await response.json();
       logAuth("License status response", result);
 
       if (result.success) {
@@ -99,7 +94,7 @@ export function AuthProvider({ children }) {
       return false;
     }
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/check-session`, {
+      const response = await fetch(apiUrl("/api/check-session"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: sessionUserId, token: sessionToken }),
@@ -224,17 +219,12 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (loginUserId, password, questionType, questionAnswer) => {
     logAuth(`Attempting login for userId: ${loginUserId}`);
 
-    const response = await fetch(`${config.apiBaseUrl}/api/login-security`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: loginUserId,
-        password,
-        questionType,
-        questionAnswer,
-      }),
-    });
-    const data = await response.json();
+    const data = await apiPost("/api/login-security", {
+      userId: loginUserId,
+      password,
+      questionType,
+      questionAnswer,
+    }, { label: "login-security" });
     logAuth("Login response", data);
 
     if (!data.success) {
@@ -259,12 +249,10 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("isTempLogin");
 
     try {
-      const invalidateResponse = await fetch(`${config.apiBaseUrl}/api/invalidate-existing-sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: data.userId || loginUserId, currentLogId: data.logId }),
-      });
-      const invalidateData = await invalidateResponse.json();
+      const invalidateData = await apiPost("/api/invalidate-existing-sessions", {
+        userId: data.userId || loginUserId,
+        currentLogId: data.logId,
+      }, { label: "invalidate-existing-sessions" });
       logAuth("Invalidate sessions response", invalidateData);
     } catch (err) {
       console.error("[Auth] Error invalidating existing sessions:", err.message);
@@ -316,12 +304,11 @@ export function AuthProvider({ children }) {
       const currentLogId = localStorage.getItem("logId");
       if (currentUserId && currentToken && currentLogId) {
         logAuth(`Initiating logout for UserID: ${currentUserId}, LogID: ${currentLogId}`);
-        const response = await fetch(`${config.apiBaseUrl}/api/logout-track`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: currentUserId, logId: currentLogId, token: currentToken }),
-        });
-        const data = await response.json();
+        const data = await apiPost("/api/logout-track", {
+          userId: currentUserId,
+          logId: currentLogId,
+          token: currentToken,
+        }, { label: "logout-track" });
         if (!data.success) {
           console.warn(`[Auth] Logout tracking failed: ${data.message}`);
         }

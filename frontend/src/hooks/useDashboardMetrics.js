@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
-import config from "../utils/envConfig";
 import { resolveDashboardDateRange, buildDashboardQueryParams } from "../utils/dashboardFilters";
+import { apiGetQuery } from "../utils/apiHelpers";
 
 const EMPTY_PREV = {
   totalCallsProcessed: 0,
@@ -10,17 +10,6 @@ const EMPTY_PREV = {
   successCount: 0,
   failedCount: 0,
 };
-
-async function readJsonResponse(response, label) {
-  if (!response.ok) {
-    throw new Error(`${label}: HTTP ${response.status}`);
-  }
-  const contentType = response.headers.get("content-type");
-  if (!contentType || !contentType.includes("application/json")) {
-    throw new Error(`${label}: response is not JSON`);
-  }
-  return response.json();
-}
 
 /**
  * Fetches /api/metrics-overview for current + previous period (dashboard KPI strip).
@@ -65,10 +54,7 @@ export default function useDashboardMetrics() {
       const startDate = new Date(fromDate);
       const endDate = new Date(toDate);
       const qs = buildDashboardQueryParams(filters);
-      const data = await readJsonResponse(
-        await fetch(`${config.apiBaseUrl}/api/metrics-overview?${qs}`),
-        "metrics-overview",
-      );
+      const data = await apiGetQuery("/api/metrics-overview", qs, { label: "metrics-overview" });
 
       if (!data.success) {
         setFetchFailed(true);
@@ -98,10 +84,7 @@ export default function useDashboardMetrics() {
       });
 
       try {
-        const prevData = await readJsonResponse(
-          await fetch(`${config.apiBaseUrl}/api/metrics-overview?${prevQs}`),
-          "metrics-overview-prev",
-        );
+        const prevData = await apiGetQuery("/api/metrics-overview", prevQs, { label: "metrics-overview-prev" });
         if (prevData.success) {
           setPrevPeriodData({
             totalCallsProcessed: prevData.totalCallsProcessed || 0,
@@ -128,7 +111,7 @@ export default function useDashboardMetrics() {
       setFetchFailed(true);
       setError(
         String(err.message).includes("HTTP")
-          ? `Failed to fetch metrics due to a server error. Please try again later.`
+          ? "Failed to fetch metrics due to a server error. Please try again later."
           : `An error occurred while fetching metrics: ${err.message}`,
       );
     } finally {
