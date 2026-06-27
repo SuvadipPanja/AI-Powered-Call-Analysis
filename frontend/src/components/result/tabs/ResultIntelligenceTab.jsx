@@ -1,5 +1,5 @@
 import { LuChartLine } from '../../../icons';
-import { EmptyState, Spinner } from '../../ui';
+import { EmptyState, PageLoading } from '../../ui';
 import ScoreRing from '../ScoreRing';
 import { QUERY_TYPE_COLORS, hexA } from '../resultUtils';
 
@@ -10,12 +10,7 @@ export default function ResultIntelligenceTab({
   categoryColors = {},
 }) {
   if (loading) {
-    return (
-      <div className="rp-analysis-loading">
-        <Spinner />
-        <span>Loading call intelligence…</span>
-      </div>
-    );
+    return <PageLoading inline message="Loading call intelligence…" />;
   }
   if (error || !intelligence) {
     return (

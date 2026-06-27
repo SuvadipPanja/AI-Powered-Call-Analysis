@@ -5,7 +5,7 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import 'chart.js/auto';
 import config from "../utils/envConfig";
-import { Spinner } from './ui';
+import { PageLoading } from './ui';
 import KuberPageHero from './layout/KuberPageHero';
 import './layout/kuber-hero.css';
 import ReportKpiStrip from './reports/ReportKpiStrip';
@@ -806,10 +806,7 @@ const ReportDetails = () => {
       )}
 
       {loading && (
-        <div className="reports-loading reports-loading--inline">
-          <Spinner />
-          <p>Updating analytics…</p>
-        </div>
+        <PageLoading inline message="Updating analytics…" />
       )}
 
       <>

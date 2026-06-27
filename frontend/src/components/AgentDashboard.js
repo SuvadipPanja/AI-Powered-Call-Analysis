@@ -26,6 +26,8 @@ import {
   Badge,
   Skeleton,
   UserAvatar,
+  EmptyState,
+  PageError,
 } from "./ui";
 import StatCard from "./ui/StatCard";
 import KuberPageHero from "./layout/KuberPageHero";
@@ -421,12 +423,12 @@ const AgentDashboardContent = () => {
       </KuberPageHero>
 
       {dashboardError && (
-        <div className="reports-loading" style={{ color: "var(--danger)" }} role="alert">
-          <p>{dashboardError}</p>
-          <Button variant="primary" size="sm" onClick={fetchDashboardData}>
-            Retry
-          </Button>
-        </div>
+        <PageError
+          message={dashboardError}
+          onRetry={fetchDashboardData}
+          retryLabel="Retry"
+          icon={<LuCircleX aria-hidden />}
+        />
       )}
 
       {dashboardLoading ? (
@@ -584,19 +586,27 @@ const AgentDashboardContent = () => {
                   </table>
                 </div>
               ) : (
-                <div className="agent-dash__empty">
-                  <LuSearch aria-hidden="true" />
-                  <p>No calls match your filters.</p>
-                  <Button variant="ghost" size="sm" onClick={() => { setCallSearch(""); setScoreFilter("all"); }}>
-                    Clear filters
-                  </Button>
-                </div>
+                <EmptyState
+                  compact
+                  fill
+                  icon={<LuSearch aria-hidden />}
+                  title="No calls match your filters"
+                  action={(
+                    <Button variant="ghost" size="sm" onClick={() => { setCallSearch(""); setScoreFilter("all"); }}>
+                      Clear filters
+                    </Button>
+                  )}
+                />
               )
             ) : (
-              <div className="agent-dash__empty">
-                <LuInbox aria-hidden="true" />
-                <p>No calls recorded yet for your profile.</p>
-              </div>
+              <EmptyState
+                compact
+                fill
+                icon={<LuInbox aria-hidden />}
+                title="No calls yet"
+              >
+                No calls recorded yet for your profile.
+              </EmptyState>
             )}
           </div>
         </PageSection>
@@ -611,14 +621,13 @@ const AgentDashboardContent = () => {
               {briefingState.loading ? (
                 <Skeleton style={{ height: 80, borderRadius: "var(--radius-md)" }} />
               ) : briefingState.error ? (
-                <div className="agent-dash__empty agent-dash__empty--error">
-                  <p>{briefingState.text}</p>
-                </div>
+                <EmptyState compact fill variant="error" title="Briefing unavailable">
+                  {briefingState.text}
+                </EmptyState>
               ) : briefingState.empty ? (
-                <div className="agent-dash__empty">
-                  <LuInbox aria-hidden="true" />
-                  <p>{briefingState.text}</p>
-                </div>
+                <EmptyState compact fill icon={<LuInbox aria-hidden />} title="No briefing">
+                  {briefingState.text}
+                </EmptyState>
               ) : (
                 <div className="agent-dash__content-block">
                   <p className="agent-dash__briefing">{briefingState.text}</p>
@@ -638,10 +647,9 @@ const AgentDashboardContent = () => {
                   <p className="agent-dash__briefing">{dashboardData.lowestScoringFeedback}</p>
                 </div>
               ) : (
-                <div className="agent-dash__empty">
-                  <LuLightbulb aria-hidden="true" />
-                  <p>No AI feedback yet — feedback from your lowest-scoring recent call will show here.</p>
-                </div>
+                <EmptyState compact fill icon={<LuLightbulb aria-hidden />} title="No AI feedback yet">
+                  Feedback from your lowest-scoring recent call will show here.
+                </EmptyState>
               )}
             </div>
           </PageSection>
@@ -726,10 +734,9 @@ const AgentDashboardContent = () => {
                   )}
                 </div>
               ) : (
-                <div className="agent-dash__empty">
-                  <LuChartLine aria-hidden="true" />
-                  <p>No knowledge test published today. Check back when your team lead uploads one.</p>
-                </div>
+                <EmptyState compact fill icon={<LuChartLine aria-hidden />} title="No knowledge test">
+                  No knowledge test published today. Check back when your team lead uploads one.
+                </EmptyState>
               )}
             </div>
           </PageSection>

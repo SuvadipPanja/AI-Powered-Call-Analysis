@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useNavigate } from "react-router-dom";
 import {
   LuCircleX,
-  LuRefreshCw,
   LuMessageSquare,
   LuX,
   LuHeart,
@@ -10,6 +9,7 @@ import {
   LuLayers,
   LuPhoneForwarded,
   LuBanknote,
+  LuInbox,
 } from "../icons";
 import DashboardStatistics from "./DashboardStatistics";
 import DashboardKpiStrip from "./reports/DashboardKpiStrip";
@@ -21,7 +21,7 @@ import { buildDashboardQueryParams, DEFAULT_DASHBOARD_FILTERS, resolveDashboardD
 import { apiGetQuery } from "../utils/apiHelpers";
 import useReportFilters from "../hooks/useReportFilters";
 import useDashboardMetrics from "../hooks/useDashboardMetrics";
-import { Button, Badge, Spinner } from "./ui/index";
+import { Badge, EmptyState, PageError, PageLoading } from "./ui/index";
 import KuberPageHero from "./layout/KuberPageHero";
 import "./layout/kuber-hero.css";
 import { baseChartOptions } from "../theme/chartTheme";
@@ -290,22 +290,23 @@ const AfterLogin = () => {
         )}
 
         {metricsLoading ? (
-          <div className="reports-loading">
-            <Spinner />
-            <p>Loading metrics…</p>
-          </div>
+          <PageLoading message="Loading metrics…" />
         ) : metricsError ? (
-          <div className="reports-loading" style={{ color: "var(--danger)" }}>
-            <LuCircleX style={{ fontSize: "1.5rem" }} />
-            <span>{metricsError}</span>
-            <Button variant="primary" onClick={handleRetryFetchMetrics}>
-              <LuRefreshCw /> Retry
-            </Button>
-          </div>
+          <PageError
+            message={metricsError}
+            onRetry={handleRetryFetchMetrics}
+            retryLabel="Retry"
+            icon={<LuCircleX aria-hidden />}
+          />
         ) : isNoData ? (
-          <div className="reports-loading">
-            <p>No data available for the selected filters.</p>
-          </div>
+          <EmptyState
+            compact
+            fill
+            icon={<LuInbox aria-hidden />}
+            title="No data for filters"
+          >
+            No data available for the selected filters.
+          </EmptyState>
         ) : (
           <DashboardKpiStrip
             stats={dashboardKpiStats}
