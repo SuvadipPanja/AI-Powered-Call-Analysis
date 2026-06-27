@@ -58,3 +58,6 @@ data/
 
 # Optional: local ML model weights (keep source in ai-mvp/)
 models/
+
+# Large Python wheels (download in CI/prod build)
+production-build/sp-nemo/wheels/*.whl
