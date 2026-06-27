@@ -1,0 +1,236 @@
+/* Sri Kuber page hero + compact filter capsule */
+
+.kuber-hero {
+  background: var(--surface);
+  background-image: var(--gradient-surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+  overflow: visible;
+  position: relative;
+  z-index: 2;
+}
+
+.kuber-hero__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.kuber-hero__title-block {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.kuber-hero__icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+.kuber-hero__icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.kuber-hero__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 1.8vw, 1.35rem);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.kuber-hero__subtitle {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.kuber-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.kuber-hero__meta .ui-badge {
+  font-size: 0.68rem;
+  padding: 0.12rem 0.45rem;
+  gap: 4px;
+}
+
+.kuber-hero__meta .ui-badge svg {
+  width: 0.65rem;
+  height: 0.65rem;
+}
+
+.kuber-hero__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+.kuber-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.kuber-pill--location {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.kuber-filter-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 4px 2px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  flex-wrap: wrap;
+  max-width: min(100%, 680px);
+  overflow: visible;
+  position: relative;
+}
+
+.kuber-filter-capsule__icon {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.kuber-filter-capsule__select,
+.kuber-filter-capsule__date {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.28rem 1.1rem 0.28rem 0.35rem;
+  min-width: 4.75rem;
+  max-width: 7.5rem;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239a948a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 1px center !important;
+  color-scheme: light dark;
+}
+.kuber-filter-capsule__select--agent {
+  max-width: 8.5rem;
+}
+.kuber-filter-capsule__select option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+.kuber-filter-capsule__select:focus,
+.kuber-filter-capsule__date:focus {
+  outline: none;
+  color: var(--accent-bright);
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+.kuber-filter-capsule__date {
+  width: 58px;
+  background-image: none !important;
+  padding-right: 0.25rem;
+}
+
+.kuber-filter-capsule__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.kuber-filter-capsule__apply {
+  margin-left: 2px;
+  padding: 0.28rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--gradient-accent);
+  color: var(--on-accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter var(--transition);
+}
+.kuber-filter-capsule__apply:hover {
+  filter: brightness(1.06);
+}
+
+.kuber-filter-reset {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.kuber-filter-reset:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+/* Datepicker portal — avoid clipping inside hero card */
+.kuber-datepicker-popper,
+.react-datepicker-popper {
+  z-index: 2000 !important;
+}
+.react-datepicker__portal {
+  z-index: 2000 !important;
+}
+
+.kuber-hero__main--filters-only {
+  justify-content: flex-end;
+}
+.kuber-hero__main--filters-only .kuber-hero__filters {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .kuber-hero__main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .kuber-hero__filters {
+    justify-content: flex-start;
+  }
+  .kuber-filter-capsule {
+    max-width: 100%;
+  }
+}

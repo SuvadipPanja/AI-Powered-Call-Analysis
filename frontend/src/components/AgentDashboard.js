@@ -5,16 +5,15 @@ import dayjs from "dayjs";
 import {
   LuMessageSquare,
   LuLightbulb,
-  LuClock,
   LuHistory,
   LuCircleX,
   LuX,
-  LuPhoneCall,
   LuChartLine,
-  LuStar,
   LuHeadphones,
   LuSearch,
   LuInbox,
+  LuLayoutDashboard,
+  LuSparkles,
 } from "../icons";
 import { useChat } from "../context/ChatContext";
 import { useWebSocket } from "../context/WebSocketContext";
@@ -28,9 +27,13 @@ import {
   Skeleton,
   UserAvatar,
 } from "./ui";
-import ChartPanel from "./ui/ChartPanel";
 import StatCard from "./ui/StatCard";
+import KuberPageHero from "./layout/KuberPageHero";
+import AgentKpiStrip from "./reports/AgentKpiStrip";
+import ReportChartCard from "./reports/ReportChartCard";
 import { baseChartOptions, lineDataset, barDataset } from "../theme/chartTheme";
+import "./layout/kuber-hero.css";
+import "./reports/reports-page.css";
 import "./agent-dashboard-page.css";
 import { useAuth } from "../context/AuthContext";
 
@@ -89,6 +92,8 @@ const AgentDashboardContent = () => {
   const [scoreFilter, setScoreFilter] = useState("all");
 
   const knowledgeTestRef = useRef(null);
+  const scoringChartRef = useRef(null);
+  const kpiChartRef = useRef(null);
 
   const displayName = agentProfile?.identity?.displayName || dashboardData?.identity?.displayName || username;
   const greeting = useMemo(() => greetingForHour(new Date().getHours()), []);
@@ -341,8 +346,28 @@ const AgentDashboardContent = () => {
     });
   }, [dashboardData?.callHistory, callSearch, scoreFilter]);
 
+  const agentKpiStats = useMemo(() => ({
+    callsToday,
+    avgScoreToday,
+    lastDaySummary: formattedLastDay !== "N/A"
+      ? `${formattedLastDay} · ${totalCallsLastDay} calls · ${aht}m AHT`
+      : "—",
+    totalCallsAllTime,
+    csatLabel: dashboardData?.csat
+      ? `${dashboardData.csat.transferred || 0}${dashboardData.csat.total ? ` / ${dashboardData.csat.total}` : ""}`
+      : "—",
+  }), [
+    callsToday,
+    avgScoreToday,
+    formattedLastDay,
+    totalCallsLastDay,
+    aht,
+    totalCallsAllTime,
+    dashboardData?.csat,
+  ]);
+
   return (
-    <div className="app-page reports-page agent-dash" role="main" aria-label="Agent Dashboard">
+    <div className="app-page reports-page agent-dash app-stagger" role="main" aria-label="Agent Dashboard">
       {showBroadcastPopup && currentBroadcast && (
         <Card style={{ marginBottom: "var(--space-4)", borderColor: "var(--warning)" }} role="alertdialog" aria-label="Broadcast Message">
           <h3 style={{ color: "var(--text-strong)", marginBottom: 8 }}>
@@ -379,36 +404,35 @@ const AgentDashboardContent = () => {
         </div>
       )}
 
-      <section className="agent-dash__hero" aria-label="Welcome">
-        <UserAvatar username={username} size="xl" className="agent-dash__hero-avatar" alt={`${displayName} profile`} />
-        <div className="agent-dash__hero-text">
-          <h1>{greeting}, {displayName}</h1>
-          <p>
-            Here is your performance snapshot
-            {supervisor ? ` · Team lead: ${supervisor}` : ""}.
-          </p>
-          <div className="agent-dash__hero-meta">
-            <Badge variant="accent"><LuHeadphones /> Agent</Badge>
-            {agentProfile?.agent?.agent_type && (
-              <Badge variant="default">{agentProfile.agent.agent_type}</Badge>
-            )}
-            {formattedLastDay !== "N/A" && (
-              <Badge variant="default">Last active: {formattedLastDay}</Badge>
-            )}
-          </div>
-        </div>
-      </section>
+      <KuberPageHero
+        title={`${greeting}, ${displayName}`}
+        subtitle={`Your performance snapshot${supervisor ? ` · Team lead: ${supervisor}` : ""}`}
+        icon={LuLayoutDashboard}
+        hideFilters
+      >
+        <UserAvatar username={username} size="sm" alt={`${displayName} profile`} />
+        <Badge variant="accent"><LuHeadphones /> Agent</Badge>
+        {agentProfile?.agent?.agent_type && (
+          <Badge variant="default">{agentProfile.agent.agent_type}</Badge>
+        )}
+        {formattedLastDay !== "N/A" && (
+          <Badge variant="default">Last active: {formattedLastDay}</Badge>
+        )}
+      </KuberPageHero>
 
       {dashboardError && (
-        <Card style={{ borderColor: "var(--danger)" }} role="alert">
-          <p style={{ color: "var(--danger)", margin: 0 }}>{dashboardError}</p>
-        </Card>
+        <div className="reports-loading" style={{ color: "var(--danger)" }} role="alert">
+          <p>{dashboardError}</p>
+          <Button variant="primary" size="sm" onClick={fetchDashboardData}>
+            Retry
+          </Button>
+        </div>
       )}
 
       {dashboardLoading ? (
         <>
           <div className="agent-dash__skeleton-grid" aria-busy="true" aria-label="Loading stats">
-            {[1, 2, 3, 4].map((i) => (
+            {[1, 2, 3, 4, 5].map((i) => (
               <Skeleton key={i} className="agent-dash__skeleton-card" />
             ))}
           </div>
@@ -423,56 +447,49 @@ const AgentDashboardContent = () => {
         </>
       ) : (
         <>
-        <div className="agent-dash__stat-grid">
-          <StatCard icon={<LuPhoneCall />} label="Calls Today" value={callsToday} variant="default" />
-          <StatCard
-            icon={<LuStar />}
-            label="Avg Score Today"
-            value={avgScoreToday != null ? avgScoreToday : "—"}
-            variant="success"
-          />
-          <StatCard
-            icon={<LuClock />}
-            label={`Last Day (${formattedLastDay})`}
-            value={`${totalCallsLastDay} calls · ${aht}m AHT`}
-            variant="default"
-          />
-          <StatCard icon={<LuChartLine />} label="Total Calls" value={totalCallsAllTime} variant="default" />
-          <StatCard
-            icon={<LuPhoneCall />}
-            label="C-SAT Transfers"
-            value={
-              dashboardData?.csat
-                ? `${dashboardData.csat.transferred || 0}${dashboardData.csat.total ? ` / ${dashboardData.csat.total}` : ""}`
-                : "—"
-            }
-            variant="success"
-          />
+        <AgentKpiStrip stats={agentKpiStats} />
+
+      <section className="reports-section">
+        <div className="reports-section__head">
+          <h2>Performance charts</h2>
+          <p>Scoring trend and rubric KPIs from your analyzed calls.</p>
         </div>
+        <div className="reports-chart-grid">
+          <ReportChartCard
+            variant="quality"
+            icon={LuChartLine}
+            title="Scoring Trend"
+            subtitle="Daily average score"
+            empty={scoringLabels.length === 0}
+            emptyMessage="No scoring data yet — your call scores will appear here after analysis."
+            chartRef={scoringChartRef}
+            chartData={scoringData}
+            height={260}
+            stagger={0.05}
+          >
+            {scoringLabels.length > 0 && (
+              <Line ref={scoringChartRef} data={scoringData} options={scoringOptions} />
+            )}
+          </ReportChartCard>
 
-      <div className="ui-chart-grid">
-        <ChartPanel
-          title="Scoring Trend"
-          height={260}
-          empty={scoringLabels.length === 0}
-          emptyMessage="No scoring data yet — your call scores will appear here after analysis."
-        >
-          {scoringLabels.length > 0 && (
-            <Line data={scoringData} options={scoringOptions} />
-          )}
-        </ChartPanel>
-
-        <ChartPanel
-          title="KPI Metrics"
-          height={260}
-          empty={kpiLabels.length === 0}
-          emptyMessage="KPI metrics will populate once scored calls are available."
-        >
-          {kpiLabels.length > 0 && (
-            <Bar data={kpiData} options={kpiOptions} />
-          )}
-        </ChartPanel>
-      </div>
+          <ReportChartCard
+            variant="agent"
+            icon={LuSparkles}
+            title="KPI Metrics"
+            subtitle="Empathy, adherence, query handling, resolution"
+            empty={kpiLabels.length === 0}
+            emptyMessage="KPI metrics will populate once scored calls are available."
+            chartRef={kpiChartRef}
+            chartData={kpiData}
+            height={260}
+            stagger={0.1}
+          >
+            {kpiLabels.length > 0 && (
+              <Bar ref={kpiChartRef} data={kpiData} options={kpiOptions} />
+            )}
+          </ReportChartCard>
+        </div>
+      </section>
 
       <div className="agent-dash__main-grid">
         <PageSection
