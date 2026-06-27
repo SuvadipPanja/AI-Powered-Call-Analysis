@@ -1,0 +1,231 @@
+/* =====================================================================
+   MOTION LIBRARY v2 — modern, premium, accessible
+   All legacy keyframes/classes preserved; rich micro-interactions added.
+   ===================================================================== */
+
+/* ---- Core keyframes (legacy, kept) ---- */
+@keyframes app-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes app-slide-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes app-scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes app-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes app-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+/* ---- New keyframes ---- */
+@keyframes app-slide-down {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes app-slide-left {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes app-slide-right {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes app-pop-in {
+  0% { opacity: 0; transform: scale(0.9) translateY(8px); }
+  60% { opacity: 1; transform: scale(1.02) translateY(0); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes app-blur-in {
+  from { opacity: 0; filter: blur(8px); transform: translateY(8px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+@keyframes app-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes app-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes app-gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes app-pulse-ring {
+  0% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes app-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 12px 2px currentColor; opacity: 0.7; }
+}
+@keyframes app-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes app-sheen {
+  0% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
+}
+@keyframes app-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes app-progress-indeterminate {
+  0% { transform: translateX(-100%) scaleX(0.4); }
+  100% { transform: translateX(250%) scaleX(0.6); }
+}
+
+/* ---- Entrance utility classes ---- */
+.app-animate-in { animation: app-slide-up 0.4s var(--ease-out, ease) both; }
+.app-animate-fade { animation: app-fade-in 0.35s ease both; }
+.app-animate-down { animation: app-slide-down 0.4s var(--ease-out, ease) both; }
+.app-animate-left { animation: app-slide-left 0.4s var(--ease-out, ease) both; }
+.app-animate-right { animation: app-slide-right 0.4s var(--ease-out, ease) both; }
+.app-animate-pop { animation: app-pop-in 0.45s var(--ease-spring, ease) both; }
+.app-animate-blur { animation: app-blur-in 0.5s var(--ease-out, ease) both; }
+.app-animate-scale { animation: app-scale-in 0.4s var(--ease-out, ease) both; }
+
+/* ---- Stagger (up to 12 children) ---- */
+.app-stagger > * { animation: app-slide-up 0.45s var(--ease-out, ease) both; }
+.app-stagger > *:nth-child(1) { animation-delay: 0.04s; }
+.app-stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.app-stagger > *:nth-child(3) { animation-delay: 0.12s; }
+.app-stagger > *:nth-child(4) { animation-delay: 0.16s; }
+.app-stagger > *:nth-child(5) { animation-delay: 0.20s; }
+.app-stagger > *:nth-child(6) { animation-delay: 0.24s; }
+.app-stagger > *:nth-child(7) { animation-delay: 0.28s; }
+.app-stagger > *:nth-child(8) { animation-delay: 0.32s; }
+.app-stagger > *:nth-child(9) { animation-delay: 0.36s; }
+.app-stagger > *:nth-child(10) { animation-delay: 0.40s; }
+.app-stagger > *:nth-child(11) { animation-delay: 0.44s; }
+.app-stagger > *:nth-child(12) { animation-delay: 0.48s; }
+
+.app-stagger-pop > * { animation: app-pop-in 0.5s var(--ease-spring, ease) both; }
+.app-stagger-pop > *:nth-child(1) { animation-delay: 0.05s; }
+.app-stagger-pop > *:nth-child(2) { animation-delay: 0.10s; }
+.app-stagger-pop > *:nth-child(3) { animation-delay: 0.15s; }
+.app-stagger-pop > *:nth-child(4) { animation-delay: 0.20s; }
+.app-stagger-pop > *:nth-child(5) { animation-delay: 0.25s; }
+.app-stagger-pop > *:nth-child(6) { animation-delay: 0.30s; }
+
+/* ---- Continuous / ambient ---- */
+.app-float { animation: app-float 4s ease-in-out infinite; }
+.app-breathe { animation: app-breathe 3.2s ease-in-out infinite; }
+.app-pulse-soft { animation: app-pulse-soft 2s ease-in-out infinite; }
+.app-pulse-ring { animation: app-pulse-ring 2s ease-out infinite; }
+.app-glow-pulse { animation: app-glow-pulse 1.8s ease-in-out infinite; }
+.app-gradient-animate {
+  background-size: 200% 200%;
+  animation: app-gradient-shift 6s ease infinite;
+}
+
+/* ---- Hover micro-interactions ---- */
+.app-hover-lift { transition: transform var(--transition), box-shadow var(--transition); }
+.app-hover-lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+
+.app-hover-scale { transition: transform var(--transition); }
+.app-hover-scale:hover { transform: scale(1.03); }
+
+.app-hover-glow { transition: box-shadow var(--transition), border-color var(--transition); }
+.app-hover-glow:hover { box-shadow: var(--glow-accent); }
+
+/* Premium sheen sweep on hover (apply to position:relative; overflow:hidden) */
+.app-sheen { position: relative; overflow: hidden; }
+.app-sheen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: var(--gradient-sheen);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.app-sheen:hover::after { animation: app-sheen 0.9s ease; }
+
+/* Live status dot (recording / processing) */
+.app-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: app-glow-pulse 1.6s ease-in-out infinite;
+}
+
+/* Indeterminate progress bar track */
+.app-progress {
+  position: relative;
+  height: 4px;
+  width: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.app-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--gradient-accent);
+  animation: app-progress-indeterminate 1.1s ease-in-out infinite;
+}
+
+/* Stable pages — no re-trigger flicker on state updates (Settings, forms) */
+.app-page--stable,
+.app-page--stable > * {
+  animation: none !important;
+}
+.app-page--stable .ui-stat-card,
+.app-page--stable .ui-card,
+.app-page--stable .ui-chart-panel {
+  animation: app-slide-up 0.4s var(--ease-out, ease) both;
+  animation-iteration-count: 1;
+}
+
+/* Legacy class aliases used across pages */
+.fadeInUp,
+.modern-page-animation {
+  animation: app-slide-up 0.45s var(--ease-out, ease) both;
+}
+.chart-card-enter {
+  animation: app-scale-in 0.5s var(--ease-out, ease) both;
+}
+
+/* ---- Skeleton shimmer ---- */
+.skeleton-line,
+.app-skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: app-shimmer 1.4s ease infinite;
+}
+.skeleton-line { height: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-animate-in, .app-animate-fade, .app-animate-down, .app-animate-left,
+  .app-animate-right, .app-animate-pop, .app-animate-blur, .app-animate-scale,
+  .app-stagger > *, .app-stagger-pop > *, .fadeInUp, .modern-page-animation,
+  .chart-card-enter, .app-float, .app-breathe, .app-pulse-soft, .app-pulse-ring,
+  .app-glow-pulse, .app-gradient-animate, .app-page--stable .ui-stat-card,
+  .app-page--stable .ui-card, .app-page--stable .ui-chart-panel {
+    animation: none !important;
+  }
+  .app-sheen:hover::after { animation: none !important; }
+}

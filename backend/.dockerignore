@@ -1,0 +1,16 @@
+# ─── Ignore items that should never go into the image ───
+node_modules          # always rebuilt inside Docker
+logs
+**/*.log
+Dockerfile
+.dockerignore
+README.md
+
+# ─── Secrets MUST NOT be baked into the image ───
+# Provide secrets at runtime via env vars / orchestrator secrets instead.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+license/*.lic

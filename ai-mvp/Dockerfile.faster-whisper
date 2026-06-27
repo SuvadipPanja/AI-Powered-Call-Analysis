@@ -1,0 +1,32 @@
+# Lightweight GPU/CPU image — faster-whisper Large v3 (no NeMo base image)
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+WORKDIR /app
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv curl gnupg2 unixodbc unixodbc-dev ffmpeg \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+      > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+COPY config.py audio_io.py audio_utils.py diarization_worker.py language_worker.py \
+    nemo_worker.py whisper_asr_worker.py faster_whisper_worker.py transcribe.py db.py orchestrator.py ./
+
+ENV PROJECT_ROOT=/app
+ENV AUDIO_UPLOAD_DIR=/data/Sample_Audio
+ENV LOG_DIR=/logs/ai-mvp
+ENV AI_WORK_DIR=/work
+ENV WHISPER_LANG_MODEL_PATH=/models/Whisper-large-v3
+ENV FASTER_WHISPER_DOWNLOAD_ROOT=/models
+ENV FASTER_WHISPER_MODEL_SIZE=large-v3
+ENV TRANSCRIBE_BACKEND=faster-whisper
+ENV PORT=8000
+
+EXPOSE 8000
+CMD ["python3", "orchestrator.py"]

@@ -1,0 +1,3 @@
+# Install on GPU server (Linux + CUDA) — NOT for Windows laptop
+-r requirements.txt
+nemo_toolkit[asr]>=1.23.0

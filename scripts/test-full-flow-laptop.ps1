@@ -1,0 +1,25 @@
+# Full-flow test on laptop (diarize + Whisper Large V3 per chunk — NOT NeMo)
+# NeMo cannot run natively on Windows; this uses the dev fallback.
+
+$root = "C:\Project\AI-Powered Call Analysis project"
+Write-Host "=== Laptop full-flow test mode ===" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Set in ai-mvp\.env:"
+Write-Host "  TRANSCRIBE_BACKEND=whisper-large-v3"
+Write-Host ""
+Write-Host "Terminal 1 — AI MVP:"
+Write-Host "  cd `"$root\ai-mvp`""
+Write-Host "  pip install -r requirements.txt"
+Write-Host "  python orchestrator.py"
+Write-Host ""
+Write-Host "Terminal 2 — Backend:"
+Write-Host "  cd `"$root\backend`" ; npm start"
+Write-Host ""
+Write-Host "Terminal 3 — Frontend:"
+Write-Host "  cd `"$root\frontend`" ; npm start"
+Write-Host ""
+Write-Host "Upload STEREO call audio (agent=left, customer=right)."
+Write-Host "Check health: http://localhost:8000/health -> active_backend: whisper-large-v3"
+Write-Host ""
+Write-Host "For REAL NeMo: .\scripts\start-nemo-docker.ps1  (Docker, CPU or -Gpu)"
+Write-Host "Health: http://localhost:8000/health -> active_backend: nemo"

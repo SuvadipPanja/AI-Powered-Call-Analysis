@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Node.js License Key Generator" />
+  <title>Node.js License Key Generator</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container" role="main">
+    <h1 aria-label="License Key Generator">🔐 License Key Generator (Node.js)</h1>
+
+    <!-- Generation Form -->
+    <section aria-labelledby="generate-heading">
+      <div class="form-group">
+        <label for="signature">Signature:</label>
+        <input type="text" id="signature" placeholder="e.g., Sample" aria-required="true" value="Sample" />
+      </div>
+      <div class="form-group">
+        <label for="startDate">Start Date:</label>
+        <input type="date" id="startDate" aria-required="true" value="2025-05-01" />
+      </div>
+      <div class="form-group">
+        <label for="endDate">End Date:</label>
+        <input type="date" id="endDate" aria-required="true" value="2025-12-31" />
+      </div>
+      <div class="form-group">
+        <label for="users">Number of Users:</label>
+        <input type="number" id="users" min="1" placeholder="e.g., 10" aria-required="true" value="5" />
+      </div>
+      <div class="form-group">
+        <label for="macAddress">Target MAC Address:</label>
+        <input type="text" id="macAddress" placeholder="e.g., 00:1A:2B:3C:4D:5E" aria-required="true" value="00:1A:2B:3C:4D:5E" />
+      </div>
+      <div class="form-group">
+        <label for="appId">Application ID (salt):</label>
+        <input type="text" id="appId" placeholder="e.g., myapp-2025" aria-required="true" value="Sample" />
+      </div>
+      <div class="form-group">
+        <label for="secretKey">Unique Secret Key (32 chars):</label>
+        <div class="inline">
+          <input type="text" id="secretKey" placeholder="Generate or enter manually" aria-required="true" value="Sample" />
+          <button type="button" onclick="generateSecretKey()" aria-label="Generate Secret Key">Generate</button>
+        </div>
+      </div>
+
+      <button type="button" id="generateButton" onclick="generateLicenseKey()" aria-label="Generate License Key">Generate License Key</button>
+      <button type="button" onclick="downloadKey()" aria-label="Download License Key">Download Key</button>
+
+      <div id="licenseKey" role="alert"></div>
+    </section>
+  </main>
+
+  <script>
+    /**
+     * Sanitizes input to prevent XSS or injection attacks.
+     */
+    function sanitizeInput(input) {
+      const div = document.createElement('div');
+      div.textContent = input;
+      return div.innerHTML.replace(/[<>&"]/g, '');
+    }
+
+    /**
+     * Normalizes MAC address to standard format (XX:XX:XX:XX:XX:XX).
+     */
+    const normalizeMac = (mac) => {
+      try {
+        return sanitizeInput(mac).replace(/[^a-fA-F0-9]/g, "").match(/.{1,2}/g).join(":").toUpperCase();
+      } catch (e) {
+        console.error('MAC normalization failed:', e);
+        throw new Error('Invalid MAC address format');
+      }
+    };
+
+    /* UI helpers */
+    const show = (el, txt) => {
+      el.style.display = "block";
+      if (txt) el.textContent = sanitizeInput(txt);
+    };
+    const hide = (el) => el.style.display = "none";
+    const toast = (msg) => alert(sanitizeInput(msg));
+
+    /**
+     * Generates a random 32-character secret key.
+     */
+    function generateSecretKey() {
+      console.log('Generating secret key');
+      const arr = new Uint8Array(32);
+      crypto.getRandomValues(arr);
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const key = Array.from(arr, b => chars[b % chars.length]).join("");
+      document.getElementById("secretKey").value = key;
+      console.log('Secret key generated successfully');
+    }
+
+    /**
+     * Generates an encrypted license key by calling the Node.js backend.
+     */
+    let lastGeneratedKey = "";
+    let lastSecretKey = "";
+    async function generateLicenseKey() {
+      console.log('Starting license key generation');
+      try {
+        const signature = sanitizeInput(document.getElementById("signature").value.trim());
+        const startDate = document.getElementById("startDate").value;
+        const endDate = document.getElementById("endDate").value;
+        const users = Number(document.getElementById("users").value);
+        const rawMac = document.getElementById("macAddress").value.trim();
+        const appId = sanitizeInput(document.getElementById("appId").value.trim());
+        const secretKey = document.getElementById("secretKey").value.trim();
+
+        /* Validation */
+        if (!signature || !startDate || !endDate || !users || !rawMac || !appId || secretKey.length !== 32) {
+          console.warn('Validation failed: Incomplete or invalid input');
+          return toast("Please fill all fields with valid data (secret key must be 32 chars).");
+        }
+        if (new Date(startDate) >= new Date(endDate)) {
+          console.warn('Validation failed: Invalid date range');
+          return toast("End date must be later than start date.");
+        }
+        const macAddress = normalizeMac(rawMac);
+
+        const payload = { signature, startDate, endDate, users, macAddress, appId, secretKey };
+        console.log('Payload to send:', payload);
+
+        const response = await fetch('/generate-license', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+          console.error('License generation failed:', result.message);
+          return toast(`Error: ${result.message}`);
+        }
+
+        lastGeneratedKey = result.licenseKey;
+        lastSecretKey = secretKey;
+
+        show(document.getElementById("licenseKey"), `Your license key: ${lastGeneratedKey}`);
+        console.log('License key generated successfully');
+      } catch (err) {
+        console.error('License generation failed:', err);
+        toast("Error generating license key");
+      }
+    }
+
+    /**
+     * Downloads the license key and secret key as a text file.
+     */
+    function downloadKey() {
+      console.log('Initiating key download');
+      if (!lastGeneratedKey || !lastSecretKey) {
+        console.warn('Download failed: No key generated');
+        return toast("No key generated yet.");
+      }
+      const content = `Your license key is: ${lastGeneratedKey}\nYour secret key is: ${lastSecretKey}`;
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "license_key.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+      console.log('Key downloaded successfully');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# Phase 1 — Laptop development (Windows paths)
+# DB: use local SQL Server on host (SQLEXPRESS01) — not containerized here.
+# Backend + frontend: run natively with npm start (recommended on laptop).
+# This compose file starts: Redis + AI MVP orchestrator.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ai_call_redis_dev
+    ports:
+      - "6379:6379"
+    networks:
+      - ai-call-dev
+    restart: unless-stopped
+
+  ai-mvp:
+    build:
+      context: ./ai-mvp
+      dockerfile: Dockerfile
+    container_name: ai_call_mvp_dev
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - AUDIO_UPLOAD_DIR=/data/Sample_Audio
+      - DB_SERVER=host.docker.internal\\SQLEXPRESS01
+      - DB_DATABASE=call_analysis_db
+      - DB_USE_WINDOWS_AUTH=false
+      - DB_USER=sa
+      - DB_PASSWORD=Root@1234
+      - LOG_DIR=/logs/ai-mvp
+    volumes:
+      - ./data/Sample_Audio:/data/Sample_Audio
+      - ./logs/ai-mvp:/logs/ai-mvp
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    networks:
+      - ai-call-dev
+    restart: unless-stopped
+
+networks:
+  ai-call-dev:
+    name: ai-call-dev

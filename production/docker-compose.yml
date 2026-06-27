@@ -1,0 +1,302 @@
+# =============================================================================
+#  AI-Powered Call Analysis stack
+#  Services: db · redis · backend · frontend · llm (vLLM) · ai
+#  Run from this directory: docker compose up -d
+# =============================================================================
+
+name: ${COMPOSE_PROJECT_NAME:-call-analysis-prod}
+
+x-gpu-reservation: &gpu-reservation
+  driver: nvidia
+  device_ids: ["${GPU_DEVICE_ID:-1}"]
+  capabilities: [gpu]
+
+x-gpu-environment: &gpu-environment
+  NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-1}
+  NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+x-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+
+  db:
+    image: sp-db:prod
+    container_name: ai_call_db
+    logging: *json-logging
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD}
+      MSSQL_PID: Express
+    volumes:
+      - dbdata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -h -1 -W -Q \"SET NOCOUNT ON; IF DB_ID('call_analysis_db') IS NULL RAISERROR('nodb',16,1)\" || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
+    networks: [app-net]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai_call_redis
+    logging: *json-logging
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - redisdata:/data
+    networks: [app-net]
+    restart: unless-stopped
+
+  backend:
+    image: sp-backend:prod
+    container_name: ai_call_backend
+    logging: *json-logging
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      WS_PORT: "8080"
+      DB_SERVER: db
+      DB_PORT: "1433"
+      DB_USER: sa
+      DB_PASSWORD: ${SA_PASSWORD}
+      DB_DATABASE: call_analysis_db
+      DB_USE_WINDOWS_AUTH: "false"
+      DB_ENCRYPT: "false"
+      DB_TRUST_SERVER_CERTIFICATE: "true"
+      AI_MAIN_URL: ${AI_MAIN_URL}
+      REDIS_URL: ${REDIS_URL}
+      LICENSE_FILE_PATH: ./license/license.lic
+      AUDIO_UPLOAD_DIR: /app/data/Sample_Audio
+      PROJECT_ROOT: /app
+      BACKEND_LOG_DIR: /app/logs
+      DETAILS_LOG_DIR: /app/logs/details
+      CALL_PROCESSING_LOG_FILE: call_processing.log
+      PYTHON_SCRIPT_LOG_FILE: python_script.log
+      UPLOAD_HANDLER_LOG_FILE: upload_handler.log
+      CHAT_DUMP_DIR: /app/data/Chat_Dump
+      PROFILE_PICS_DIR: /app/assets/profile_pictures
+      BRANDING_DIR: /app/uploads/branding
+      ACTION_LOG_DIR: /app/logs
+      ACTION_LOG_FILE: action.log
+    ports:
+      - "${BACKEND_HTTP_PORT:-5000}:5000"
+      - "${BACKEND_WS_PORT:-8080}:8080"
+    volumes:
+      - ./volumes/audio:/app/data/Sample_Audio
+      - ./volumes/batch/metadata:/app/data/batch_metadata
+      - ./volumes/batch/audio:/app/data/batch_audio
+      - ./volumes/chat:/app/data/Chat_Dump
+      - ./volumes/logs:/app/logs
+      - ./volumes/profile_pictures:/app/assets/profile_pictures
+      - ./volumes/branding:/app/uploads/branding
+      - ./volumes/models:/models
+      - ./license:/app/license:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [app-net]
+    restart: unless-stopped
+
+  frontend:
+    image: sp-frontend:prod
+    container_name: ai_call_frontend
+    logging: *json-logging
+    ports:
+      - "${FRONTEND_HTTP_PORT:-8081}:80"
+    depends_on:
+      - backend
+    networks: [app-net]
+    restart: unless-stopped
+
+  # --- Llama-3.1-8B-Instruct AWQ via vLLM (OpenAI-compatible) ---
+  # OFFLINE: load images/06-vllm.tar (legacy name 06-qwen-vllm.tar OK)
+  llm:
+    image: sp-llm:prod
+    container_name: ai_call_llm
+    logging: *json-logging
+    environment:
+      <<: *gpu-environment
+      VLLM_USE_V1: "0"
+    command:
+      - --model
+      - ${LLM_MODEL_PATH:-/models/Meta-Llama-3.1-8B-Instruct-AWQ}
+      - --served-model-name
+      - ${LLM_SERVED_NAME:-Meta-Llama-3.1-8B-Instruct}
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8001"
+      - --trust-remote-code
+      - --max-model-len
+      - "${LLM_MAX_MODEL_LEN:-8192}"
+      - --gpu-memory-utilization
+      - "${LLM_GPU_MEMORY_UTIL:-0.35}"
+      - --tensor-parallel-size
+      - "1"
+      - --quantization
+      - "${LLM_QUANTIZATION:-awq}"
+      - --enforce-eager
+    volumes:
+      - ./volumes/models:/models
+      - ./volumes/logs/llm:/var/log/vllm
+    shm_size: "2gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/v1/models', timeout=5)\""]
+      interval: 20s
+      timeout: 15s
+      retries: 30
+      start_period: 360s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - <<: *gpu-reservation
+    networks: [app-net]
+    restart: unless-stopped
+
+  ai:
+    image: sp-aimvp:prod
+    container_name: ai_call_ai
+    logging: *json-logging
+    environment:
+      <<: *gpu-environment
+      PORT: "8000"
+      ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET}
+      CALLBACK_SECRET: ${CALLBACK_SECRET}
+      DB_SERVER: db
+      DB_PORT: "1433"
+      DB_USER: sa
+      DB_PASSWORD: ${SA_PASSWORD}
+      DB_DATABASE: call_analysis_db
+      DB_USE_WINDOWS_AUTH: "false"
+      DB_ENCRYPT: "false"
+      DB_TRUST_SERVER_CERTIFICATE: "true"
+      DB_ENABLED: "true"
+      LLM_BACKEND: openai
+      OPENAI_BASE_URL: http://llm:8001/v1
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-local-prod}
+      OPENAI_MODEL: ${LLM_SERVED_NAME:-Meta-Llama-3.1-8B-Instruct}
+      OLLAMA_MODEL: ${LLM_SERVED_NAME:-Meta-Llama-3.1-8B-Instruct}
+      OPENAI_MAX_TOKENS: ${OPENAI_MAX_TOKENS:-2048}
+      BANK_CONFIG_CACHE_SEC: "60"
+      SCORING_ENABLED: "true"
+      TRANSLATION_ENABLED: "true"
+      ENRICHMENT_ENABLED: "true"
+      TRANSCRIBE_BACKEND: nemo
+      NEMO_DEVICE: cuda
+      NEMO_DECODER: rnnt
+      NEMO_DUAL_DECODER: "true"
+      NEMO_DUAL_DECODER_LANGUAGES: Bengali,Hindi,Assamese
+      BENGALI_MULTILINGUAL_FALLBACK: "true"
+      BENGALI_ASR_EXTRA_PADDING_SEC: "0.5"
+      ASR_INDIC_MIN_CHUNK_SEC: "1.2"
+      MIN_CHUNK_DURATION_SEC: "0.8"
+      CHUNK_PADDING_SEC: "0.3"
+      CHUNK_BOUNDARY_PAD_SEC: "0.2"
+      # LLM post-correction of the native transcript (fix misheard/broken words
+      # in-script via Llama) before translation. Lifts Original + translation + scoring.
+      TRANSCRIPT_CLEANUP_ENABLED: "true"
+      TRANSCRIPT_CLEANUP_LANGUAGES: Hindi,Bengali
+      # Only English uses NeMo (parakeet). IndicConformer hi/bn/multi retired (→ SeamlessM4T).
+      ENGLISH_NEMO_MODEL_PATH: /models/nemo/parakeet-rnnt-1.1b.nemo
+      # A/B TEST — Hindi on SeamlessM4T. Hindi is in NEITHER faster-whisper NOR
+      # NeMo set, so _resolve_asr_backend falls through to SeamlessM4T.
+      #   Hindi → faster-whisper large-v3:  NEMO_ASR_LANGUAGES=English,
+      #                                     FASTER_WHISPER_ASR_LANGUAGES=Hindi
+      #   Hindi → SeamlessM4T (current):    NEMO_ASR_LANGUAGES=English,
+      #                                     FASTER_WHISPER_ASR_LANGUAGES=(empty)
+      #   Hindi → sp-nemo IndicConformer:   NEMO_ASR_LANGUAGES=Hindi,English,
+      #                                     FASTER_WHISPER_ASR_LANGUAGES=(empty)
+      NEMO_ASR_LANGUAGES: English
+      FASTER_WHISPER_ASR_LANGUAGES: ""
+      SEAMLESS_M4T_ENABLED: "true"
+      SEAMLESS_M4T_MODEL_PATH: /models/seamless-m4t-v2-large
+      SEAMLESS_M4T_DEVICE: cuda
+      LANG_DISAMBIGUATE_HI_BN: "true"
+      LANG_DETECT_CONFIDENCE_MIN: "0.55"
+      LANG_DETECT_HIGH_CONFIDENCE: "0.82"
+      LANG_DETECT_SAMPLE_SEC: "20"
+      LANG_VERIFY_SAMPLE_SEC: "20"
+      LANG_LID_MAX_TRANSCRIPT_TOKENS: "96"
+      LANG_DETECT_CHANNEL: customer
+      LANG_DETECT_AGENT_CHANNEL_INDEX: "0"
+      LANG_DETECT_CUSTOMER_CHANNEL_INDEX: "1"
+      LANG_DETECT_VOICE_TRIM: "true"
+      # hi/bn: trust Whisper's detected language; only FLIP to the other language
+      # when its acoustic fit (repetition-penalized avg log-prob) beats by this margin.
+      LANG_HI_BN_FLIP_MARGIN: "0.06"
+      LANG_HI_BN_MIN_SCRIPT: "6"
+      LANG_REPETITION_MIN_UNIQUE: "0.5"
+      LANG_REPETITION_PENALTY: "0.6"
+      LANG_SCRIPT_VERIFY: "true"
+      LANG_VERIFY_ALWAYS: "false"
+      LANG_VERIFY_ALWAYS_FOR_ENGLISH: "true"
+      LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN: "true"
+      LANG_HINDI_PRIORITY_BONUS: "8"
+      LANG_BENGALI_PRIORITY_BONUS: "8"
+      LANG_ENGLISH_PLAUSIBILITY_MIN: "0.35"
+      SEAMLESS_LID_ENABLED: "false"
+      INDICLID_ENABLED: "true"
+      INDICLID_MODEL_DIR: /models/indiclid
+      INDICLID_BERT_TOKENIZER_PATH: /models/indiclid/IndicBERTv2-MLM-only
+      INDICLID_ROMAN_THRESHOLD: "0.6"
+      INDICLID_MIN_SCORE: "0.45"
+      LANG_CALL_CENTER_MODE: "true"
+      LANG_PRIMARY_LANGUAGES: Hindi,Bengali,English
+      # Whisper often mislabels Hindi as Urdu/Nepali (same spoken Hindustani).
+      # Re-probe these as Hindi via the hi/bn acoustic check.
+      LANG_HINDI_CONFUSABLE_CODES: ur,ne
+      LANG_MIN_SCRIPT_CHARS: "12"
+      FASTER_WHISPER_DOWNLOAD_ROOT: /models
+      FASTER_WHISPER_DEVICE: cuda
+      FASTER_WHISPER_COMPUTE_TYPE: float16
+      FASTER_WHISPER_MODEL_PATH: ${FASTER_WHISPER_MODEL_PATH:-/models/faster-whisper-large-v3}
+      FASTER_WHISPER_VAD_FILTER: "true"
+      FASTER_WHISPER_BEAM_SIZE: "8"
+      WHISPER_LANG_MODEL_PATH: /models/Whisper-large-v3
+      WHISPER_LANG_DEVICE: cuda
+      AUDIO_UPLOAD_DIR: /data/Sample_Audio
+      LOG_DIR: /app/logs
+      CUSTOMER_ENHANCE_ENABLED: "false"
+      # sp-nemo IndicConformer ASR retired — Hindi+Bengali now run on SeamlessM4T.
+      SP_NEMO_ENABLED: "false"
+    volumes:
+      - ./volumes/audio:/data/Sample_Audio
+      - ./volumes/models:/models
+      - ./volumes/work:/work
+      - ./volumes/logs/ai:/app/logs
+    shm_size: "2gb"
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - <<: *gpu-reservation
+    depends_on:
+      db:
+        condition: service_healthy
+      llm:
+        condition: service_healthy
+    networks: [app-net]
+    restart: unless-stopped
+
+volumes:
+  dbdata:
+    name: call-analysis-prod-dbdata
+  redisdata:
+    name: call-analysis-prod-redisdata
+
+networks:
+  app-net:
+    name: ${DOCKER_NETWORK_NAME:-call-analysis-prod-net}
+    driver: bridge

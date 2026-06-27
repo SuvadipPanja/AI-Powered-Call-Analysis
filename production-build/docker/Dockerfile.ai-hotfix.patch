@@ -1,0 +1,47 @@
+# Hotfix overlay — Llama prompts, bank config, prod logging, translation fix.
+# Requires: ai-call-orchestrator:prod loaded (docker load -i 05-ai.tar)
+# Build from project root:
+#   docker build -t ai-call-orchestrator:prod -f production-build/docker/Dockerfile.ai-hotfix.patch .
+#   docker save ai-call-orchestrator:prod -o production/images/05-ai.tar
+
+FROM ai-call-orchestrator:prod
+
+WORKDIR /app
+
+COPY ai-mvp/bank_config.py \
+     ai-mvp/banking_script_targets.py \
+     ai-mvp/llm_utils.py \
+     ai-mvp/translation_worker.py \
+     ai-mvp/language_worker.py \
+     ai-mvp/faster_whisper_worker.py \
+     ai-mvp/nemo_worker.py \
+     ai-mvp/seamless_worker.py \
+     ai-mvp/indiclid_worker.py \
+     ai-mvp/sp_nemo_client.py \
+     ai-mvp/transcript_cleanup_worker.py \
+     ai-mvp/diarization_worker.py \
+     ai-mvp/config.py \
+     ai-mvp/transcribe.py \
+     ai-mvp/audio_utils.py \
+     ai-mvp/scoring_worker.py \
+     ai-mvp/script_worker.py \
+     ai-mvp/intelligence_worker.py \
+     ai-mvp/query_categories.py \
+     ai-mvp/orchestrator.py \
+     ai-mvp/db.py \
+     ai-mvp/db_schema.py \
+     ai-mvp/prod_logging.py \
+     ai-mvp/taboo_worker.py \
+     ./
+
+# SeamlessM4T deps: sentencepiece + transformers>=4.39 already in ai-call-orchestrator:prod base.
+# See ai-mvp/requirements-seamless.txt for reference when rebuilding base image from scratch.
+
+COPY ai-mvp/prompts/ ./prompts/
+
+COPY ai-mvp/indiclid/ ./indiclid/
+
+# IndicLID runtime deps (text LID on Whisper transcript) + requests (sp-nemo client)
+RUN pip install --no-cache-dir fasttext pandas requests
+
+COPY production-build/ai-overlay/llm_openai_backend.py ./llm_openai_backend.py

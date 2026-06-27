@@ -1,0 +1,15 @@
+# Production AI orchestrator — extends the dev GPU image with Qwen/vLLM LLM patch.
+# Build context: project ROOT. Not included in offline deploy bundle.
+#
+#   docker build -t ai-orchestrator-gpu-base:prod -f ai-mvp/Dockerfile.gpu ai-mvp
+#   docker build -t ai-call-orchestrator:prod -f production-build/docker/Dockerfile.orchestrator.prod .
+
+FROM ai-orchestrator-gpu-base:prod
+
+COPY production-build/ai-overlay/bootstrap_prod_llm.py /app/bootstrap_prod_llm.py
+COPY production-build/ai-overlay/llm_openai_backend.py /app/llm_openai_backend.py
+COPY production-build/ai-overlay/run_orchestrator_prod.py /app/run_orchestrator_prod.py
+
+ENV LLM_BACKEND=openai
+
+CMD ["python3", "run_orchestrator_prod.py"]

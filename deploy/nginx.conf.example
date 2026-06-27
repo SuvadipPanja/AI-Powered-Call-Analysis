@@ -1,0 +1,94 @@
+# Nginx reverse-proxy template for AI Call Analysis (production)
+# Ubuntu: copy to /etc/nginx/sites-available/call-analysis
+# Replace YOUR_DOMAIN and paths, then: sudo nginx -t && sudo systemctl reload nginx
+#
+# Frontend env (build time):
+#   REACT_APP_API_BASE_URL=https://YOUR_DOMAIN
+#   REACT_APP_WS_URL=wss://YOUR_DOMAIN/ws
+#
+# Backend env:
+#   CORS_ORIGIN=https://YOUR_DOMAIN
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream backend_api {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name YOUR_DOMAIN;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name YOUR_DOMAIN;
+
+    ssl_certificate     /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    client_max_body_size 250M;
+
+    # React production build (recommended)
+    root /opt/call-analysis/frontend/build;
+    index index.html;
+
+  # SPA fallback — client-side routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Express REST API
+    location /api/ {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Legacy upload route (not under /api/)
+    location /upload-audio {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 250M;
+    }
+
+    # Static audio files served by backend
+    location /audio/ {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket (set REACT_APP_WS_URL=wss://YOUR_DOMAIN/ws)
+    location /ws {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+}
+
+# AI orchestrator — INTERNAL ONLY. Do not add a public location block.
+# Backend reaches it via AI_MAIN_URL=http://127.0.0.1:8000

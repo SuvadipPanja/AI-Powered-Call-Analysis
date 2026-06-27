@@ -1,0 +1,9 @@
+# Patch frontend static bundle only — no npm/node/nginx pull needed.
+# Requires: existing ai-powered-call-analysis-frontend:prod loaded from 03-frontend.tar
+# Build locally first: cd frontend && npm run build
+# Then from project root:
+#   docker build -t ai-powered-call-analysis-frontend:prod -f production-build/docker/Dockerfile.frontend-static.patch frontend
+#   docker save ai-powered-call-analysis-frontend:prod -o production/images/03-frontend.tar
+
+FROM ai-powered-call-analysis-frontend:prod
+COPY build /usr/share/nginx/html

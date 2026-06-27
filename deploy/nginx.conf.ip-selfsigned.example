@@ -1,0 +1,91 @@
+# Nginx — self-signed HTTPS, no domain
+# Users open: https://YOUR_SERVER_IP (accept browser warning once)
+#
+# Create cert first:
+#   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+#     -keyout /etc/ssl/call-analysis/key.pem \
+#     -out /etc/ssl/call-analysis/cert.pem \
+#     -subj "/CN=YOUR_SERVER_IP"
+#
+# Frontend build:
+#   REACT_APP_API_BASE_URL=https://YOUR_SERVER_IP
+#   REACT_APP_WS_URL=wss://YOUR_SERVER_IP/ws
+# Backend:
+#   CORS_ORIGIN=https://YOUR_SERVER_IP
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream backend_api {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name YOUR_SERVER_IP _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2 default_server;
+    listen [::]:443 ssl http2 default_server;
+    server_name YOUR_SERVER_IP _;
+
+    ssl_certificate     /etc/ssl/call-analysis/cert.pem;
+    ssl_certificate_key /etc/ssl/call-analysis/key.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    client_max_body_size 250M;
+
+    root /opt/call-analysis/frontend/build;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /upload-audio {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 250M;
+    }
+
+    location /audio/ {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws {
+        proxy_pass http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+}

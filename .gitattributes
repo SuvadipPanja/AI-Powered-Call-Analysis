@@ -1,0 +1,11 @@
+# Shell scripts must use LF so Linux prod runs without "bash\r" errors.
+*.sh text eol=lf
+
+# Docker / compose configs — LF on Linux prod.
+docker-compose*.yml text eol=lf
+Dockerfile* text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

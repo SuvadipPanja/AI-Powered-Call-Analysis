@@ -1,0 +1,3 @@
+# SeamlessM4T v2 ASR — installed via Dockerfile.ai-hotfix.patch overlay
+sentencepiece>=0.2.0
+transformers>=4.45.0

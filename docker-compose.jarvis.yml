@@ -1,0 +1,52 @@
+# Jarvis Labs cloud GPU (Linux VM, India region RTX 3090)
+# docker compose -f docker-compose.jarvis.yml up --build -d
+#
+# Two DB modes (pick one via env or .env file next to this compose file):
+#   A) CALLBACK (default) — DB_ENABLED=false, results POST to laptop backend
+#   B) Tailscale SQL — DB_ENABLED=true, DB_SERVER=<laptop-tailscale-ip>,1434
+#
+# Required for CALLBACK mode:
+#   DB_ENABLED=false
+#   BACKEND_CALLBACK_URL=http://<laptop-tailscale-ip>:5000/api/internal/transcription-callback
+#   CALLBACK_SECRET=<same value as backend/.env CALLBACK_SECRET>
+
+services:
+  ai-mvp:
+    build:
+      context: ./ai-mvp
+      dockerfile: Dockerfile.faster-whisper
+    image: ai-call-mvp-faster-whisper
+    container_name: ai_call_mvp_jarvis
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      TRANSCRIBE_BACKEND: faster-whisper
+      FASTER_WHISPER_MODEL_SIZE: large-v3
+      FASTER_WHISPER_DOWNLOAD_ROOT: /models
+      FASTER_WHISPER_DEVICE: cuda
+      FASTER_WHISPER_COMPUTE_TYPE: float16
+      AUDIO_UPLOAD_DIR: /data/Sample_Audio
+      LOG_DIR: /logs/ai-mvp
+      AI_WORK_DIR: /work
+      DIARIZATION_OUTPUT_DIR: /data/diarization_output/Chunk
+      WHISPER_LANG_MODEL_PATH: /models/Whisper-large-v3
+      HINDI_NEMO_MODEL_PATH: /models/nemo/stt_hi_conformer_ctc_medium.nemo
+      ENGLISH_NEMO_MODEL_PATH: /models/nemo/parakeet-rnnt-1.1b.nemo
+      # --- CALLBACK mode (no direct SQL from cloud) ---
+      DB_ENABLED: "${DB_ENABLED:-false}"
+      BACKEND_CALLBACK_URL: "${BACKEND_CALLBACK_URL:-}"
+      CALLBACK_SECRET: "${CALLBACK_SECRET:-}"
+      # --- Optional: direct SQL via Tailscale (set DB_ENABLED=true) ---
+      DB_SERVER: "${DB_SERVER:-}"
+      DB_DATABASE: "${DB_DATABASE:-call_analysis_db}"
+      DB_USE_WINDOWS_AUTH: "${DB_USE_WINDOWS_AUTH:-false}"
+      DB_USER: "${DB_USER:-sa}"
+      DB_PASSWORD: "${DB_PASSWORD:-}"
+    volumes:
+      - ./models:/models:ro
+      - ./data/Sample_Audio:/data/Sample_Audio
+      - ./data/diarization_output:/data/diarization_output
+      - ./logs/ai-mvp:/logs/ai-mvp
+    gpus: all
+    restart: unless-stopped

@@ -1,0 +1,15 @@
+# Backend hotfix — bank settings, call processing logs.
+# Build from project root:
+#   docker build -t ai-call-backend:prod -f production-build/docker/Dockerfile.backend.patch .
+
+FROM ai-call-backend:prod
+COPY backend/server.js /app/server.js
+COPY backend/routes/bankSettingsRoutes.js /app/routes/bankSettingsRoutes.js
+COPY backend/routes/queryCategoryRoutes.js /app/routes/queryCategoryRoutes.js
+COPY backend/services/bankSettingsService.js /app/services/bankSettingsService.js
+COPY backend/services/bankSettingsDefaults.js /app/services/bankSettingsDefaults.js
+COPY backend/services/queryCategoryService.js /app/services/queryCategoryService.js
+COPY backend/services/queryCategoryDefaults.js /app/services/queryCategoryDefaults.js
+COPY backend/services/dbMigrate.js /app/services/dbMigrate.js
+COPY backend/services/callProcessingLog.js /app/services/callProcessingLog.js
+COPY backend/pythonScriptHandler.js /app/pythonScriptHandler.js

@@ -1,0 +1,184 @@
+/* =====================================================================
+   Settings — modern account page (Sri Kuber aesthetic)
+   ===================================================================== */
+
+.settings-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 3vw, 2rem);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  margin-bottom: var(--space-4);
+  background: var(--surface);
+  background-image: var(--gradient-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  flex-wrap: wrap;
+}
+.settings-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent-hover), var(--accent-bright), var(--accent-hover));
+  background-size: 200% 100%;
+  animation: settings-accent 5s ease-in-out infinite;
+}
+@keyframes settings-accent {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ---- Avatar uploader ---- */
+.settings-avatar {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  flex-shrink: 0;
+}
+.settings-avatar__img,
+.settings-avatar__placeholder {
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-md);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+}
+.settings-avatar__placeholder { color: var(--text-faint-solid); font-size: 3.4rem; }
+.settings-avatar .user-avatar--hero,
+.settings-avatar .user-avatar--img.settings-avatar__img {
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-md);
+}
+.settings-avatar .user-avatar--fallback.settings-avatar__img {
+  animation: settings-avatar-in 0.4s var(--ease-out, ease) both;
+}
+.settings-avatar__img { animation: settings-avatar-in 0.4s var(--ease-out, ease) both; }
+@keyframes settings-avatar-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.settings-avatar__edit {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 3px solid var(--surface);
+  background: var(--gradient-accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), filter var(--transition);
+}
+.settings-avatar__edit:hover { transform: scale(1.1); filter: brightness(1.06); }
+.settings-avatar__edit:active { transform: scale(0.96); }
+.settings-avatar__ring {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px dashed var(--accent-soft);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.settings-avatar:hover .settings-avatar__ring { opacity: 1; }
+
+/* ---- Hero identity ---- */
+.settings-hero__info { display: flex; flex-direction: column; gap: 6px; min-width: 220px; flex: 1; }
+.settings-hero__name {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+  margin: 0;
+}
+.settings-hero__email { color: var(--text-muted); font-size: 0.92rem; display: flex; align-items: center; gap: 8px; }
+.settings-hero__badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+/* Pending-photo action row */
+.settings-photo-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--accent-softer);
+  border: 1px solid var(--accent-soft);
+  animation: settings-avatar-in 0.3s ease both;
+}
+.settings-photo-actions__name {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-photo-hint { font-size: 0.78rem; color: var(--text-faint-solid); margin-top: 8px; display: flex; align-items: center; gap: 6px; }
+
+/* ---- Meta chips ---- */
+.settings-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.settings-meta__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+.settings-meta__icon {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  flex-shrink: 0;
+}
+.settings-meta__label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint-solid); }
+.settings-meta__value { font-size: 0.88rem; font-weight: 600; color: var(--text-strong); }
+
+/* ---- Forms grid ---- */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.settings-form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--space-3); }
+.settings-form-row:last-of-type { margin-bottom: 0; }
+
+.settings-strength { font-size: 0.8rem; margin: 4px 0 0; display: flex; align-items: center; gap: 6px; }
+.settings-strength--ok { color: var(--success); }
+.settings-strength--weak { color: var(--warning); }
+
+@media (max-width: 640px) {
+  .settings-hero { flex-direction: column; text-align: center; }
+  .settings-hero__info { align-items: center; }
+}

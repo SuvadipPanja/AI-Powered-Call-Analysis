@@ -1,0 +1,59 @@
+# Secrets / environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+**/node_modules/
+ai-mvp/.venv-wsl/
+**/.venv/
+**/venv/
+__pycache__/
+*.pyc
+
+# Build output
+frontend/build/
+dist/
+
+# Logs
+logs/
+**/logs/
+*.log
+
+# DB backups / generated SQL exports
+scripts/sql/exported/
+scripts/db/reports/
+*.bak
+backup/
+backup.bak.*
+call_analysis_db_*.bak
+
+# Docker images (rebuild locally; do not version large tars)
+production/docker-images/*.tar
+production/images/*.tar
+production/model-bundles/*.tar
+
+# Pre-filled deploy secrets (use *.example in repo)
+deploy/ready/**/backend.env
+deploy/ready/**/frontend.env*
+
+# Local / editor / tooling
+.cursor/
+.claude/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local backups & scratch
+code backup/
+_extracted/
+_pdfbuild/
+
+# Runtime data (not source)
+data/
+
+# Optional: local ML model weights (keep source in ai-mvp/)
+models/

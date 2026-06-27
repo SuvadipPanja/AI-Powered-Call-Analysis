@@ -1,0 +1,53 @@
+# NeMo ASR via Docker — ai-mvp orchestrator (port 8000)
+# Uses existing ai-mvp/Dockerfile.gpu (nvcr.io/nvidia/nemo:23.04 base).
+#
+# Laptop CPU (no NVIDIA GPU): prefer WSL — models are local, no ~10GB image pull:
+#   .\scripts\start-nemo-wsl.ps1
+#
+# Laptop CPU (Docker Desktop) — only if nvcr.io/nvidia/nemo:23.04 already cached:
+#   docker compose -f docker-compose.nemo.yml up --build -d
+#
+# With NVIDIA GPU (Docker Desktop + GPU support):
+#   docker compose -f docker-compose.nemo.yml -f docker-compose.nemo.gpu.yml up --build -d
+#
+# Or use scripts/start-nemo-docker.ps1
+#
+# Health: http://localhost:8000/health  (transcription.ready: true)
+# Backend AI_MAIN_URL should stay http://localhost:8000
+
+services:
+  ai-mvp-nemo:
+    build:
+      context: ./ai-mvp
+      dockerfile: Dockerfile.gpu
+    image: ai-call-mvp-nemo
+    container_name: ai_call_mvp_nemo
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      TRANSCRIBE_BACKEND: nemo
+      NEMO_DEVICE: auto
+      AUDIO_UPLOAD_DIR: /data/Sample_Audio
+      LOG_DIR: /logs/ai-mvp
+      AI_WORK_DIR: /work
+      DIARIZATION_OUTPUT_DIR: /data/diarization_output/Chunk
+      WHISPER_LANG_MODEL_PATH: /models/Whisper-large-v3
+      HINDI_NEMO_MODEL_PATH: /models/nemo/stt_hi_conformer_ctc_medium.nemo
+      ENGLISH_NEMO_MODEL_PATH: /models/nemo/parakeet-rnnt-1.1b.nemo
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
+      DB_SERVER: host.docker.internal\\SQLEXPRESS01
+      DB_DATABASE: call_analysis_db
+      DB_USE_WINDOWS_AUTH: "false"
+      DB_USER: sa
+      DB_PASSWORD: Root@1234
+    volumes:
+      - ./models:/models:ro
+      - ./data/Sample_Audio:/data/Sample_Audio
+      - ./data/diarization_output:/data/diarization_output
+      - ./logs/ai-mvp:/logs/ai-mvp
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

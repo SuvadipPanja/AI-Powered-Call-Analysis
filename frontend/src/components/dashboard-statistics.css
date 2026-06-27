@@ -1,0 +1,170 @@
+.dashboard-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dashboard-stats__scorers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.dashboard-stats__scorer {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 90%, transparent), color-mix(in srgb, var(--surface-2) 70%, transparent));
+  box-shadow: var(--shadow-md);
+  animation: app-slide-up 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.dashboard-stats__scorer--inbound {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+}
+
+.dashboard-stats__scorer--inbound::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--success) 18%, transparent), transparent 55%);
+  pointer-events: none;
+}
+
+.dashboard-stats__scorer--outbound {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.dashboard-stats__scorer--outbound::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%);
+  pointer-events: none;
+}
+
+.dashboard-stats__scorer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-stats__scorer-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+}
+
+.dashboard-stats__scorer--inbound .dashboard-stats__scorer-icon {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.dashboard-stats__scorer--outbound .dashboard-stats__scorer-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.dashboard-stats__scorer-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.dashboard-stats__scorer-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-strong);
+  margin: 0 0 4px;
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-stats__scorer-score {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-stats__scorer--inbound .dashboard-stats__scorer-score {
+  color: var(--success);
+}
+
+.dashboard-stats__scorer--outbound .dashboard-stats__scorer-score {
+  color: var(--accent);
+}
+
+.dashboard-stats__scorer-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-stats__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: var(--space-4);
+}
+
+.ui-chart-panel--modern {
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--surface-2) 95%, transparent), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--border));
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-chart-panel--modern::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--success), var(--info));
+  opacity: 0.85;
+}
+
+.ui-chart-panel--modern .ui-chart-panel__title {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.ui-chart-panel--duration::after {
+  background: linear-gradient(90deg, var(--success), var(--accent));
+}
+
+.ui-chart-panel--duration::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12%;
+  bottom: 12%;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, var(--success), var(--accent));
+  opacity: 0.75;
+  z-index: 1;
+}
+
+.dashboard-stats__loading {
+  text-align: center;
+  padding: var(--space-5);
+  color: var(--text-muted);
+}

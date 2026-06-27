@@ -1,0 +1,8 @@
+# NOTE: sherpa-onnx is installed separately in the Dockerfile as the GPU wheel
+# (sherpa-onnx==1.13.3+cuda12.cudnn9) from the k2-fsa CUDA index. Do NOT add the
+# plain CPU `sherpa-onnx` here or it will shadow the GPU build.
+flask==3.0.3
+gunicorn==23.0.0
+librosa==0.10.2.post1
+numpy==1.26.4
+soundfile==0.12.1

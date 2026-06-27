@@ -1,0 +1,45 @@
+# sp-nemo — IndicConformer ASR microservice (Sherpa-ONNX, GPU/CUDA, no NeMo).
+# Build (dev):  docker build -t sp-nemo:prod -f production-build/docker/Dockerfile.sp-nemo .
+# Models are NOT baked in — mounted at /models/indic-onnx via the compose volume
+# (fp32 model.onnx + tokens.txt from model-bundles/11-indic-onnx.tar).
+#
+# GPU: base = CUDA 12.4 + cuDNN 9 (matches prod host). sherpa-onnx GPU wheel
+# (1.13.3+cuda12.cudnn9) links against cuDNN 9 which is bundled in this base image,
+# so no extra host libs are required.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    SP_NEMO_MODEL_DIR=/models/indic-onnx \
+    SP_NEMO_MODEL_FILE=model.onnx \
+    SP_NEMO_TOKENS=tokens.txt \
+    SP_NEMO_PROVIDER=cuda \
+    SP_NEMO_THREADS=4 \
+    SP_NEMO_PORT=8020
+
+# python3.10 (default on 22.04), libsndfile for soundfile, ffmpeg for librosa mp3 decode.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip \
+        libsndfile1 ffmpeg curl \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY production-build/sp-nemo/requirements.txt ./requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# GPU-enabled sherpa-onnx (CUDA 12.x + cuDNN 9). The 214MB wheel is pre-downloaded
+# on the dev host (fast Xet) into production-build/sp-nemo/wheels/ because pulling it
+# from HuggingFace during the in-container build is throttled/unreliable.
+COPY production-build/sp-nemo/wheels/sherpa_onnx-1.13.3+cuda12.cudnn9-cp310-cp310-linux_x86_64.whl /tmp/wheels/
+RUN pip3 install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
+
+COPY production-build/sp-nemo/server.py ./server.py
+
+EXPOSE 8020
+HEALTHCHECK --interval=20s --timeout=10s --retries=15 --start-period=60s \
+    CMD curl -fsS http://127.0.0.1:8020/health || exit 1
+
+# 1 worker (model + CUDA context loaded once), 2 HTTP threads, generous timeout.
+CMD ["gunicorn", "-w", "1", "--threads", "2", "-t", "120", "-b", "0.0.0.0:8020", "server:app"]

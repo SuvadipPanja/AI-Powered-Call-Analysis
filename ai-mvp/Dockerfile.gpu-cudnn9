@@ -1,0 +1,74 @@
+# =============================================================================
+#  PATH A — SLIM permanent GPU image with cuDNN 9 for NeMo ASR on GPU.
+#
+#  Why this works (and why nemo:23.04 failed):
+#    The old image used the SYSTEM cuDNN 8, but modern NeMo ASR loads
+#    libcudnn_ops.so.9 -> crash. Here we install torch via the cu124 wheels,
+#    which BUNDLE cuDNN 9 (nvidia-cudnn-cu12==9.x). NeMo uses torch's bundled
+#    cuDNN 9, so GPU inference works. Base stays slim (~3 GB) instead of the
+#    ~90 GB full NeMo training container, so the offline tar is ~12-15 GB.
+#
+#  Build (needs working Docker internet):
+#    docker build -t ai-orchestrator-gpu-base:prod -f ai-mvp/Dockerfile.gpu-cudnn9 ai-mvp
+#    docker build -t ai-call-orchestrator:prod -f production-build/docker/Dockerfile.orchestrator.prod .
+# =============================================================================
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# System deps: python, audio libs (ffmpeg/libsndfile for librosa/soundfile/faster-whisper),
+# build tools (some NeMo deps compile), and MS ODBC driver for pyodbc (Ubuntu 22.04 -> jammy).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev \
+        ffmpeg libsndfile1 \
+        build-essential git curl gnupg2 unixodbc unixodbc-dev \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+       > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# 1) torch + torchaudio from cu124 wheels — these bundle cuDNN 9 (the actual fix).
+RUN python3 -m pip install --upgrade pip \
+    && python3 -m pip install torch==2.4.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
+
+# 2) NeMo ASR (GPU) + ALL app deps in ONE resolve, with NeMo-2.0.0-era pins.
+#    Without these pins the resolver pulls transformers 5.x / huggingface_hub 1.x /
+#    pytorch-lightning 2.6 / numpy 2.x, all of which break NeMo 2.0.0 at import or
+#    model-load time. faster-whisper brings its own CTranslate2 + cuDNN 9 for lang detect.
+RUN python3 -m pip install \
+        "nemo_toolkit[asr]==2.0.0" \
+        "pytorch-lightning==2.3.3" \
+        "transformers==4.44.2" \
+        "huggingface_hub==0.24.6" \
+        "tokenizers==0.19.1" \
+        "numpy==1.26.4" \
+        "setuptools<81" \
+        "datasets==2.21.0" \
+        "pyarrow==17.0.0" \
+        "accelerate==0.33.0" \
+        "flask>=3.0.0" "python-dotenv>=1.0.0" "pyodbc>=5.0.0" \
+        "noisereduce>=3.0.0" "soundfile>=0.12.0" "faster-whisper==1.0.3" \
+        "librosa>=0.10.0" "sentence-transformers==3.0.1"
+
+# Copy ALL Python modules (orchestrator imports many sibling workers).
+COPY *.py ./
+
+ENV PROJECT_ROOT=/app
+ENV AUDIO_UPLOAD_DIR=/data/Sample_Audio
+ENV LOG_DIR=/logs/ai-mvp
+ENV AI_WORK_DIR=/work
+ENV WHISPER_LANG_MODEL_PATH=/models/Whisper-large-v3
+ENV HINDI_NEMO_MODEL_PATH=/models/nemo/stt_hi_conformer_ctc_medium.nemo
+ENV ENGLISH_NEMO_MODEL_PATH=/models/nemo/parakeet-rnnt-1.1b.nemo
+ENV NEMO_DEVICE=cuda
+ENV PORT=8000
+
+EXPOSE 8000
+CMD ["python3", "orchestrator.py"]

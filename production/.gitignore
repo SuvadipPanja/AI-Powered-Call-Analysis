@@ -1,0 +1,7 @@
+# Secrets & runtime data — never commit these
+.env
+license/*.lic
+images/*.tar
+images/*.tar.gz
+volumes/
+backup/

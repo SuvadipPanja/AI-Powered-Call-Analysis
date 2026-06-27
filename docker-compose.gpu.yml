@@ -1,0 +1,38 @@
+# Run on A5000 GPU server (Linux + NVIDIA)
+# docker compose -f docker-compose.gpu.yml up --build -d
+# Laptop with GPU: prefer docker-compose.nemo.yml + docker-compose.nemo.gpu.yml
+
+services:
+  ai-mvp:
+    build:
+      context: ./ai-mvp
+      dockerfile: Dockerfile.gpu
+    image: ai-call-mvp-nemo
+    container_name: ai_call_mvp_gpu
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      TRANSCRIBE_BACKEND: nemo
+      NEMO_DEVICE: cuda
+      AUDIO_UPLOAD_DIR: /data/Sample_Audio
+      LOG_DIR: /logs/ai-mvp
+      AI_WORK_DIR: /work
+      DIARIZATION_OUTPUT_DIR: /data/diarization_output/Chunk
+      WHISPER_LANG_MODEL_PATH: /models/Whisper-large-v3
+      HINDI_NEMO_MODEL_PATH: /models/nemo/stt_hi_conformer_ctc_medium.nemo
+      ENGLISH_NEMO_MODEL_PATH: /models/nemo/parakeet-rnnt-1.1b.nemo
+      DB_SERVER: host.docker.internal\\SQLEXPRESS01
+      DB_DATABASE: call_analysis_db
+      DB_USE_WINDOWS_AUTH: "false"
+      DB_USER: sa
+      DB_PASSWORD: Root@1234
+    volumes:
+      - ./models:/models:ro
+      - ./data/Sample_Audio:/data/Sample_Audio
+      - ./data/diarization_output:/data/diarization_output
+      - ./logs/ai-mvp:/logs/ai-mvp
+    gpus: all
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

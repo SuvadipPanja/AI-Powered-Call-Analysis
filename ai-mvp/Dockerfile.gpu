@@ -1,0 +1,37 @@
+# GPU server (A5000) — NeMo + Whisper language detection
+FROM nvcr.io/nvidia/nemo:23.04
+
+WORKDIR /app
+
+# pyodbc needs unixODBC + MS SQL driver for host.docker.internal SQL Server
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    curl gnupg2 unixodbc unixodbc-dev \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/20.04/prod focal main" \
+      > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt requirements-nemo.txt ./
+RUN pip install --no-cache-dir -r requirements-nemo.txt \
+    && pip install --no-cache-dir flask python-dotenv pyodbc
+
+# Copy ALL Python modules. orchestrator.py imports scoring_worker, translation_worker,
+# enrichment_worker (-> tone/sentiment/script workers), progress, model_memory, db_schema,
+# transcript_utils, banking_script_targets — an explicit subset list silently breaks the
+# full pipeline at import time, so copy everything.
+COPY *.py ./
+
+ENV PROJECT_ROOT=/app
+ENV AUDIO_UPLOAD_DIR=/data/Sample_Audio
+ENV LOG_DIR=/logs/ai-mvp
+ENV AI_WORK_DIR=/work
+ENV WHISPER_LANG_MODEL_PATH=/models/Whisper-large-v3
+ENV HINDI_NEMO_MODEL_PATH=/models/nemo/stt_hi_conformer_ctc_medium.nemo
+ENV ENGLISH_NEMO_MODEL_PATH=/models/nemo/parakeet-rnnt-1.1b.nemo
+ENV NEMO_DEVICE=cuda
+ENV PORT=8000
+
+EXPOSE 8000
+CMD ["python3", "orchestrator.py"]

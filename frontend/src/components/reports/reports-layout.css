@@ -1,0 +1,233 @@
+/* Reports layout bridges — legacy UI primitives inside .reports-page */
+
+.reports-page.mgmt-page,
+.reports-page.ra-page,
+.reports-page.result-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Open sections (no boxed ui-section shell) */
+.reports-page .ui-section {
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.reports-page .ui-section__head {
+  margin-bottom: 0;
+}
+
+.reports-page .ui-section__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+
+.reports-page .ui-section__subtitle {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* Chart panels → report chart cards */
+.reports-page .ui-chart-panel {
+  position: relative;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--surface-2) 55%, transparent), var(--surface));
+  box-shadow: var(--shadow-md);
+  animation: app-slide-up 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.reports-page .ui-chart-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(90deg, var(--accent), var(--info));
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.reports-page .ui-chart-panel::after {
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: -20px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.22;
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.reports-page .ui-chart-panel__head {
+  padding: var(--space-4) var(--space-4) 0;
+  position: relative;
+  z-index: 1;
+}
+
+.reports-page .ui-chart-panel__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+
+.reports-page .ui-chart-panel__subtitle {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.reports-page .ui-chart-panel__body {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  position: relative;
+  z-index: 1;
+}
+
+/* Stat tiles → KPI tiles */
+.reports-page .ui-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.reports-page .ui-stat {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-2) 88%, transparent));
+  box-shadow: var(--shadow-md);
+}
+
+.reports-page .ui-stat::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 58%);
+}
+
+.reports-page .ui-stat__top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.reports-page .ui-stat__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.reports-page .ui-stat__label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.reports-page .ui-stat__value {
+  position: relative;
+  z-index: 1;
+  font-size: 1.35rem;
+  margin-top: 4px;
+}
+
+/* Cards (tables, forms) */
+.reports-page .ui-card,
+.reports-page .mgmt-table-card,
+.reports-page .mgmt-form-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--surface-2) 55%, transparent), var(--surface));
+  box-shadow: var(--shadow-md);
+}
+
+.reports-page .ui-card::before,
+.reports-page .mgmt-table-card::before,
+.reports-page .mgmt-form-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #22d3ee, var(--accent));
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.reports-page .mgmt-toolbar {
+  padding-left: 14px;
+}
+
+/* Settings hero — lighter reports alignment */
+.reports-page .settings-hero {
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+/* License / legacy containers */
+.reports-page.page-container,
+.reports-page .main-content {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.reports-page .ui-chart-grid {
+  gap: var(--space-4);
+}
+
+.reports-page .result-page__score-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+.reports-page .result-page__panel-card,
+.reports-page .result-page__meta-card {
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .reports-page .ui-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

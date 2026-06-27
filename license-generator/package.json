@@ -1,0 +1,12 @@
+{
+  "name": "license-generator",
+  "version": "1.0.0",
+  "description": "Node.js License Key Generator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

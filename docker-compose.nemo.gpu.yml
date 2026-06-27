@@ -1,0 +1,8 @@
+# GPU override for docker-compose.nemo.yml
+# Usage: docker compose -f docker-compose.nemo.yml -f docker-compose.nemo.gpu.yml up --build -d
+
+services:
+  ai-mvp-nemo:
+    gpus: all
+    environment:
+      NEMO_DEVICE: cuda
