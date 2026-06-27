@@ -54,6 +54,7 @@
     "start": "set NODE_OPTIONS=--openssl-legacy-provider && react-scripts start",
     "build": "set NODE_OPTIONS=--openssl-legacy-provider && react-scripts build",
     "test": "react-scripts test",
+    "test:ci": "react-scripts test --watchAll=false --coverage",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -81,6 +82,9 @@
   "license": "ISC",
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "css-loader": "^7.1.2"
   }
 }

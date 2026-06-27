@@ -153,7 +153,10 @@ export function Modal({
   );
 }
 
-export function Spinner({ className, label = "Loading" }) {
+export function Spinner({ className, label = "Loading", decorative = false }) {
+  if (decorative) {
+    return <div className={cx("ui-spinner", className)} aria-hidden="true" />;
+  }
   return (
     <div className={cx("ui-spinner", className)} role="status" aria-label={label}>
       <span className="ui-sr-only">{label}</span>
@@ -255,7 +258,7 @@ export function PageLoading({
       role="status"
       aria-live="polite"
     >
-      {spinner && <Spinner />}
+      {spinner && <Spinner decorative />}
       {message && <p className="ui-page-loading__message">{message}</p>}
     </div>
   );

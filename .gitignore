@@ -16,6 +16,7 @@ __pycache__/
 
 # Build output
 frontend/build/
+frontend/coverage/
 dist/
 
 # Logs

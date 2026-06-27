@@ -31,6 +31,12 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Frontend unit tests
+        working-directory: frontend
+        env:
+          CI: true
+        run: npm run test:ci
+
       - name: Build frontend
         working-directory: frontend
         env:
