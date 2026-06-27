@@ -1,3 +1,4 @@
+# Copy to .github/workflows/ci.yml after your GitHub PAT includes the "workflow" scope.
 name: CI
 
 on:
