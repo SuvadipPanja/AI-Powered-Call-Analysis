@@ -105,13 +105,13 @@ export default function AuditSection() {
       </div>
 
       <Card className="mgmt-table-card">
-        <div className="mgmt-table-wrap">
-          <table className="ui-table">
+        <div className="mgmt-table-wrap ui-table-wrap ui-table-wrap--stack">
+          <table className="ui-table ui-table--stack-sm">
             <thead>
               <tr>
                 <th>File</th>
                 <th>Agent</th>
-                <th>Location</th>
+                <th className="ui-table__col--hide-sm">Location</th>
                 <th>Date</th>
                 <th>Score</th>
                 <th>Status</th>
@@ -130,19 +130,19 @@ export default function AuditSection() {
               ) : (
                 filtered.map((call, i) => (
                   <tr key={call.FileName || i}>
-                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{call.FileName || '—'}</td>
-                    <td>{call.AgentName || '—'}</td>
-                    <td>{call.Location || '—'}</td>
-                    <td>{call.UploadDate || '—'}</td>
-                    <td>
+                    <td data-label="File" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{call.FileName || '—'}</td>
+                    <td data-label="Agent">{call.AgentName || '—'}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Location">{call.Location || '—'}</td>
+                    <td data-label="Date">{call.UploadDate || '—'}</td>
+                    <td data-label="Score">
                       {call.Overall_Scoring != null ? (
                         <Badge variant={call.Overall_Scoring >= 80 ? 'success' : call.Overall_Scoring >= 50 ? 'warning' : 'error'}>
                           {call.Overall_Scoring}%
                         </Badge>
                       ) : '—'}
                     </td>
-                    <td>{call.Status || '—'}</td>
-                    <td>
+                    <td data-label="Status">{call.Status || '—'}</td>
+                    <td className="ui-table__cell--actions" data-label="Actions">
                       <Button
                         variant="primary"
                         size="sm"

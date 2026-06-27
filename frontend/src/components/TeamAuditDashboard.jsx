@@ -209,8 +209,8 @@ export default function TeamAuditDashboard() {
         <div className="team-audit-dash__param-table">
           <h3><FaChartLine style={{ marginRight: 6 }} /> AI vs Manual — Per Parameter</h3>
           <Card className="mgmt-table-card">
-            <div className="mgmt-table-wrap">
-              <table className="ui-table">
+            <div className="mgmt-table-wrap ui-table-wrap ui-table-wrap--stack">
+              <table className="ui-table ui-table--stack-sm">
                 <thead>
                   <tr>
                     <th>Parameter</th>
@@ -225,10 +225,10 @@ export default function TeamAuditDashboard() {
                       ? (pa.avgManual - pa.avgAI).toFixed(1) : null;
                     return (
                       <tr key={pa.ParameterName}>
-                        <td style={{ fontWeight: 600 }}>{pa.ParameterName}</td>
-                        <td>{fmtScore(pa.avgAI)}</td>
-                        <td>{fmtScore(pa.avgManual)}</td>
-                        <td>
+                        <td data-label="Parameter" style={{ fontWeight: 600 }}>{pa.ParameterName}</td>
+                        <td data-label="Avg AI Score">{fmtScore(pa.avgAI)}</td>
+                        <td data-label="Avg Manual Score">{fmtScore(pa.avgManual)}</td>
+                        <td data-label="Delta">
                           {diff != null && (
                             <span className={`team-audit-dash__delta team-audit-dash__delta--${deltaClass(pa.avgManual, pa.avgAI)}`}>
                               {diff > 0 ? '+' : ''}{diff}
@@ -287,14 +287,14 @@ export default function TeamAuditDashboard() {
 
       {/* Audits Table */}
       <Card className="team-audit-dash__table-card">
-        <div className="team-audit-dash__table-wrap">
-          <table className="ui-table">
+        <div className="team-audit-dash__table-wrap ui-table-wrap ui-table-wrap--stack">
+          <table className="ui-table ui-table--stack-sm">
             <thead>
               <tr>
                 <th>File</th>
                 <th>Agent</th>
-                <th>Location</th>
-                <th>Auditor</th>
+                <th className="ui-table__col--hide-sm">Location</th>
+                <th className="ui-table__col--hide-sm">Auditor</th>
                 <th>AI Score</th>
                 <th>Manual Score</th>
                 <th>Date</th>
@@ -317,14 +317,14 @@ export default function TeamAuditDashboard() {
               ) : (
                 audits.map(audit => (
                   <tr key={audit.AuditID}>
-                    <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td data-label="File" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {audit.AudioFileName || '—'}
                     </td>
-                    <td>{audit.AgentName || '—'}</td>
-                    <td>{audit.AgentLocation || '—'}</td>
-                    <td>{audit.AuditorUsername || '—'}</td>
-                    <td>{fmtScore(audit.OverallAIScore)}</td>
-                    <td>
+                    <td data-label="Agent">{audit.AgentName || '—'}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Location">{audit.AgentLocation || '—'}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Auditor">{audit.AuditorUsername || '—'}</td>
+                    <td data-label="AI Score">{fmtScore(audit.OverallAIScore)}</td>
+                    <td data-label="Manual Score">
                       <Badge variant={
                         audit.OverallManualScore >= 80 ? 'success'
                           : audit.OverallManualScore >= 50 ? 'warning' : 'error'
@@ -332,8 +332,8 @@ export default function TeamAuditDashboard() {
                         {fmtScore(audit.OverallManualScore)}
                       </Badge>
                     </td>
-                    <td>{audit.CreatedAt ? new Date(audit.CreatedAt).toLocaleDateString() : '—'}</td>
-                    <td style={{ display: 'flex', gap: 6 }}>
+                    <td data-label="Date">{audit.CreatedAt ? new Date(audit.CreatedAt).toLocaleDateString() : '—'}</td>
+                    <td className="ui-table__cell--actions" data-label="Actions">
                       <Button variant="secondary" size="sm" onClick={() => handleViewDetail(audit)}>
                         <FaEye style={{ marginRight: 3 }} /> Detail
                       </Button>
@@ -374,26 +374,28 @@ export default function TeamAuditDashboard() {
             </div>
 
             {detailAudit.scores && detailAudit.scores.length > 0 && (
-              <table className="ui-table" style={{ marginBottom: 16 }}>
-                <thead>
-                  <tr>
-                    <th>Parameter</th>
-                    <th>AI Score</th>
-                    <th>Manual Score</th>
-                    <th>Rationale</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailAudit.scores.map(s => (
-                    <tr key={s.ParameterName}>
-                      <td style={{ fontWeight: 600 }}>{s.ParameterName}</td>
-                      <td>{s.AIScore != null ? `${parseFloat(s.AIScore).toFixed(0)}%` : '—'}</td>
-                      <td>{s.ManualScore != null ? `${parseFloat(s.ManualScore).toFixed(0)}%` : '—'}</td>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 200 }}>{s.Rationale || '—'}</td>
+              <div className="ui-table-wrap ui-table-wrap--stack">
+                <table className="ui-table ui-table--stack-sm" style={{ marginBottom: 16 }}>
+                  <thead>
+                    <tr>
+                      <th>Parameter</th>
+                      <th>AI Score</th>
+                      <th>Manual Score</th>
+                      <th>Rationale</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {detailAudit.scores.map(s => (
+                      <tr key={s.ParameterName}>
+                        <td data-label="Parameter" style={{ fontWeight: 600 }}>{s.ParameterName}</td>
+                        <td data-label="AI Score">{s.AIScore != null ? `${parseFloat(s.AIScore).toFixed(0)}%` : '—'}</td>
+                        <td data-label="Manual Score">{s.ManualScore != null ? `${parseFloat(s.ManualScore).toFixed(0)}%` : '—'}</td>
+                        <td data-label="Rationale" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 200 }}>{s.Rationale || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             {detailAudit.ToneNotes && (

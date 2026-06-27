@@ -542,8 +542,8 @@ const TeamLeaderSection = () => {
 
             <div className="tl-split">
               <TlPanel title="My team" subtitle={teamStats?.period || "Last 7 days"} icon={LuClipboardCheck}>
-                <div className="tl-table-wrap">
-                  <table className="ui-table">
+                <div className="tl-table-wrap ui-table-wrap ui-table-wrap--stack">
+                  <table className="ui-table ui-table--stack-sm">
                     <thead>
                       <tr>
                         <th>Agent</th>
@@ -556,14 +556,14 @@ const TeamLeaderSection = () => {
                       {agents.length > 0 ? (
                         agents.map((agent) => (
                           <tr key={agent.name}>
-                            <td>{sanitizeInput(agent.name)}</td>
-                            <td>
+                            <td data-label="Agent">{sanitizeInput(agent.name)}</td>
+                            <td data-label="Avg score">
                               <Badge variant={agent.avgScore > 80 ? "success" : "danger"}>
                                 {agent.avgScore}%
                               </Badge>
                             </td>
-                            <td>{agent.calls}</td>
-                            <td>{agent.aht}</td>
+                            <td data-label="Calls">{agent.calls}</td>
+                            <td data-label="AHT">{agent.aht}</td>
                           </tr>
                         ))
                       ) : (
@@ -594,8 +594,8 @@ const TeamLeaderSection = () => {
                     <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                   </div>
                 </div>
-                <div className="tl-audit-scroll tl-table-wrap">
-                  <table className="ui-table">
+                <div className="tl-audit-scroll tl-table-wrap ui-table-wrap ui-table-wrap--stack">
+                  <table className="ui-table ui-table--stack-sm">
                     <thead>
                       <tr>
                         <th>Call ID</th>
@@ -603,9 +603,9 @@ const TeamLeaderSection = () => {
                         <th>Type</th>
                         <th>AI</th>
                         <th>Manual</th>
-                        <th>Auditor</th>
+                        <th className="ui-table__col--hide-sm">Auditor</th>
                         <th>Date</th>
-                        <th />
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -615,20 +615,20 @@ const TeamLeaderSection = () => {
                           const callIdLabel = formatCallId(call.callId);
                           return (
                           <tr key={`${call.fileName}-${idx}`}>
-                            <td>
+                            <td data-label="Call ID">
                               <span className="ellipsis" title={callIdLabel} style={{ maxWidth: 100, display: "inline-block" }}>
                                 {callIdLabel}
                               </span>
                             </td>
-                            <td>{sanitizeInput(call.agentName)}</td>
-                            <td>{call.callType}</td>
-                            <td>
+                            <td data-label="Agent">{sanitizeInput(call.agentName)}</td>
+                            <td data-label="Type">{call.callType}</td>
+                            <td data-label="AI">
                               <Badge variant={call.score > 80 ? "success" : "danger"}>{call.score}</Badge>
                             </td>
-                            <td>{audited ? `${parseFloat(call.manualScoring || 0).toFixed(1)}%` : "—"}</td>
-                            <td>{audited ? sanitizeInput(call.auditorName || "—") : "—"}</td>
-                            <td>{call.callDate}</td>
-                            <td>
+                            <td data-label="Manual">{audited ? `${parseFloat(call.manualScoring || 0).toFixed(1)}%` : "—"}</td>
+                            <td className="ui-table__col--hide-sm" data-label="Auditor">{audited ? sanitizeInput(call.auditorName || "—") : "—"}</td>
+                            <td data-label="Date">{call.callDate}</td>
+                            <td className="ui-table__cell--actions" data-label="Actions">
                               <Button size="sm" onClick={() => navigate(`/results/${encodeURIComponent(call.fileName)}`)}>
                                 Review
                               </Button>
@@ -728,28 +728,28 @@ const TeamLeaderSection = () => {
               ))}
             </div>
             <MessageBanner msg={knowledgeBaseMessage} />
-            <div className="tl-audit-scroll tl-table-wrap">
-              <table className="ui-table">
+            <div className="tl-audit-scroll tl-table-wrap ui-table-wrap ui-table-wrap--stack">
+              <table className="ui-table ui-table--stack-sm">
                 <thead>
                   <tr>
-                    <th>ID</th>
+                    <th className="ui-table__col--hide-sm">ID</th>
                     <th>Question</th>
                     <th>Answer</th>
-                    <th>Modified by</th>
+                    <th className="ui-table__col--hide-sm">Modified by</th>
                     <th>Date</th>
-                    <th />
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {knowledgeCategories[activeKnowledgeTab]?.length > 0 ? (
                     knowledgeCategories[activeKnowledgeTab].map((entry) => (
                       <tr key={entry.ID}>
-                        <td>{entry.ID}</td>
-                        <td>{sanitizeInput(entry.question)}</td>
-                        <td>{sanitizeInput(entry.answer)}</td>
-                        <td>{sanitizeInput(entry.modifiedBy)}</td>
-                        <td>{entry.modifiedAt ? new Date(entry.modifiedAt).toISOString().split("T")[0] : "—"}</td>
-                        <td style={{ display: "flex", gap: 8 }}>
+                        <td className="ui-table__col--hide-sm" data-label="ID">{entry.ID}</td>
+                        <td data-label="Question">{sanitizeInput(entry.question)}</td>
+                        <td data-label="Answer">{sanitizeInput(entry.answer)}</td>
+                        <td className="ui-table__col--hide-sm" data-label="Modified by">{sanitizeInput(entry.modifiedBy)}</td>
+                        <td data-label="Date">{entry.modifiedAt ? new Date(entry.modifiedAt).toISOString().split("T")[0] : "—"}</td>
+                        <td className="ui-table__cell--actions" data-label="Actions">
                           <Button
                             variant="secondary"
                             size="sm"

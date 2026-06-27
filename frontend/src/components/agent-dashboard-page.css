@@ -306,6 +306,16 @@
   padding: 0.35rem 0.5rem;
 }
 
+@media (max-width: 640px) {
+  .agent-dash__table-wrap.ui-table-wrap--stack {
+    overflow: visible;
+  }
+
+  .agent-dash__table-wrap .ui-table.ui-table--stack-sm {
+    min-width: 0;
+  }
+}
+
 .agent-dash__table thead th {
   position: sticky;
   top: 0;

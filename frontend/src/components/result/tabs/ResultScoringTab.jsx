@@ -152,8 +152,8 @@ export default function ResultScoringTab({
         </ChartPanel>
       )}
 
-      <div className="rp-scoring-table-wrap">
-        <table className="rp-scoring-table">
+      <div className="rp-scoring-table-wrap ui-table-wrap ui-table-wrap--stack">
+        <table className="ui-table ui-table--stack-sm rp-scoring-table">
           <thead>
             <tr>
               <th>Parameter</th>
@@ -169,7 +169,7 @@ export default function ResultScoringTab({
               const manualVal = manualScoring?.[param];
               return (
                 <tr key={param}>
-                  <td>
+                  <td data-label="Parameter">
                     <span className="rp-param-name">{param}</span>
                     {isNumericParam && aiPctCell > 0 && (
                       <div className="rp-param-bar">
@@ -180,9 +180,9 @@ export default function ResultScoringTab({
                       </div>
                     )}
                   </td>
-                  <td className="rp-score-cell">{isNumericParam ? formatScoreCell(aiVal) : (aiText || '—')}</td>
+                  <td className="rp-score-cell" data-label="AI Score">{isNumericParam ? formatScoreCell(aiVal) : (aiText || '—')}</td>
                   {hasManual && (
-                    <td className="rp-score-cell">
+                    <td className="rp-score-cell" data-label="Manual Score">
                       {isNumericParam ? formatScoreCell(manualVal) : (String(manualVal ?? '').trim() || '—')}
                     </td>
                   )}

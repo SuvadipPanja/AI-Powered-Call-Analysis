@@ -641,7 +641,6 @@
 
 /* ── Agent table ── */
 .reports-agent-table-wrap {
-  overflow-x: auto;
   border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   background: color-mix(in srgb, var(--surface-2) 40%, transparent);
@@ -649,6 +648,13 @@
 
 .reports-agent-table-wrap .ui-table {
   margin: 0;
+  min-width: 52rem;
+}
+
+@media (max-width: 640px) {
+  .reports-agent-table-wrap .ui-table.ui-table--stack-sm {
+    min-width: 0;
+  }
 }
 
 .reports-agent-table-wrap .ui-table thead th {

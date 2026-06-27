@@ -814,6 +814,26 @@
   background: color-mix(in srgb, var(--accent) 3%, var(--surface));
 }
 
+@media (max-width: 640px) {
+  .rp-scoring-table-wrap.ui-table-wrap--stack {
+    overflow-x: visible;
+  }
+
+  .rp-scoring-table.ui-table--stack-sm {
+    min-width: 0;
+  }
+
+  .rp-scoring-table.ui-table--stack-sm td[data-label="Parameter"] {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .rp-scoring-table.ui-table--stack-sm .rp-param-bar {
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
 .rp-param-name {
   font-weight: 600;
   color: var(--text-strong);

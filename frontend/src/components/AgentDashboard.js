@@ -533,15 +533,15 @@ const AgentDashboardContent = () => {
           <div className="agent-dash__panel-body">
             {dashboardData?.callHistory?.length > 0 ? (
               filteredCallHistory.length > 0 ? (
-                <div className="agent-dash__table-wrap">
-                  <table className="ui-table agent-dash__table agent-dash__table--compact">
+                <div className="agent-dash__table-wrap ui-table-wrap ui-table-wrap--stack">
+                  <table className="ui-table ui-table--stack-sm agent-dash__table agent-dash__table--compact">
                     <thead>
                       <tr>
                         <th>Call ID</th>
                         <th>Date</th>
                         <th>Dur.</th>
                         <th>Score</th>
-                        <th>Auditor</th>
+                        <th className="ui-table__col--hide-sm">Auditor</th>
                         <th>Type</th>
                       </tr>
                     </thead>
@@ -552,16 +552,16 @@ const AgentDashboardContent = () => {
                         const callIdLabel = formatCallId(call.callId);
                         return (
                           <tr key={`${call.callId ?? call.callDateTime}-${idx}`}>
-                            <td className="agent-dash__cell-callid">
+                            <td className="agent-dash__cell-callid" data-label="Call ID">
                               <span className="agent-dash__callid" title={callIdLabel}>
                                 {callIdLabel}
                               </span>
                             </td>
-                            <td className="agent-dash__cell-date">
+                            <td className="agent-dash__cell-date" data-label="Date">
                               {dayjs(call.callDateTime).format("DD-MM HH:mm")}
                             </td>
-                            <td className="agent-dash__cell-duration">{call.durationSec}s</td>
-                            <td className="agent-dash__cell-score">
+                            <td className="agent-dash__cell-duration" data-label="Dur.">{call.durationSec}s</td>
+                            <td className="agent-dash__cell-score" data-label="Score">
                               {audited ? (
                                 <span className="agent-dash__score-cell">
                                   <Badge variant={scoreBadgeVariant(displayScore)}>
@@ -575,10 +575,10 @@ const AgentDashboardContent = () => {
                                 </Badge>
                               )}
                             </td>
-                            <td className="agent-dash__cell-auditor">
+                            <td className="agent-dash__cell-auditor ui-table__col--hide-sm" data-label="Auditor">
                               {audited ? (call.auditorName || "—") : "—"}
                             </td>
-                            <td className="agent-dash__cell-type">{call.callType || "—"}</td>
+                            <td className="agent-dash__cell-type" data-label="Type">{call.callType || "—"}</td>
                           </tr>
                         );
                       })}

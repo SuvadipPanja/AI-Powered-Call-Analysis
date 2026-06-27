@@ -1,0 +1,181 @@
+/* Agent & user management pages — aligned with Reports layout */
+
+.mgmt-page.reports-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.mgmt-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.mgmt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mgmt-toolbar .ui-input {
+  max-width: 360px;
+  min-width: 220px;
+  flex: 1;
+}
+
+.mgmt-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.mgmt-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mgmt-page__head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mgmt-form-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.mgmt-table-card {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.mgmt-user-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.mgmt-user-cell > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mgmt-table-wrap {
+  width: 100%;
+}
+
+.mgmt-table-wrap .ui-table {
+  min-width: 900px;
+}
+
+@media (max-width: 640px) {
+  .mgmt-table-wrap .ui-table.ui-table--stack-sm {
+    min-width: 0;
+  }
+
+  .mgmt-table-wrap .ui-table.ui-table--stack-sm td:last-child {
+    text-align: right;
+  }
+}
+
+.mgmt-table-wrap .ui-table th,
+.mgmt-table-wrap .ui-table td {
+  vertical-align: middle;
+}
+
+.mgmt-table-wrap .ui-table td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mgmt-form-page {
+  max-width: 880px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.mgmt-form-card {
+  padding: var(--space-5) !important;
+}
+
+.mgmt-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.mgmt-form-grid .mgmt-field--full {
+  grid-column: 1 / -1;
+}
+
+.mgmt-field-optional {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mgmt-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+
+.mgmt-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.mgmt-modal-grid .mgmt-field--full {
+  grid-column: 1 / -1;
+}
+
+.mgmt-modal-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .mgmt-form-grid,
+  .mgmt-modal-grid {
+    grid-template-columns: 1fr;
+  }
+  .mgmt-form-grid .mgmt-field--full,
+  .mgmt-modal-grid .mgmt-field--full {
+    grid-column: 1;
+  }
+  .mgmt-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mgmt-toolbar .ui-input {
+    max-width: none;
+    width: 100%;
+  }
+}

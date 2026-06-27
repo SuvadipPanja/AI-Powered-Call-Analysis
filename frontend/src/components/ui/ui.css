@@ -167,6 +167,112 @@
 .ui-table tbody tr { transition: background var(--transition-fast); }
 .ui-table tbody tr:hover { background: var(--surface-2); }
 
+/* ─── Responsive table wrapper + mobile card stack ─── */
+.ui-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ui-table-wrap .ui-table {
+  min-width: var(--ui-table-min-width, 36rem);
+}
+
+.ui-table__cell--actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .ui-table-wrap--stack {
+    overflow-x: visible;
+  }
+
+  .ui-table-wrap--stack .ui-table.ui-table--stack-sm {
+    min-width: 0;
+  }
+
+  .ui-table.ui-table--stack-sm thead {
+    display: none;
+  }
+
+  .ui-table.ui-table--stack-sm tbody tr {
+    display: block;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+  }
+
+  .ui-table.ui-table--stack-sm tbody tr:hover {
+    background: var(--surface);
+  }
+
+  .ui-table.ui-table--stack-sm tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .ui-table.ui-table--stack-sm td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border-soft);
+    text-align: right;
+    white-space: normal;
+  }
+
+  .ui-table.ui-table--stack-sm td:last-child {
+    border-bottom: none;
+  }
+
+  .ui-table.ui-table--stack-sm td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    text-align: left;
+    flex-shrink: 0;
+    max-width: 42%;
+  }
+
+  .ui-table.ui-table--stack-sm td[data-label=""]::before,
+  .ui-table.ui-table--stack-sm td:not([data-label])::before {
+    display: none;
+  }
+
+  .ui-table.ui-table--stack-sm td[colspan] {
+    display: block;
+    text-align: center;
+    border-bottom: none;
+    padding: var(--space-3) 0;
+  }
+
+  .ui-table.ui-table--stack-sm td[colspan]::before {
+    display: none;
+  }
+
+  .ui-table.ui-table--stack-sm .ui-table__cell--actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .ui-table.ui-table--stack-sm .ui-table__cell--actions::before {
+    align-self: center;
+  }
+
+  .ui-table__col--hide-sm {
+    display: none !important;
+  }
+}
+
 .ui-modal-overlay {
   position: fixed;
   inset: 0;

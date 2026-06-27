@@ -204,6 +204,28 @@ export function Skeleton({ className, style }) {
   return <div className={cx("app-skeleton", className)} style={style} />;
 }
 
+export function ResponsiveTableWrap({
+  className,
+  children,
+  stack = true,
+  minWidth,
+  style,
+  ...rest
+}) {
+  return (
+    <div
+      className={cx("ui-table-wrap", stack && "ui-table-wrap--stack", className)}
+      style={{
+        ...(minWidth ? { "--ui-table-min-width": minWidth } : null),
+        ...style,
+      }}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+}
+
 export { default as ThemeToggle } from "./ThemeToggle";
 export { default as StatCard } from "./StatCard";
 export { default as PageSection } from "./PageSection";
