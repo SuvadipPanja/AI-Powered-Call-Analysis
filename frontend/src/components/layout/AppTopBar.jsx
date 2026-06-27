@@ -94,6 +94,7 @@ export default function AppTopBar() {
             onClick={() => setShowMenu((v) => !v)}
             aria-expanded={showMenu}
             aria-haspopup="menu"
+            aria-label={`Account menu for ${resolvedUsername}`}
           >
             <span className="app-topbar__profile-text">
               <strong>{resolvedUsername}</strong>

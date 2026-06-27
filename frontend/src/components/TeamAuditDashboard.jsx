@@ -354,7 +354,12 @@ export default function TeamAuditDashboard() {
       </Card>
 
       {/* Detail Modal */}
-      <Modal open={!!detailAudit || detailLoading} onClose={() => { setDetailAudit(null); setDetailLoading(false); }} maxWidth="720px">
+      <Modal
+        open={!!detailAudit || detailLoading}
+        onClose={() => { setDetailAudit(null); setDetailLoading(false); }}
+        maxWidth="720px"
+        title={detailAudit ? `Audit Detail — ${detailAudit.AudioFileName}` : "Audit Detail"}
+      >
         {detailLoading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><Spinner /> Loading details...</div>
         ) : detailAudit ? (

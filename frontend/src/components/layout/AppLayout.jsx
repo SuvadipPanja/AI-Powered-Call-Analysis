@@ -1,5 +1,6 @@
 import Sidebar from "./Sidebar";
 import AppTopBar from "./AppTopBar";
+import { SkipLink } from "../ui";
 import { useSidebarCollapsed } from "../../context/SidebarStateContext";
 import "./layout.css";
 
@@ -14,6 +15,7 @@ export default function AppLayout({
 
   return (
     <div className={`app-shell ${collapsed ? "app-shell--collapsed" : ""}`}>
+      {showNav && <SkipLink />}
       {showNav && (
         <Sidebar
           collapsed={collapsed}
@@ -22,7 +24,9 @@ export default function AppLayout({
       )}
       <div className="app-shell__main">
         {showNav && <AppTopBar />}
-        <div className="app-shell__content">{children}</div>
+        <main id="main-content" className="app-shell__content" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );

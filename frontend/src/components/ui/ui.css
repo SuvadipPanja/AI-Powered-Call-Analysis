@@ -102,7 +102,10 @@
 .ui-textarea::placeholder { color: var(--text-faint-solid); }
 .ui-input:focus,
 .ui-select:focus,
-.ui-textarea:focus {
+.ui-textarea:focus,
+.ui-input:focus-visible,
+.ui-select:focus-visible,
+.ui-textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--ring-accent);
@@ -826,4 +829,39 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+/* ─── Accessibility helpers ─── */
+.ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ui-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: var(--space-3);
+  z-index: 10060;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-strong);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ui-skip-link:focus,
+.ui-skip-link:focus-visible {
+  left: var(--space-3);
+  outline: none;
+  box-shadow: var(--ring-accent), var(--shadow-md);
 }

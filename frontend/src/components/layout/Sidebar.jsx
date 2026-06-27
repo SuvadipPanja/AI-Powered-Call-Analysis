@@ -145,8 +145,9 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
                 onClick={() => go(l.to)}
                 title={l.label}
                 aria-label={l.label}
+                aria-current={isActive(l) ? "page" : undefined}
               >
-                <span className="app-sidebar__link-icon">
+                <span className="app-sidebar__link-icon" aria-hidden="true">
                   <Icon strokeWidth={2} />
                 </span>
                 <span className="app-sidebar__link-label">{l.label}</span>

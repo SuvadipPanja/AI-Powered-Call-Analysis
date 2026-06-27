@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { useEffect, useId, useRef } from "react";
 import "./ui.css";
 
 const cx = (...parts) => parts.filter(Boolean).join(" ");
@@ -74,17 +75,77 @@ export function PageHeader({ title, subtitle, actions, className }) {
   );
 }
 
-export function Modal({ open, onClose, children, maxWidth, className, flush }) {
+export function Modal({
+  open,
+  onClose,
+  children,
+  maxWidth,
+  className,
+  flush,
+  title,
+  ariaLabel,
+}) {
+  const dialogRef = useRef(null);
+  const titleId = useId();
+  const previousFocusRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    previousFocusRef.current = document.activeElement;
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+
+    const focusable = dialog.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+
+    (focusable[0] || dialog).focus();
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose?.();
+        return;
+      }
+      if (event.key !== "Tab" || focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (typeof previousFocusRef.current?.focus === "function") {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return createPortal(
     <div className="ui-modal-overlay" onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className={cx("ui-modal", flush && "ui-modal--flush", className)}
         style={maxWidth ? { maxWidth } : undefined}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={!title ? ariaLabel : undefined}
       >
+        {title ? <h2 id={titleId} className="ui-sr-only">{title}</h2> : null}
         {children}
       </div>
     </div>,
@@ -92,14 +153,33 @@ export function Modal({ open, onClose, children, maxWidth, className, flush }) {
   );
 }
 
-export function Spinner({ className }) {
-  return <div className={cx("ui-spinner", className)} />;
+export function Spinner({ className, label = "Loading" }) {
+  return (
+    <div className={cx("ui-spinner", className)} role="status" aria-label={label}>
+      <span className="ui-sr-only">{label}</span>
+    </div>
+  );
 }
 
-export function Segmented({ options = [], value, onChange, className }) {
+export function Segmented({ options = [], value, onChange, className, ariaLabel }) {
+  const onKeyDown = (event, index) => {
+    const last = options.length - 1;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      const next = options[Math.min(index + 1, last)];
+      const val = typeof next === "string" ? next : next.value;
+      onChange?.(val);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const prev = options[Math.max(index - 1, 0)];
+      const val = typeof prev === "string" ? prev : prev.value;
+      onChange?.(val);
+    }
+  };
+
   return (
-    <div className={cx("ui-segmented", className)} role="tablist">
-      {options.map((opt) => {
+    <div className={cx("ui-segmented", className)} role="tablist" aria-label={ariaLabel}>
+      {options.map((opt, index) => {
         const val = typeof opt === "string" ? opt : opt.value;
         const label = typeof opt === "string" ? opt : opt.label;
         return (
@@ -110,6 +190,7 @@ export function Segmented({ options = [], value, onChange, className }) {
             aria-selected={value === val}
             className={cx(value === val && "is-active")}
             onClick={() => onChange && onChange(val)}
+            onKeyDown={(event) => onKeyDown(event, index)}
           >
             {label}
           </button>
@@ -147,8 +228,10 @@ export function EmptyState({
         variant === "error" && "ui-empty--error",
         className,
       )}
+      role={variant === "error" ? "alert" : "status"}
+      aria-live={variant === "error" ? "assertive" : "polite"}
     >
-      {icon && <div className="ui-empty__icon">{icon}</div>}
+      {icon && <div className="ui-empty__icon" aria-hidden="true">{icon}</div>}
       {title && <p className="ui-empty__title">{title}</p>}
       {children && <div className="ui-empty__body">{children}</div>}
       {action}
@@ -210,6 +293,7 @@ export function ResponsiveTableWrap({
   stack = true,
   minWidth,
   style,
+  label,
   ...rest
 }) {
   return (
@@ -219,10 +303,28 @@ export function ResponsiveTableWrap({
         ...(minWidth ? { "--ui-table-min-width": minWidth } : null),
         ...style,
       }}
+      role={label ? "region" : undefined}
+      aria-label={label || undefined}
       {...rest}
     >
       {children}
     </div>
+  );
+}
+
+export function SkipLink({ href = "#main-content", children = "Skip to main content" }) {
+  return (
+    <a href={href} className="ui-skip-link">
+      {children}
+    </a>
+  );
+}
+
+export function VisuallyHidden({ as: Tag = "span", children, ...rest }) {
+  return (
+    <Tag className="ui-sr-only" {...rest}>
+      {children}
+    </Tag>
   );
 }
 

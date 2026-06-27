@@ -86,7 +86,11 @@ const AppContent = () => {
   return (
     <>
       {licenseStatus && showWarningBanner && licenseStatus.daysUntilExpiration <= 7 && !licenseStatus.isExpired && (
-        <div className="license-warning-banner" style={{
+        <div
+          className="license-warning-banner"
+          role="alert"
+          aria-live="polite"
+          style={{
           padding: "10px",
           textAlign: "center",
           fontSize: "0.9rem",

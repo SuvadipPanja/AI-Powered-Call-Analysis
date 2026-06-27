@@ -533,16 +533,16 @@ const AgentDashboardContent = () => {
           <div className="agent-dash__panel-body">
             {dashboardData?.callHistory?.length > 0 ? (
               filteredCallHistory.length > 0 ? (
-                <div className="agent-dash__table-wrap ui-table-wrap ui-table-wrap--stack">
-                  <table className="ui-table ui-table--stack-sm agent-dash__table agent-dash__table--compact">
+                <div className="agent-dash__table-wrap ui-table-wrap ui-table-wrap--stack" role="region" aria-label="Recent calls">
+                  <table className="ui-table ui-table--stack-sm agent-dash__table agent-dash__table--compact" aria-label="Recent calls">
                     <thead>
                       <tr>
-                        <th>Call ID</th>
-                        <th>Date</th>
-                        <th>Dur.</th>
-                        <th>Score</th>
-                        <th className="ui-table__col--hide-sm">Auditor</th>
-                        <th>Type</th>
+                        <th scope="col">Call ID</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Dur.</th>
+                        <th scope="col">Score</th>
+                        <th scope="col" className="ui-table__col--hide-sm">Auditor</th>
+                        <th scope="col">Type</th>
                       </tr>
                     </thead>
                     <tbody>

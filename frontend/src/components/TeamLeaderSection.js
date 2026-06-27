@@ -488,6 +488,7 @@ const TeamLeaderSection = () => {
             <button
               key={tab.id}
               type="button"
+              id={`tl-tab-${tab.id}`}
               className={`tl-tabs__btn ${activeTab === tab.id ? "tl-tabs__btn--active" : ""}`}
               onClick={() => {
                 setActiveTab(tab.id);
@@ -495,6 +496,8 @@ const TeamLeaderSection = () => {
                 if (tab.id === "broadcast") setBroadcastMessage("");
               }}
               aria-selected={activeTab === tab.id}
+              aria-controls={`tl-panel-${tab.id}`}
+              tabIndex={activeTab === tab.id ? 0 : -1}
               role="tab"
             >
               {tab.icon} {tab.label}
@@ -502,6 +505,12 @@ const TeamLeaderSection = () => {
           ))}
         </nav>
 
+        <div
+          role="tabpanel"
+          id={`tl-panel-${activeTab}`}
+          aria-labelledby={`tl-tab-${activeTab}`}
+          tabIndex={0}
+        >
         {activeTab === "teamOverview" && (
           <>
             {loadingTeam ? (
@@ -820,8 +829,9 @@ const TeamLeaderSection = () => {
             </div>
           </TlPanel>
         )}
+        </div>
 
-        <Modal open={showAddKnowledgeForm} onClose={() => { setShowAddKnowledgeForm(false); setKnowledgeBaseMessage(""); }}>
+        <Modal open={showAddKnowledgeForm} onClose={() => { setShowAddKnowledgeForm(false); setKnowledgeBaseMessage(""); }} title="Add New Reva Knowledge Entry">
           <h3 style={{ color: "var(--text-strong)", marginBottom: "var(--space-4)" }}>
             <LuDatabase style={{ marginRight: 8 }} /> Add New Reva Knowledge Entry
           </h3>
@@ -869,7 +879,7 @@ const TeamLeaderSection = () => {
           </div>
         </Modal>
 
-        <Modal open={showUpdateKnowledgeForm && !!selectedKnowledge} onClose={() => { setShowUpdateKnowledgeForm(false); setKnowledgeBaseMessage(""); }}>
+        <Modal open={showUpdateKnowledgeForm && !!selectedKnowledge} onClose={() => { setShowUpdateKnowledgeForm(false); setKnowledgeBaseMessage(""); }} title="Update Reva Knowledge Entry">
           <h3 style={{ color: "var(--text-strong)", marginBottom: "var(--space-4)" }}>
             <LuDatabase style={{ marginRight: 8 }} /> Update Reva Knowledge Entry
           </h3>
