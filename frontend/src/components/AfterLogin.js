@@ -31,10 +31,11 @@ import LoanLeadsPanel from "./reports/LoanLeadsPanel";
 import EscalationKpiBlock from "./reports/EscalationKpiBlock";
 import { fetchLoanLeadsReport } from "../utils/loanLeadsData";
 import { LuHeart, LuUsers, LuLayers, LuPhoneForwarded, LuBanknote } from "react-icons/lu";
+import { useAuth } from "../context/AuthContext";
 
 const CSAT_DONUT_COLORS = ["#6b9080", "#94a3b8"];
 
-const AfterLogin = ({ username, onLogout, isAuthenticated = true, userType }) => {
+const AfterLogin = () => {
   /************************************************
    * (1) Code Integrity & Security
    * Purpose: Ensures the code has not been tampered with.
@@ -48,6 +49,7 @@ const AfterLogin = ({ username, onLogout, isAuthenticated = true, userType }) =>
   };
   verifySignature(signature);
 
+  const { username, userType, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { chatMessages } = useWebSocket();
 
