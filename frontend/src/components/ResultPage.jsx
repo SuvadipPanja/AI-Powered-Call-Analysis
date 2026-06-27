@@ -13,12 +13,21 @@ import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugin/wavesurfer.regions.min.js';
 
 import {
-  FaFileAudio, FaCalendarAlt, FaPhone,
-  FaLanguage, FaInfoCircle,
-  FaUserTie, FaIdCard, FaClock, FaWaveSquare, FaCheckCircle,
-  FaRegSmile, FaClipboardCheck, FaShieldAlt,
-  FaChartLine,
-} from 'react-icons/fa';
+  LuFileAudio,
+  LuCalendar,
+  LuPhone,
+  LuGlobe,
+  LuInfo,
+  LuUserCog,
+  LuIdCard,
+  LuClock,
+  LuAudioLines,
+  LuCircleCheck,
+  LuSmile,
+  LuClipboardCheck,
+  LuShield,
+  LuChartLine,
+} from '../icons';
 
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement,
@@ -338,7 +347,7 @@ const ResultPage = () => {
   const renderToneAnalysisDashboard = () => {
     if (!toneAnalysis?.results) {
       return (
-        <EmptyState icon={<FaWaveSquare />} title="No Tone Data Available">
+        <EmptyState icon={<LuAudioLines />} title="No Tone Data Available">
           Tone analysis data was not detected for this call. This may happen with very short recordings or unsupported formats.
         </EmptyState>
       );
@@ -348,7 +357,7 @@ const ResultPage = () => {
     const hasCustomer = !!toneAnalysis.results.Customer;
     if (!hasAgent && !hasCustomer) {
       return (
-        <EmptyState icon={<FaWaveSquare />} title="No Tone Data Available">
+        <EmptyState icon={<LuAudioLines />} title="No Tone Data Available">
           Neither agent nor customer tone data was detected for this call.
         </EmptyState>
       );
@@ -371,7 +380,7 @@ const ResultPage = () => {
       return (
         <div className="tone-card">
           <div className="tone-card__header">
-            <span className="tone-card__icon" style={{ color: accentClr }}>{label === 'Agent' ? <FaUserTie /> : <FaPhone />}</span>
+            <span className="tone-card__icon" style={{ color: accentClr }}>{label === 'Agent' ? <LuUserCog /> : <LuPhone />}</span>
             <div>
               <h4 className="tone-card__title">{label} Tone</h4>
               <span className="tone-card__badge" style={{ background: alphaColor(dominantColor(stats.dominant), 0.15), color: dominantColor(stats.dominant) }}>
@@ -554,7 +563,7 @@ const ResultPage = () => {
         <div className="tone-trend-card">
           <div className="tone-trend-card__header">
             <div>
-              <h4 className="tone-trend-card__title"><FaChartLine style={{ marginRight: 8, opacity: 0.6 }} />Tone Trend Over Call</h4>
+              <h4 className="tone-trend-card__title"><LuChartLine style={{ marginRight: 8, opacity: 0.6 }} />Tone Trend Over Call</h4>
               <p className="tone-trend-card__sub">Intensity across call segments — hover for details</p>
             </div>
             <div className="tone-trend-legend">
@@ -572,7 +581,7 @@ const ResultPage = () => {
         {(hasAgent || hasCustomer) && (
           <div className="tone-dist-card">
             <div className="tone-dist-card__header">
-              <h4 className="tone-dist-card__title"><FaWaveSquare style={{ marginRight: 8, opacity: 0.6 }} />Tone Distribution</h4>
+              <h4 className="tone-dist-card__title"><LuAudioLines style={{ marginRight: 8, opacity: 0.6 }} />Tone Distribution</h4>
               <p className="tone-dist-card__sub">Percentage of call time spent at each intensity level</p>
             </div>
             <div className="tone-dist-card__body">
@@ -625,7 +634,7 @@ const ResultPage = () => {
   const renderSentimentDashboard = () => {
     if (!sentimentStats) {
       return (
-        <EmptyState icon={<FaRegSmile />} title="No Sentiment Data Available">
+        <EmptyState icon={<LuSmile />} title="No Sentiment Data Available">
           Sentiment analysis data was not detected for this call. This may happen with very short recordings or when the AI model could not determine speaker emotion.
         </EmptyState>
       );
@@ -661,7 +670,7 @@ const ResultPage = () => {
         <div className="sentiment-card">
           <div className="sentiment-card__header">
             <span className="sentiment-card__icon" style={{ color: accentClr }}>
-              {label === 'Agent' ? <FaUserTie /> : <FaPhone />}
+              {label === 'Agent' ? <LuUserCog /> : <LuPhone />}
             </span>
             <div>
               <h4 className="sentiment-card__title">{label} Sentiment</h4>
@@ -739,7 +748,7 @@ const ResultPage = () => {
         <div className="sentiment-dist-card">
           <div className="sentiment-dist-card__header">
             <div>
-              <h4 className="sentiment-dist-card__title"><FaRegSmile style={{ marginRight: 8, opacity: 0.6 }} />Sentiment Distribution</h4>
+              <h4 className="sentiment-dist-card__title"><LuSmile style={{ marginRight: 8, opacity: 0.6 }} />Sentiment Distribution</h4>
               <p className="sentiment-dist-card__sub">Comparison of emotional tone between agent and customer</p>
             </div>
             <div className="sentiment-legend">
@@ -809,7 +818,7 @@ const ResultPage = () => {
       return <div className="rp-analysis-loading"><Spinner /> <span>Loading call intelligence…</span></div>;
     }
     if (intelError || !intelligence) {
-      return <EmptyState icon={<FaChartLine />} title="Call intelligence unavailable">{intelError || 'This call has not been analyzed for intelligence yet.'}</EmptyState>;
+      return <EmptyState icon={<LuChartLine />} title="Call intelligence unavailable">{intelError || 'This call has not been analyzed for intelligence yet.'}</EmptyState>;
     }
     const i = intelligence;
     const isLoan = String(i.isLoanCall).toLowerCase() === 'yes';
@@ -1125,10 +1134,10 @@ const ResultPage = () => {
       );
     }
     if (scoreError) {
-      return <EmptyState icon={<FaClipboardCheck />} title="Scoring Unavailable"><p>{scoreError}</p></EmptyState>;
+      return <EmptyState icon={<LuClipboardCheck />} title="Scoring Unavailable"><p>{scoreError}</p></EmptyState>;
     }
     if (!aiScoring) {
-      return <EmptyState icon={<FaClipboardCheck />} title="No Scoring Data">Scoring data has not been loaded yet.</EmptyState>;
+      return <EmptyState icon={<LuClipboardCheck />} title="No Scoring Data">Scoring data has not been loaded yet.</EmptyState>;
     }
 
     const aiOverall = aiScoring['Overall Scoring'] ?? 'N/A';
@@ -1205,7 +1214,7 @@ const ResultPage = () => {
           {aiScoring.Feedback && String(aiScoring.Feedback).trim() && (
             <div className="rp-feedback-card">
               <div className="rp-feedback-header">
-                <FaInfoCircle className="rp-feedback-icon" />
+                <LuInfo className="rp-feedback-icon" />
                 <span>AI Coaching Feedback</span>
               </div>
               <p className="rp-feedback-text">{aiScoring.Feedback}</p>
@@ -1266,7 +1275,7 @@ const ResultPage = () => {
               onClick={() => setAuditWorkspaceOpen(true)}
               aria-label={existingAuditId ? 'View/Edit Audit' : 'Manual Audit'}
             >
-              <FaClipboardCheck style={{ marginRight: 6 }} />
+              <LuClipboardCheck style={{ marginRight: 6 }} />
               {existingAuditId ? 'View / Edit Audit' : 'Manual Audit'}
             </Button>
           </div>
@@ -1301,7 +1310,7 @@ const ResultPage = () => {
   const renderComplianceDashboard = () => {
     if (scriptCompliance === null) {
       return (
-        <EmptyState icon={<FaShieldAlt />} title="Script Compliance Unavailable">
+        <EmptyState icon={<LuShield />} title="Script Compliance Unavailable">
           Compliance analysis has not been generated for this call. This typically requires a completed transcript and scoring run.
         </EmptyState>
       );
@@ -1377,7 +1386,7 @@ const ResultPage = () => {
           {/* Category Breakdown */}
           <div className="compliance-breakdown-card">
             <h4 className="compliance-breakdown-card__title">
-              <FaClipboardCheck style={{ marginRight: 8, opacity: 0.6 }} />Category Breakdown
+              <LuClipboardCheck style={{ marginRight: 8, opacity: 0.6 }} />Category Breakdown
             </h4>
             <p className="compliance-breakdown-card__sub">Weighted score contribution by protocol area</p>
             <div className="compliance-category-list">
@@ -1422,15 +1431,15 @@ const ResultPage = () => {
     : null;
 
   const metaItems = [
-    { icon: FaUserTie, label: 'Agent', value: audioDetails.AgentName },
-    { icon: FaIdCard, label: 'ID', value: audioDetails.AgentID },
-    { icon: FaCalendarAlt, label: 'Date', value: uploadDate },
-    { icon: FaPhone, label: 'Type', value: audioDetails.CallType },
-    { icon: FaLanguage, label: 'Lang', value: audioDetails.AudioLanguage },
-    { icon: FaClock, label: 'Duration', value: audioDetails.AudioDuration ? formatTimeSec(audioDetails.AudioDuration) : null },
-    { icon: FaWaveSquare, label: 'WPM', value: audioDetails.AudioWPM ? formatWPM(audioDetails.AudioWPM) : null },
-    { icon: FaCheckCircle, label: 'Status', value: audioDetails.Status, variant: audioDetails.Status === 'Completed' ? 'success' : 'accent' },
-    { icon: FaFileAudio, label: 'File', value: audioDetails.AudioFileName },
+    { icon: LuUserCog, label: 'Agent', value: audioDetails.AgentName },
+    { icon: LuIdCard, label: 'ID', value: audioDetails.AgentID },
+    { icon: LuCalendar, label: 'Date', value: uploadDate },
+    { icon: LuPhone, label: 'Type', value: audioDetails.CallType },
+    { icon: LuGlobe, label: 'Lang', value: audioDetails.AudioLanguage },
+    { icon: LuClock, label: 'Duration', value: audioDetails.AudioDuration ? formatTimeSec(audioDetails.AudioDuration) : null },
+    { icon: LuAudioLines, label: 'WPM', value: audioDetails.AudioWPM ? formatWPM(audioDetails.AudioWPM) : null },
+    { icon: LuCircleCheck, label: 'Status', value: audioDetails.Status, variant: audioDetails.Status === 'Completed' ? 'success' : 'accent' },
+    { icon: LuFileAudio, label: 'File', value: audioDetails.AudioFileName },
   ].filter(b => b.value);
 
   return (

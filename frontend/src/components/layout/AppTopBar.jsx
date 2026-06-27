@@ -6,7 +6,7 @@ import {
   LuSettings,
   LuLogOut,
   LuCrown,
-} from "react-icons/lu";
+} from "../../icons";
 import ThemeToggle from "../ui/ThemeToggle";
 import UserAvatar from "../ui/UserAvatar";
 import { useAppBranding, useDocumentTitle } from "../../utils/appBranding";

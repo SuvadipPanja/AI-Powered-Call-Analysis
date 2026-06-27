@@ -6,21 +6,20 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
-  FaUser,
-  FaShieldAlt,
-  FaCheckCircle,
-  FaTimesCircle,
-  FaCameraRetro,
-  FaArrowLeft,
-  FaKey,
-  FaLock,
-  FaCamera,
-  FaSpinner,
-  FaHeadset,
-  FaEye,
-  FaEyeSlash,
-  FaIdBadge,
-} from "react-icons/fa";
+  LuUser,
+  LuShield,
+  LuCircleCheck,
+  LuCircleX,
+  LuCamera,
+  LuArrowLeft,
+  LuKey,
+  LuLock,
+  LuLoader,
+  LuHeadphones,
+  LuEye,
+  LuEyeOff,
+  LuIdCard,
+} from "../icons";
 import config from "../utils/envConfig";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -66,7 +65,7 @@ function PasswordField({ value, onChange, placeholder, autoComplete, "aria-label
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "Hide password" : "Show password"}
       >
-        {visible ? <FaEyeSlash /> : <FaEye />}
+        {visible ? <LuEyeOff /> : <LuEye />}
       </button>
     </div>
   );
@@ -273,10 +272,10 @@ const AgentSettings = () => {
     <div className="app-page reports-page app-page--stable agent-settings-page">
       <div className="agent-settings-page__toolbar">
         <Button variant="secondary" size="sm" onClick={() => navigate("/")} aria-label="Back to dashboard">
-          <FaArrowLeft /> Back to Dashboard
+          <LuArrowLeft /> Back to Dashboard
         </Button>
         <h1 className="agent-settings-page__title">
-          <FaUser /> Agent Settings
+          <LuUser /> Agent Settings
         </h1>
       </div>
 
@@ -286,7 +285,7 @@ const AgentSettings = () => {
           role="alert"
           aria-live="polite"
         >
-          {messageType === "success" ? <FaCheckCircle /> : <FaTimesCircle />}
+          {messageType === "success" ? <LuCircleCheck /> : <LuCircleX />}
           <span>{message}</span>
         </div>
       )}
@@ -314,7 +313,7 @@ const AgentSettings = () => {
                 aria-label="Change profile photo"
                 title="Change photo"
               >
-                <FaCamera />
+                <LuCamera />
               </button>
               <input
                 ref={fileInputRef}
@@ -329,24 +328,24 @@ const AgentSettings = () => {
             <div className="settings-hero__info">
               <h2 className="settings-hero__name">{currentUser || "Agent"}</h2>
               <span className="settings-hero__email">
-                <FaHeadset /> Agent account
+                <LuHeadphones /> Agent account
               </span>
               <div className="settings-hero__badges">
-                <Badge variant="accent"><FaHeadset /> Agent</Badge>
+                <Badge variant="accent"><LuHeadphones /> Agent</Badge>
                 {securityQuestion && securityQuestion !== "Not Set" && (
-                  <Badge><FaKey /> Security question set</Badge>
+                  <Badge><LuKey /> Security question set</Badge>
                 )}
               </div>
 
               {selectedFile ? (
                 <div className="settings-photo-actions">
                   <span className="settings-photo-actions__name">
-                    <FaCameraRetro /> {selectedFile.name}
+                    <LuCamera /> {selectedFile.name}
                   </span>
                   <Button variant="primary" size="sm" onClick={handleUploadPic} disabled={isUploading}>
                     {isUploading
-                      ? <><FaSpinner style={{ animation: "spin 0.8s linear infinite" }} /> Saving…</>
-                      : <><FaCheckCircle /> Save photo</>}
+                      ? <><LuLoader style={{ animation: "spin 0.8s linear infinite" }} /> Saving…</>
+                      : <><LuCircleCheck /> Save photo</>}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={cancelPhotoSelection} disabled={isUploading}>
                     Cancel
@@ -354,7 +353,7 @@ const AgentSettings = () => {
                 </div>
               ) : (
                 <span className="settings-photo-hint">
-                  <FaCamera /> Tap the camera to update your photo · JPG, PNG, WEBP or GIF up to 5&nbsp;MB
+                  <LuCamera /> Tap the camera to update your photo · JPG, PNG, WEBP or GIF up to 5&nbsp;MB
                 </span>
               )}
             </div>
@@ -362,12 +361,12 @@ const AgentSettings = () => {
 
           <div className="settings-meta">
             <MetaItem
-              icon={<FaIdBadge />}
+              icon={<LuIdCard />}
               label="Security question"
               value={securityQuestion || "Not set"}
             />
             <MetaItem
-              icon={<FaShieldAlt />}
+              icon={<LuShield />}
               label="Account type"
               value="Agent"
             />
@@ -375,7 +374,7 @@ const AgentSettings = () => {
 
           <div className="settings-grid">
             <PageSection
-              title={<><FaLock style={{ marginRight: 8 }} />Password</>}
+              title={<><LuLock style={{ marginRight: 8 }} />Password</>}
               subtitle="Use a strong, unique password"
             >
               <div className="settings-form-row">
@@ -399,7 +398,7 @@ const AgentSettings = () => {
                 />
                 {passwordHint && (
                   <p className={`settings-strength ${passwordHint === "Strong password!" ? "settings-strength--ok" : "settings-strength--weak"}`}>
-                    {passwordHint === "Strong password!" ? <FaCheckCircle /> : <FaShieldAlt />} {passwordHint}
+                    {passwordHint === "Strong password!" ? <LuCircleCheck /> : <LuShield />} {passwordHint}
                   </p>
                 )}
               </div>
@@ -414,12 +413,12 @@ const AgentSettings = () => {
                 />
               </div>
               <Button variant="primary" onClick={handleChangePassword} aria-label="Change password">
-                <FaLock /> Update Password
+                <LuLock /> Update Password
               </Button>
             </PageSection>
 
             <PageSection
-              title={<><FaShieldAlt style={{ marginRight: 8 }} />Security Question</>}
+              title={<><LuShield style={{ marginRight: 8 }} />Security Question</>}
               subtitle={`Current: ${securityQuestion || "Not set"}`}
             >
               <div className="settings-form-row">
@@ -448,7 +447,7 @@ const AgentSettings = () => {
                 />
               </div>
               <Button variant="primary" onClick={handleUpdateSecurityQuestion} aria-label="Save security question">
-                <FaShieldAlt /> Save Security Question
+                <LuShield /> Save Security Question
               </Button>
             </PageSection>
           </div>

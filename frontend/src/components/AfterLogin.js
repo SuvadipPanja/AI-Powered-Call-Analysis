@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaTimesCircle, FaSyncAlt, FaComments, FaTimes } from "react-icons/fa";
+import {
+  LuCircleX,
+  LuRefreshCw,
+  LuMessageSquare,
+  LuX,
+  LuHeart,
+  LuUsers,
+  LuLayers,
+  LuPhoneForwarded,
+  LuBanknote,
+} from "../icons";
 import DashboardStatistics from "./DashboardStatistics";
 import DashboardKpiStrip from "./reports/DashboardKpiStrip";
 import { Bar } from "react-chartjs-2";
 import "react-datepicker/dist/react-datepicker.css";
-import "./AfterLogin.css";
 import "./reports/reports-page.css";
 import { useWebSocket } from "../context/WebSocketContext";
 import { buildDashboardQueryParams, DEFAULT_DASHBOARD_FILTERS, resolveDashboardDateRange } from "../utils/dashboardFilters";
@@ -23,7 +32,6 @@ import { chartSeriesColors } from "../theme/chartTheme";
 import LoanLeadsPanel from "./reports/LoanLeadsPanel";
 import EscalationKpiBlock from "./reports/EscalationKpiBlock";
 import { fetchLoanLeadsReport } from "../utils/loanLeadsData";
-import { LuHeart, LuUsers, LuLayers, LuPhoneForwarded, LuBanknote } from "react-icons/lu";
 import { useAuth } from "../context/AuthContext";
 
 const CSAT_DONUT_COLORS = ["#6b9080", "#94a3b8"];
@@ -245,14 +253,14 @@ const AfterLogin = () => {
         <div className="ui-chat-popup">
           <div className="ui-chat-popup__head">
             <h3>
-              <FaComments /> Incoming Messages
+              <LuMessageSquare /> Incoming Messages
             </h3>
             <button
               className="ui-chat-popup__close"
               onClick={() => setChatPopupVisible(false)}
               aria-label="Close Chat Popup"
             >
-              <FaTimes />
+              <LuX />
             </button>
           </div>
           <div className="ui-chat-popup__body">
@@ -288,10 +296,10 @@ const AfterLogin = () => {
           </div>
         ) : metricsError ? (
           <div className="reports-loading" style={{ color: "var(--danger)" }}>
-            <FaTimesCircle style={{ fontSize: "1.5rem" }} />
+            <LuCircleX style={{ fontSize: "1.5rem" }} />
             <span>{metricsError}</span>
             <Button variant="primary" onClick={handleRetryFetchMetrics}>
-              <FaSyncAlt /> Retry
+              <LuRefreshCw /> Retry
             </Button>
           </div>
         ) : isNoData ? (

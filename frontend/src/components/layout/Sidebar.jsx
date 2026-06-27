@@ -16,7 +16,7 @@ import {
   LuShieldCheck,
   LuAudioLines,
   LuClipboardCheck,
-} from "react-icons/lu";
+} from "../../icons";
 import { useAppBranding } from "../../utils/appBranding";
 import { useAuth } from "../../context/AuthContext";
 import "./layout.css";

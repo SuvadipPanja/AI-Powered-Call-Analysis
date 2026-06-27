@@ -21,8 +21,7 @@
 
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiUser, FiLock, FiMail, FiShield, FiKey, FiUserPlus } from "react-icons/fi";
-import { FaHome, FaQuestionCircle } from "react-icons/fa";
+import { LuUserPlus } from "../icons";
 import apiClient from "../utils/apiClient";
 import { useAuth } from "../context/AuthContext";
 import './management-pages.css';
@@ -306,7 +305,7 @@ const CreateUser = () => {
               Cancel
             </Button>
             <Button variant="primary" onClick={handleCreateUser} aria-label="Create User">
-              <FiUserPlus style={{ fontSize: "1.1rem" }} />
+              <LuUserPlus style={{ fontSize: "1.1rem" }} />
               Create User
             </Button>
           </div>

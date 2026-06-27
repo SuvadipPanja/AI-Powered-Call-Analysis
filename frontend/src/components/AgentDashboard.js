@@ -3,19 +3,19 @@ import { Line, Bar } from "react-chartjs-2";
 import axios from "axios";
 import dayjs from "dayjs";
 import {
-  FaComments,
-  FaLightbulb,
-  FaClock,
-  FaHistory,
-  FaTimesCircle,
-  FaTimes,
-  FaPhoneAlt,
-  FaChartLine,
-  FaStar,
-  FaHeadset,
-  FaSearch,
-  FaInbox,
-} from "react-icons/fa";
+  LuMessageSquare,
+  LuLightbulb,
+  LuClock,
+  LuHistory,
+  LuCircleX,
+  LuX,
+  LuPhoneCall,
+  LuChartLine,
+  LuStar,
+  LuHeadphones,
+  LuSearch,
+  LuInbox,
+} from "../icons";
 import { useChat } from "../context/ChatContext";
 import { useWebSocket } from "../context/WebSocketContext";
 import ChatBox from "./chat/ChatBox";
@@ -354,7 +354,7 @@ const AgentDashboardContent = () => {
           </small>
           <div style={{ marginTop: 12 }}>
             <Button variant="secondary" size="sm" onClick={() => setShowBroadcastPopup(false)} aria-label="Close Broadcast Popup">
-              <FaTimesCircle /> Close
+              <LuCircleX /> Close
             </Button>
           </div>
         </Card>
@@ -363,9 +363,9 @@ const AgentDashboardContent = () => {
       {chatPopupVisible && (
         <div className="ui-chat-popup">
           <div className="ui-chat-popup__head">
-            <h3><FaComments /> Incoming Messages</h3>
+            <h3><LuMessageSquare /> Incoming Messages</h3>
             <button className="ui-chat-popup__close" onClick={() => setChatPopupVisible(false)} aria-label="Close Chat Popup">
-              <FaTimes />
+              <LuX />
             </button>
           </div>
           <div className="ui-chat-popup__body">
@@ -388,7 +388,7 @@ const AgentDashboardContent = () => {
             {supervisor ? ` · Team lead: ${supervisor}` : ""}.
           </p>
           <div className="agent-dash__hero-meta">
-            <Badge variant="accent"><FaHeadset /> Agent</Badge>
+            <Badge variant="accent"><LuHeadphones /> Agent</Badge>
             {agentProfile?.agent?.agent_type && (
               <Badge variant="default">{agentProfile.agent.agent_type}</Badge>
             )}
@@ -424,22 +424,22 @@ const AgentDashboardContent = () => {
       ) : (
         <>
         <div className="agent-dash__stat-grid">
-          <StatCard icon={<FaPhoneAlt />} label="Calls Today" value={callsToday} variant="default" />
+          <StatCard icon={<LuPhoneCall />} label="Calls Today" value={callsToday} variant="default" />
           <StatCard
-            icon={<FaStar />}
+            icon={<LuStar />}
             label="Avg Score Today"
             value={avgScoreToday != null ? avgScoreToday : "—"}
             variant="success"
           />
           <StatCard
-            icon={<FaClock />}
+            icon={<LuClock />}
             label={`Last Day (${formattedLastDay})`}
             value={`${totalCallsLastDay} calls · ${aht}m AHT`}
             variant="default"
           />
-          <StatCard icon={<FaChartLine />} label="Total Calls" value={totalCallsAllTime} variant="default" />
+          <StatCard icon={<LuChartLine />} label="Total Calls" value={totalCallsAllTime} variant="default" />
           <StatCard
-            icon={<FaPhoneAlt />}
+            icon={<LuPhoneCall />}
             label="C-SAT Transfers"
             value={
               dashboardData?.csat
@@ -477,13 +477,13 @@ const AgentDashboardContent = () => {
       <div className="agent-dash__main-grid">
         <PageSection
           className="agent-dash__panel agent-dash__panel--calls"
-          title={<><FaHistory style={{ marginRight: 8 }} />Recent Calls</>}
+          title={<><LuHistory style={{ marginRight: 8 }} />Recent Calls</>}
           subtitle="Latest analyzed calls — AI scores; manual audits show auditor score."
           actions={
             dashboardData?.callHistory?.length > 0 ? (
               <div className="agent-dash__filters" role="search">
                 <div className="agent-dash__search-wrap">
-                  <FaSearch className="agent-dash__search-icon" aria-hidden="true" />
+                  <LuSearch className="agent-dash__search-icon" aria-hidden="true" />
                   <input
                     type="search"
                     className="agent-dash__search"
@@ -568,7 +568,7 @@ const AgentDashboardContent = () => {
                 </div>
               ) : (
                 <div className="agent-dash__empty">
-                  <FaSearch aria-hidden="true" />
+                  <LuSearch aria-hidden="true" />
                   <p>No calls match your filters.</p>
                   <Button variant="ghost" size="sm" onClick={() => { setCallSearch(""); setScoreFilter("all"); }}>
                     Clear filters
@@ -577,7 +577,7 @@ const AgentDashboardContent = () => {
               )
             ) : (
               <div className="agent-dash__empty">
-                <FaInbox aria-hidden="true" />
+                <LuInbox aria-hidden="true" />
                 <p>No calls recorded yet for your profile.</p>
               </div>
             )}
@@ -587,7 +587,7 @@ const AgentDashboardContent = () => {
         <div className="agent-dash__stack">
           <PageSection
             className="agent-dash__panel agent-dash__panel--briefing"
-            title={<><FaComments style={{ marginRight: 8 }} />Today Briefing</>}
+            title={<><LuMessageSquare style={{ marginRight: 8 }} />Today Briefing</>}
             subtitle="Daily summary from your team lead."
           >
             <div className="agent-dash__panel-body">
@@ -599,7 +599,7 @@ const AgentDashboardContent = () => {
                 </div>
               ) : briefingState.empty ? (
                 <div className="agent-dash__empty">
-                  <FaInbox aria-hidden="true" />
+                  <LuInbox aria-hidden="true" />
                   <p>{briefingState.text}</p>
                 </div>
               ) : (
@@ -612,7 +612,7 @@ const AgentDashboardContent = () => {
 
           <PageSection
             className="agent-dash__panel agent-dash__panel--feedback"
-            title={<><FaLightbulb style={{ marginRight: 8 }} />Feedback by AI</>}
+            title={<><LuLightbulb style={{ marginRight: 8 }} />Feedback by AI</>}
             subtitle="Coaching tips from your lowest-scoring recent call."
           >
             <div className="agent-dash__panel-body">
@@ -622,7 +622,7 @@ const AgentDashboardContent = () => {
                 </div>
               ) : (
                 <div className="agent-dash__empty">
-                  <FaLightbulb aria-hidden="true" />
+                  <LuLightbulb aria-hidden="true" />
                   <p>No AI feedback yet — feedback from your lowest-scoring recent call will show here.</p>
                 </div>
               )}
@@ -631,7 +631,7 @@ const AgentDashboardContent = () => {
 
           <PageSection
             className="agent-dash__panel agent-dash__panel--knowledge"
-            title={<><FaChartLine style={{ marginRight: 8 }} />Knowledge Test</>}
+            title={<><LuChartLine style={{ marginRight: 8 }} />Knowledge Test</>}
             subtitle="Complete today's quiz to track your product knowledge."
           >
             <div ref={knowledgeTestRef} className="agent-dash__panel-body agent-dash__knowledge-panel">
@@ -710,7 +710,7 @@ const AgentDashboardContent = () => {
                 </div>
               ) : (
                 <div className="agent-dash__empty">
-                  <FaChartLine aria-hidden="true" />
+                  <LuChartLine aria-hidden="true" />
                   <p>No knowledge test published today. Check back when your team lead uploads one.</p>
                 </div>
               )}

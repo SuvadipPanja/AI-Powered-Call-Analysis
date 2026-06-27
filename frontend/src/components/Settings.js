@@ -10,20 +10,18 @@ import React, {
 } from "react";
 import axios from "axios";
 import {
-  FaEnvelope,
-  FaKey,
-  FaShieldAlt,
-  FaCheckCircle,
-  FaTimesCircle,
-  FaCameraRetro,
-  FaClock,
-  FaHome,
-  FaCamera,
-  FaSpinner,
-  FaLock,
-  FaIdBadge,
-  FaUserPlus,
-} from "react-icons/fa";
+  LuMail,
+  LuKey,
+  LuShield,
+  LuCircleCheck,
+  LuCircleX,
+  LuCamera,
+  LuClock,
+  LuLock,
+  LuLoader,
+  LuIdCard,
+  LuUserPlus,
+} from "../icons";
 import config from "../utils/envConfig";
 import { useAuth } from "../context/AuthContext";
 import { Button, Input, Select, Label, Badge, Spinner, UserAvatar } from './ui';
@@ -323,7 +321,7 @@ const Settings = () => {
       <>
       {message && (
         <div className={`auth-alert auth-alert--${messageType === "success" ? "success" : "error"}`} role="alert" aria-live="polite" style={{ marginBottom: "var(--space-4)" }}>
-          {messageType === "success" ? <FaCheckCircle /> : <FaTimesCircle />}
+          {messageType === "success" ? <LuCircleCheck /> : <LuCircleX />}
           <span style={{ marginLeft: "var(--space-2)" }}>{message}</span>
         </div>
       )}
@@ -346,7 +344,7 @@ const Settings = () => {
             aria-label="Change profile photo"
             title="Change photo"
           >
-            <FaCamera />
+            <LuCamera />
           </button>
           <input
             ref={fileInputRef}
@@ -360,21 +358,21 @@ const Settings = () => {
 
         <div className="settings-hero__info">
           <h2 className="settings-hero__name">{currentUser || "User"}</h2>
-          <span className="settings-hero__email"><FaEnvelope /> {email || "No email on file"}</span>
+          <span className="settings-hero__email"><LuMail /> {email || "No email on file"}</span>
           <div className="settings-hero__badges">
-            <Badge variant="accent"><FaShieldAlt /> {accountType || "Standard"}</Badge>
+            <Badge variant="accent"><LuShield /> {accountType || "Standard"}</Badge>
             {securityQuestion && securityQuestion !== "Not Set" && (
-              <Badge><FaKey /> Security question set</Badge>
+              <Badge><LuKey /> Security question set</Badge>
             )}
           </div>
 
           {selectedFile ? (
             <div className="settings-photo-actions">
-              <span className="settings-photo-actions__name"><FaCameraRetro /> {selectedFile.name}</span>
+              <span className="settings-photo-actions__name"><LuCamera /> {selectedFile.name}</span>
               <Button variant="primary" size="sm" onClick={handleUploadPic} disabled={isUploading}>
                 {isUploading
-                  ? <><FaSpinner style={{ animation: "spin 0.8s linear infinite" }} /> Saving…</>
-                  : <><FaCheckCircle /> Save photo</>}
+                  ? <><LuLoader style={{ animation: "spin 0.8s linear infinite" }} /> Saving…</>
+                  : <><LuCircleCheck /> Save photo</>}
               </Button>
               <Button variant="ghost" size="sm" onClick={cancelPhotoSelection} disabled={isUploading}>
                 Cancel
@@ -382,7 +380,7 @@ const Settings = () => {
             </div>
           ) : (
             <span className="settings-photo-hint">
-              <FaCamera /> Tap the camera to update your photo · JPG, PNG, WEBP or GIF up to 5&nbsp;MB
+              <LuCamera /> Tap the camera to update your photo · JPG, PNG, WEBP or GIF up to 5&nbsp;MB
             </span>
           )}
         </div>
@@ -390,15 +388,15 @@ const Settings = () => {
 
       {/* Account summary */}
       <div className="settings-meta">
-        <MetaItem icon={<FaClock />} label="Last login" value={lastLoginTime ? new Date(lastLoginTime).toLocaleString() : "No record"} />
-        <MetaItem icon={<FaClock />} label="Account created" value={creationDate ? new Date(creationDate).toLocaleString() : "Not available"} />
-        <MetaItem icon={<FaUserPlus />} label="Created by" value={createdBy || "N/A"} />
-        <MetaItem icon={<FaIdBadge />} label="Security question" value={securityQuestion || "Not set"} />
+        <MetaItem icon={<LuClock />} label="Last login" value={lastLoginTime ? new Date(lastLoginTime).toLocaleString() : "No record"} />
+        <MetaItem icon={<LuClock />} label="Account created" value={creationDate ? new Date(creationDate).toLocaleString() : "Not available"} />
+        <MetaItem icon={<LuUserPlus />} label="Created by" value={createdBy || "N/A"} />
+        <MetaItem icon={<LuIdCard />} label="Security question" value={securityQuestion || "Not set"} />
       </div>
 
       {/* Account management */}
       <div className="settings-grid">
-        <PageSection title={<><FaEnvelope style={{ marginRight: 8 }} />Email Address</>} subtitle={`Current: ${email || "—"}`}>
+        <PageSection title={<><LuMail style={{ marginRight: 8 }} />Email Address</>} subtitle={`Current: ${email || "—"}`}>
           <div className="settings-form-row">
             <Label>New email</Label>
             <Input
@@ -410,11 +408,11 @@ const Settings = () => {
             />
           </div>
           <Button variant="primary" onClick={handleUpdateEmail} aria-label="Change email">
-            <FaEnvelope /> Update Email
+            <LuMail /> Update Email
           </Button>
         </PageSection>
 
-        <PageSection title={<><FaLock style={{ marginRight: 8 }} />Password</>} subtitle="Use a strong, unique password">
+        <PageSection title={<><LuLock style={{ marginRight: 8 }} />Password</>} subtitle="Use a strong, unique password">
           <div className="settings-form-row">
             <Label>Current password</Label>
             <Input
@@ -436,7 +434,7 @@ const Settings = () => {
             />
             {passwordHint && (
               <p className={`settings-strength ${passwordHint === "Strong password!" ? "settings-strength--ok" : "settings-strength--weak"}`}>
-                {passwordHint === "Strong password!" ? <FaCheckCircle /> : <FaShieldAlt />} {passwordHint}
+                {passwordHint === "Strong password!" ? <LuCircleCheck /> : <LuShield />} {passwordHint}
               </p>
             )}
           </div>
@@ -451,11 +449,11 @@ const Settings = () => {
             />
           </div>
           <Button variant="primary" onClick={handleChangePassword} aria-label="Change password">
-            <FaLock /> Change Password
+            <LuLock /> Change Password
           </Button>
         </PageSection>
 
-        <PageSection title={<><FaShieldAlt style={{ marginRight: 8 }} />Security Question</>} subtitle={`Current: ${securityQuestion || "Not set"}`}>
+        <PageSection title={<><LuShield style={{ marginRight: 8 }} />Security Question</>} subtitle={`Current: ${securityQuestion || "Not set"}`}>
           <div className="settings-form-row">
             <Label>Question</Label>
             <Select
@@ -482,7 +480,7 @@ const Settings = () => {
             />
           </div>
           <Button variant="primary" onClick={handleUpdateSecurityQuestion} aria-label="Change security question and answer">
-            <FaShieldAlt /> Update Security Question
+            <LuShield /> Update Security Question
           </Button>
         </PageSection>
       </div>

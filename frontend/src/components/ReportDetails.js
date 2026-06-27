@@ -34,7 +34,7 @@ import {
 import { appendReportFilters } from '../utils/dashboardFilters';
 import { parseReportResponse as parseReportApiResponse } from '../utils/apiHelpers';
 import useReportFilters from '../hooks/useReportFilters';
-import { LuChartBar } from 'react-icons/lu';
+import { LuChartBar } from '../icons';
 const ReportDetails = () => {
   /***************************************
    * 2) STATE MANAGEMENT

@@ -1,0 +1,598 @@
+/* =====================================================================
+   GLOBAL POLISH + LEGACY TAMING  (loaded last → wins on shared classes)
+   Transforms legacy neon/gradient UI into premium token-driven surfaces
+   across every page, and adds modern depth, motion & hover feedback.
+   ===================================================================== */
+
+/* Typography: enforce the Sri Kuber type system app-wide. */
+html, body { font-family: var(--font-sans); }
+h1, h2, h3 { font-family: var(--font-display); }
+
+/* ---- Page shells ---- */
+.app-page {
+  width: 100%;
+  animation: app-slide-up 0.4s var(--ease-out) both;
+}
+
+.dark-container,
+.upload-page-container,
+.report-details-container,
+.statistics-details-container,
+.result-page-container,
+.agent-dashboard,
+.agent-dashboard-container,
+.system-monitoring,
+.monitoring-container,
+.help-page,
+.help-container,
+.page-container {
+  background: transparent !important;
+  background-image: none !important;
+  min-height: auto;
+  padding: 0 !important;
+  color: var(--text);
+}
+
+.dark-container > .dark-card,
+.dark-container > section,
+.app-shell__content > .dark-card,
+.app-shell__content > section {
+  animation: app-slide-up 0.45s var(--ease-out) both;
+}
+
+/* ---- Cards (premium surface: gradient overlay + hover lift + hairline) ---- */
+.dark-card,
+.neon-card,
+.fancy-graph-container,
+.metric-card,
+.dashboard-card,
+.stat-card,
+.report-card,
+.upload-card,
+.agent-card,
+.settings-card {
+  position: relative;
+  background: var(--surface) !important;
+  background-image: var(--gradient-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+  color: var(--text) !important;
+  text-shadow: none !important;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition) !important;
+  animation: none;
+}
+
+.dark-card:hover,
+.neon-card:hover,
+.fancy-graph-container:hover,
+.metric-card:hover,
+.dashboard-card:hover,
+.report-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md) !important;
+  border-color: var(--border-strong) !important;
+}
+
+.dark-card::before,
+.neon-card::before,
+.fancy-graph-container::before {
+  display: none !important;
+}
+
+.neon-card-title,
+.page-title,
+.section-title,
+h1.neon-card-title,
+h2.neon-card-title {
+  color: var(--text-strong) !important;
+  text-shadow: none !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  background: none !important;
+  -webkit-text-fill-color: unset !important;
+}
+
+/* ---- Buttons ---- */
+.modern-3d-btn,
+.dark-button,
+.nav-btn,
+.action-btn,
+.btn-primary-custom,
+.upload-btn,
+.neon-btn {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+  font-size: 0.88rem !important;
+  padding: 0.55rem 1rem !important;
+  transition: background var(--transition), border-color var(--transition), transform var(--transition-fast), box-shadow var(--transition) !important;
+  text-shadow: none !important;
+  background-image: none !important;
+}
+
+.modern-3d-btn:hover,
+.dark-button:hover,
+.nav-btn:hover,
+.action-btn:hover {
+  background: var(--surface-hover) !important;
+  border-color: var(--border-strong) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.dark-button.active-tab,
+.dark-button.is-active,
+button.active-tab {
+  background: var(--accent-soft) !important;
+  color: var(--accent-bright) !important;
+  border-color: transparent !important;
+}
+
+/* Primary accent buttons → brand gradient */
+button[style*="linear-gradient"],
+.modern-3d-btn.primary,
+.dark-button.primary,
+.auth-submit,
+.ui-btn--primary {
+  background: var(--gradient-accent) !important;
+  background-image: var(--gradient-accent) !important;
+  color: var(--on-accent) !important;
+  border-color: transparent !important;
+  box-shadow: var(--shadow-accent) !important;
+}
+button[style*="linear-gradient"]:hover {
+  filter: brightness(1.06) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ---- Hide page-level duplicate nav when AppLayout shell is active ---- */
+.app-shell .agentdashboard-nav,
+.app-shell .report-header-nav,
+.app-shell .system-monitoring-header,
+.app-shell .app-navbar {
+  display: none !important;
+}
+
+/* ---- Tables (rounded container, sticky head, row hover) ---- */
+table,
+.data-table,
+.audit-queue-table,
+.agents-table,
+.users-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.88rem;
+}
+
+table th,
+.data-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.05em;
+  padding: 0.8rem 1rem !important;
+  border-bottom: 1px solid var(--border) !important;
+  z-index: 1;
+}
+
+table td,
+.data-table td {
+  padding: 0.8rem 1rem !important;
+  border-bottom: 1px solid var(--border-soft) !important;
+  color: var(--text) !important;
+}
+
+table tbody tr,
+.data-table tbody tr {
+  transition: background var(--transition-fast);
+}
+table tbody tr:hover,
+.data-table tbody tr:hover {
+  background: var(--surface-2) !important;
+}
+
+/* ---- Forms (premium focus glow) ---- */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea,
+.form-control,
+.settings-input {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition) !important;
+}
+
+input::placeholder,
+textarea::placeholder { color: var(--text-faint-solid) !important; }
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: var(--accent) !important;
+  box-shadow: var(--ring-accent) !important;
+  background: var(--surface) !important;
+}
+
+/* ---- Modals (glass + scale-in) ---- */
+.modal-overlay {
+  background: rgba(3, 6, 12, 0.6) !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: app-fade-in 0.2s ease both;
+}
+
+.modal-content,
+.modal-box,
+.vortex-animation + .message-text {
+  background: var(--surface) !important;
+  background-image: var(--gradient-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-xl) !important;
+  animation: app-pop-in 0.32s var(--ease-spring) both;
+}
+
+/* ---- Charts ---- */
+.fancy-graph-container,
+.chart-container,
+.chart-wrapper,
+canvas {
+  max-width: 100%;
+}
+.fancy-graph-container {
+  padding: var(--space-5) !important;
+  min-height: 280px;
+}
+.chart-container {
+  position: relative;
+  height: 300px;
+  padding: var(--space-3);
+}
+.fancy-graph-container canvas { border-radius: var(--radius-md); }
+
+/* ---- Force token surfaces over legacy inline gradients ---- */
+section[style*="linear-gradient"],
+.fancy-graph-container[style*="linear-gradient"],
+.dark-card[style*="linear-gradient"],
+div[style*="linear-gradient(135deg, #2e333b"],
+div[style*="linear-gradient(135deg, #1a1a1a"] {
+  background: var(--surface) !important;
+  background-image: var(--gradient-surface) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.fancy-graph-container div[style*="linear-gradient(135deg, #2e333b"],
+.fancy-graph-container div[style*="linear-gradient(135deg, #393e46"] {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  transition: transform var(--transition), box-shadow var(--transition) !important;
+}
+.fancy-graph-container div[style*="linear-gradient(135deg, #2e333b"]:hover,
+.fancy-graph-container div[style*="linear-gradient(135deg, #393e46"]:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.neon-card-title span[style*="linear-gradient"] {
+  background: var(--gradient-brand) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+.fancy-graph-container h3[style*="#00adb5"],
+section h3[style*="#00adb5"] { color: var(--accent-bright) !important; }
+.fancy-graph-container p[style*="#ffffff"],
+.fancy-graph-container p[style*="#FFFFFF"] { color: var(--text-strong) !important; }
+.fancy-graph-container select[style*="#ffffff"],
+.fancy-graph-container select[style*="background: #ffffff"] {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+
+/* ---- Grids ---- */
+.app-stagger-cards { display: grid; gap: var(--space-5); }
+.metric-grid, .dashboard-grid, .kpi-grid, .stats-grid {
+  display: grid;
+  gap: var(--space-5);
+}
+.metric-grid > *, .dashboard-grid > *, .kpi-grid > * {
+  background: var(--surface) !important;
+  background-image: var(--gradient-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  padding: var(--space-5) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ---- Badges / status ---- */
+.badge, .status-badge, .score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: var(--radius-pill) !important;
+  font-size: 0.74rem !important;
+  font-weight: 600 !important;
+  padding: 0.25rem 0.65rem !important;
+}
+
+/* ---- Upload page ---- */
+.upload-zone, .drop-zone {
+  border: 2px dashed var(--border-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--surface-2) !important;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition) !important;
+}
+.upload-zone:hover, .drop-zone:hover {
+  border-color: var(--accent) !important;
+  background: var(--accent-softer) !important;
+  transform: translateY(-2px);
+}
+
+/* ---- Report / stats headers ---- */
+.report-header, .stats-header, .custom-header {
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text-strong) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ---- Chat ---- */
+.chat-popup, .chat-box {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* ---- Kill legacy gold/teal glow ---- */
+[style*="#FFD700"], [style*="#ffd700"], [style*="gold"] { color: var(--warning) !important; }
+
+/* ---- License banner ---- */
+.license-warning-banner {
+  background: var(--warning-soft) !important;
+  color: var(--warning) !important;
+  border-bottom: 1px solid var(--warning) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* ---- React DatePicker theme ---- */
+.react-datepicker {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  font-family: var(--font-sans) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  overflow: hidden;
+}
+.react-datepicker__header {
+  background: var(--surface-2) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+.react-datepicker__current-month,
+.react-datepicker-time__header,
+.react-datepicker__day-name { color: var(--text-muted) !important; }
+.react-datepicker__day { color: var(--text) !important; border-radius: var(--radius-xs) !important; }
+.react-datepicker__day:hover { background: var(--accent-soft) !important; }
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background: var(--accent) !important;
+  color: var(--on-accent) !important;
+}
+
+/* ---- Toast ---- */
+.Toastify__toast {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* ---- Session timeout modal ---- */
+.session-timeout-modal {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+/* ---- License management (Super Admin) ---- */
+.page-container .header {
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.page-container .header-title { color: var(--accent-bright) !important; }
+.page-container .nav-button,
+.page-container .upload-button,
+.page-container .action-button {
+  background: var(--gradient-accent) !important;
+  color: var(--on-accent) !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+}
+.page-container .nav-button--secondary,
+.page-container .logout-button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+.page-container .card,
+.page-container .license-card,
+.page-container .history-card {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text) !important;
+}
+.page-container .error-banner {
+  background: var(--danger-soft) !important;
+  color: var(--danger) !important;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent) !important;
+}
+.page-container .success-banner {
+  background: var(--success-soft) !important;
+  color: var(--success) !important;
+  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent) !important;
+}
+.page-container input,
+.page-container textarea,
+.page-container select {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+}
+.page-container table { color: var(--text) !important; }
+.page-container th { background: var(--surface-2) !important; color: var(--text-muted) !important; }
+.page-container td { border-color: var(--border) !important; }
+
+/* ---- Conversation transcript (Result page) ---- */
+.conversation-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 480px;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+.conversation-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  animation: app-fade-in 0.3s ease both;
+}
+.conversation-row--agent { justify-content: flex-start; }
+.conversation-row--customer { justify-content: flex-end; }
+.conversation-row--other { justify-content: center; }
+.conversation-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.conversation-avatar--agent { background: var(--accent-soft); color: var(--accent-bright); }
+.conversation-avatar--customer { background: var(--success-soft); color: var(--success); }
+.conversation-bubble {
+  max-width: 78%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition);
+  background: var(--surface);
+}
+.conversation-bubble:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.conversation-bubble--agent { background: var(--surface); border-color: var(--accent-soft); }
+.conversation-bubble--customer { background: var(--surface-2); }
+.conversation-bubble--other { background: var(--surface-2); max-width: 92%; }
+.conversation-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 4px;
+}
+.conversation-speaker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.conversation-bubble--agent .conversation-speaker { color: var(--accent-bright); }
+.conversation-bubble--customer .conversation-speaker { color: var(--success); }
+.conversation-bubble--other .conversation-speaker { color: var(--text-muted); }
+.conversation-time { font-size: 0.72rem; color: var(--text-faint-solid); }
+.conversation-text { margin: 0; font-size: 0.88rem; color: var(--text); line-height: 1.5; }
+.conversation-empty,
+.conversation-summary {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.conversation-summary { text-align: left; border-style: solid; }
+
+/* ---- Help legacy class overrides ---- */
+.helpaddagent-container,
+.helpaddagent-nav,
+.fileupload-container { background: transparent !important; }
+
+/* =====================================================================
+   LIGHT-THEME NORMALIZATION for legacy dark-only pages
+   These page families hardcode dark surfaces (built when dark was the
+   only default). Scope the remap to light mode so dark mode is untouched.
+   ===================================================================== */
+:root[data-theme="light"] .sysmon-container,
+:root[data-theme="light"] .sysmon-loading-content,
+:root[data-theme="light"] .sysmon-metric-card,
+:root[data-theme="light"] .ai-audit-dashboard,
+:root[data-theme="light"] .interaction-item,
+:root[data-theme="light"] .resultpage-transcript-card,
+:root[data-theme="light"] [class*="resultpage-card"],
+:root[data-theme="light"] [class*="sysmon-card"] {
+  background: var(--surface) !important;
+  background-image: var(--gradient-surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+:root[data-theme="light"] .sysmon-container,
+:root[data-theme="light"] .ai-audit-dashboard,
+:root[data-theme="light"] .result-page-container {
+  color: var(--text) !important;
+}
+
+/* Chat bubbles */
+:root[data-theme="light"] .chat-message { background: var(--surface-2) !important; color: var(--text) !important; }
+:root[data-theme="light"] .chat-message.from-them { background: var(--surface-3) !important; }
+
+/* Striped tables */
+:root[data-theme="light"] .agentmanagement-table tr:nth-child(even),
+:root[data-theme="light"] .createuser-select option {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+
+/* Gold/neon legacy accents → brand accent (poor contrast on light) */
+:root[data-theme="light"] .sysmon-circle-back-button,
+:root[data-theme="light"] .sysmon-refresh-button {
+  background: var(--accent) !important;
+  color: var(--on-accent) !important;
+}
+:root[data-theme="light"] .sysmon-neon-card-title,
+:root[data-theme="light"] [class*="neon-card-title"] { color: var(--accent-bright) !important; }
+
+/* Any leftover legacy sticky headers using dark hex */
+:root[data-theme="light"] [class*="resultpage-"][class*="header"],
+:root[data-theme="light"] [class*="resultpage-"][class*="sticky"] {
+  background: var(--surface) !important;
+  color: var(--text-strong) !important;
+  border-bottom: 1px solid var(--border) !important;
+}

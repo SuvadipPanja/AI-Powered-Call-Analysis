@@ -10,16 +10,17 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  FaChartBar,
-  FaClipboardCheck,
-  FaBook,
-  FaPlus,
-  FaBroadcastTower,
-  FaEdit,
-  FaTrash,
-  FaDatabase,
-  FaFileAlt,
-} from "react-icons/fa";
+  LuChartBar,
+  LuClipboardCheck,
+  LuBookOpen,
+  LuPlus,
+  LuMegaphone,
+  LuPencil,
+  LuTrash2,
+  LuDatabase,
+  LuFileText,
+  LuBanknote,
+} from "../icons";
 import config from "../utils/envConfig";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
@@ -42,7 +43,6 @@ import LoanLeadsPanel from "./reports/LoanLeadsPanel";
 import { resolveDashboardDateRange } from "../utils/dashboardFilters";
 import useLoanLeads from "../hooks/useLoanLeads";
 import { modernDoughnutOptions } from "./reports/reportsChartConfig";
-import { LuBanknote } from "react-icons/lu";
 
 const sanitizeInput = (input) => {
   if (typeof input !== "string") return input;
@@ -418,11 +418,11 @@ const TeamLeaderSection = () => {
   };
 
   const tabs = [
-    { id: "teamOverview", label: "Team Overview", icon: <FaChartBar /> },
-    { id: "revaKnowledge", label: "Reva Knowledge", icon: <FaDatabase /> },
-    { id: "uploadKnowledgeTest", label: "Upload Knowledge Test", icon: <FaBook /> },
-    { id: "uploadBriefing", label: "Upload Briefing", icon: <FaPlus /> },
-    { id: "broadcast", label: "Broadcast", icon: <FaBroadcastTower /> },
+    { id: "teamOverview", label: "Team Overview", icon: <LuChartBar /> },
+    { id: "revaKnowledge", label: "Reva Knowledge", icon: <LuDatabase /> },
+    { id: "uploadKnowledgeTest", label: "Upload Knowledge Test", icon: <LuBookOpen /> },
+    { id: "uploadBriefing", label: "Upload Briefing", icon: <LuPlus /> },
+    { id: "broadcast", label: "Broadcast", icon: <LuMegaphone /> },
   ];
 
   const MessageBanner = ({ msg }) => {
@@ -510,8 +510,8 @@ const TeamLeaderSection = () => {
               </div>
             ) : teamStats && (
               <div className="tl-kpi-grid">
-                <KpiCard accent="teal" label="Avg AI score" value={`${teamStats.avgAIScore}%`} icon={FaChartBar} />
-                <KpiCard accent="cyan" label="Total calls" value={String(teamStats.totalCalls)} icon={FaClipboardCheck} />
+                <KpiCard accent="teal" label="Avg AI score" value={`${teamStats.avgAIScore}%`} icon={LuChartBar} />
+                <KpiCard accent="cyan" label="Total calls" value={String(teamStats.totalCalls)} icon={LuClipboardCheck} />
                 <KpiCard accent="amber" label="Avg AHT (min)" value={String(teamStats.avgAHT)} />
                 <KpiCard accent="emerald" label="Sentiment" value={teamStats.avgSentiment} />
               </div>
@@ -541,7 +541,7 @@ const TeamLeaderSection = () => {
             </ReportChartCard>
 
             <div className="tl-split">
-              <TlPanel title="My team" subtitle={teamStats?.period || "Last 7 days"} icon={FaClipboardCheck}>
+              <TlPanel title="My team" subtitle={teamStats?.period || "Last 7 days"} icon={LuClipboardCheck}>
                 <div className="tl-table-wrap">
                   <table className="ui-table">
                     <thead>
@@ -574,7 +574,7 @@ const TeamLeaderSection = () => {
                 </div>
               </TlPanel>
 
-              <TlPanel title="Audit queue" subtitle="Low scores & compliance flags" icon={FaChartBar}>
+              <TlPanel title="Audit queue" subtitle="Low scores & compliance flags" icon={LuChartBar}>
                 <div className="tl-filters">
                   <div>
                     <Label>Agent</Label>
@@ -648,7 +648,7 @@ const TeamLeaderSection = () => {
         )}
 
         {activeTab === "uploadKnowledgeTest" && (
-          <TlPanel title="Knowledge test" subtitle="Up to 5 questions for agents" icon={FaBook}>
+          <TlPanel title="Knowledge test" subtitle="Up to 5 questions for agents" icon={LuBookOpen}>
             <MessageBanner msg={knowledgeMessage} />
             <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>
               Fill every question with four options and the correct answer. Agents see the latest test from their supervisor.
@@ -687,7 +687,7 @@ const TeamLeaderSection = () => {
             ))}
             <div className="tl-form-actions">
               <Button variant="secondary" onClick={handleAddQuestion} disabled={questions.length >= 5}>
-                <FaPlus /> Add question ({questions.length}/5)
+                <LuPlus /> Add question ({questions.length}/5)
               </Button>
               <Button onClick={handleSubmitKnowledgeTest}>Submit test</Button>
               <Button variant="danger" onClick={handleCancelKnowledgeTest}>Cancel</Button>
@@ -699,7 +699,7 @@ const TeamLeaderSection = () => {
           <TlPanel
             title="Reva knowledge base"
             subtitle="Categories for AI assistant"
-            icon={FaDatabase}
+            icon={LuDatabase}
             actions={(
               <Button
                 size="sm"
@@ -709,7 +709,7 @@ const TeamLeaderSection = () => {
                   setNewKnowledge({ question: "", answer: "", category: activeKnowledgeTab });
                 }}
               >
-                <FaPlus /> Add entry
+                <LuPlus /> Add entry
               </Button>
             )}
           >
@@ -764,10 +764,10 @@ const TeamLeaderSection = () => {
                               setKnowledgeBaseMessage("");
                             }}
                           >
-                            <FaEdit />
+                            <LuPencil />
                           </Button>
                           <Button variant="danger" size="sm" onClick={() => handleDeleteKnowledge(entry.ID)}>
-                            <FaTrash />
+                            <LuTrash2 />
                           </Button>
                         </td>
                       </tr>
@@ -782,7 +782,7 @@ const TeamLeaderSection = () => {
         )}
 
         {activeTab === "uploadBriefing" && (
-          <TlPanel title="Daily briefing" subtitle="Visible to your agents" icon={FaFileAlt}>
+          <TlPanel title="Daily briefing" subtitle="Visible to your agents" icon={LuFileText}>
             <MessageBanner msg={briefingMessage} />
             <Textarea
               value={briefingContent}
@@ -800,7 +800,7 @@ const TeamLeaderSection = () => {
         )}
 
         {activeTab === "broadcast" && (
-          <TlPanel title="Broadcast" subtitle="Real-time message to agents" icon={FaBroadcastTower}>
+          <TlPanel title="Broadcast" subtitle="Real-time message to agents" icon={LuMegaphone}>
             <MessageBanner msg={broadcastMessage} />
             <div className="tl-ws-status">
               <span className={`tl-ws-status__dot ${isConnected ? "tl-ws-status__dot--on" : ""}`} aria-hidden="true" />
@@ -823,7 +823,7 @@ const TeamLeaderSection = () => {
 
         <Modal open={showAddKnowledgeForm} onClose={() => { setShowAddKnowledgeForm(false); setKnowledgeBaseMessage(""); }}>
           <h3 style={{ color: "var(--text-strong)", marginBottom: "var(--space-4)" }}>
-            <FaDatabase style={{ marginRight: 8 }} /> Add New Reva Knowledge Entry
+            <LuDatabase style={{ marginRight: 8 }} /> Add New Reva Knowledge Entry
           </h3>
           <MessageBanner msg={knowledgeBaseMessage} />
           <Label>Category</Label>
@@ -871,7 +871,7 @@ const TeamLeaderSection = () => {
 
         <Modal open={showUpdateKnowledgeForm && !!selectedKnowledge} onClose={() => { setShowUpdateKnowledgeForm(false); setKnowledgeBaseMessage(""); }}>
           <h3 style={{ color: "var(--text-strong)", marginBottom: "var(--space-4)" }}>
-            <FaDatabase style={{ marginRight: 8 }} /> Update Reva Knowledge Entry
+            <LuDatabase style={{ marginRight: 8 }} /> Update Reva Knowledge Entry
           </h3>
           <MessageBanner msg={knowledgeBaseMessage} />
           {selectedKnowledge && (
