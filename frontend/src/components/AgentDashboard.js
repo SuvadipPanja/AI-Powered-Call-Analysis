@@ -62,14 +62,6 @@ const displayScoreForCall = (call) => {
 };
 
 const AgentDashboardContent = () => {
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised.");
-    }
-  };
-  verifySignature(signature);
-
   const { username } = useAuth();
   const { chatSessions, sendMessage, closeChat, toggleMinimize } = useChat();
   const { chatMessages, supervisors } = useWebSocket();

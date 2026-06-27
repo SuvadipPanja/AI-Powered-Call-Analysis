@@ -87,7 +87,7 @@ export function installAuthInterceptors() {
     }
   );
 
-  // Global fetch (used by some components / NavBar logout).
+  // Global fetch interceptor for authenticated API requests.
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init = {}) => {
     const token = getToken();

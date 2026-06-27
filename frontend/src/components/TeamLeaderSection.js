@@ -80,14 +80,6 @@ const isManuallyAudited = (call) =>
 
 const TeamLeaderSection = () => {
   const { username, userType = "" } = useAuth();
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised.");
-    }
-  };
-  verifySignature(signature);
-
   const navigate = useNavigate();
   const { sendMessage, isConnected } = useWebSocket();
   const [briefingContent, setBriefingContent] = useState("");

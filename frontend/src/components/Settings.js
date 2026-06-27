@@ -1,14 +1,5 @@
 /**
- * Author: $Panja
- * Creation Date: 2024-12-27
- * Modified Date: 2025-06-14
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Compliance: ISO Policy Standards (Security, Accessibility, Performance, Maintainability, Code Audit)
- * Changes:
- *  - Modified profile picture upload to rename old picture with current date (e.g., xyz_20250614.jpg) and save new picture as username.jpg.
- *  - Added immediate profile picture refresh after successful upload by calling fetchUserProfilePic, ensuring the latest image is displayed without page reload.
- *  - Ensured compliance with IS Policy, ISO 27001, and Code Audit standards.
- *  - Maintained all existing functionality (email, password, security question, profile picture updates).
+ * Admin account settings — profile, email, password, security question.
  */
 
 import React, {
@@ -18,7 +9,6 @@ import React, {
   useRef
 } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
 import {
   FaEnvelope,
   FaKey,
@@ -54,50 +44,7 @@ function MetaItem({ icon, label, value }) {
 }
 
 const Settings = () => {
-  /************************************************
-   * (1) Code Integrity & Security
-   * Purpose: Ensures the code has not been tampered with.
-   * Compliance: IS Policy (Security), Code Audit Policy.
-   ************************************************/
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised");
-    }
-  };
-  verifySignature(signature);
-
   const { username: currentUser } = useAuth();
-  const SESSION_TIMEOUT_MS = 110 * 60 * 1000;
-  const inactivityRef = useRef(null);
-  const navigate = useNavigate();
-
-  const startSessionTimer = useCallback(() => {
-    clearTimeout(inactivityRef.current);
-    inactivityRef.current = setTimeout(() => {
-      alert("Session expired due to inactivity. Redirecting to login...");
-      localStorage.clear();
-      navigate("/");
-    }, SESSION_TIMEOUT_MS);
-  }, [navigate]);
-
-  useEffect(() => {
-    startSessionTimer();
-    const resetEvents = ["click", "keydown", "mousemove", "scroll"];
-    const resetTimer = () => startSessionTimer();
-    resetEvents.forEach((evt) => window.addEventListener(evt, resetTimer));
-
-    return () => {
-      clearTimeout(inactivityRef.current);
-      resetEvents.forEach((evt) => window.removeEventListener(evt, resetTimer));
-    };
-  }, [startSessionTimer]);
-
-  /************************************************
-   * (3) Local State
-   * Purpose: Manages component state for user data and UI.
-   * Compliance: IS Policy (Performance: Efficient state management).
-   ************************************************/
   const [email, setEmail] = useState("");
   const [accountType, setAccountType] = useState("");
   const [securityQuestion, setSecurityQuestion] = useState("");

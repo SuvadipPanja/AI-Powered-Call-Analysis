@@ -1,11 +1,3 @@
-/**
- * Author: $Panja (Implied)
- * Creation Date: [Original Date]
- * Modified Date: 2025-06-24
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Compliance: ISO Policy Standards (Security, Accessibility, Performance, Maintainability, Code Audit)
- */
-
 import { useEffect, useMemo } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { installAuthInterceptors } from "./utils/apiClient";
@@ -47,14 +39,6 @@ import BrandedLoader from "./components/ui/BrandedLoader";
 installAuthInterceptors();
 
 const AppContent = () => {
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised.");
-    }
-  };
-  verifySignature(signature);
-
   const {
     isLoggedIn,
     username,

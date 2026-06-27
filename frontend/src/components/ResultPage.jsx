@@ -53,10 +53,6 @@ import ResultAnalysisPanel from './result/ResultAnalysisPanel';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler, annotationPlugin);
 
 const ResultPage = () => {
-  const signature = "$Panja";
-  const verifySignature = (sig) => { if (sig !== "$Panja") throw new Error("Signature mismatch"); };
-  verifySignature(signature);
-
   const { filename } = useParams();
   const { username } = useAuth();
   const { appName } = useAppBranding();

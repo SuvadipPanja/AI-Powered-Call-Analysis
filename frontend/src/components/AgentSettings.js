@@ -73,14 +73,6 @@ function PasswordField({ value, onChange, placeholder, autoComplete, "aria-label
 }
 
 const AgentSettings = () => {
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised");
-    }
-  };
-  verifySignature(signature);
-
   const navigate = useNavigate();
   const { username: currentUser } = useAuth();
   const [securityQuestion, setSecurityQuestion] = useState("");

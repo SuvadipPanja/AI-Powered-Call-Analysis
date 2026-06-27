@@ -19,7 +19,7 @@
  *  - Ensured password is sent to the server for hashing (handled by /api/user endpoint).
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiUser, FiLock, FiMail, FiShield, FiKey, FiUserPlus } from "react-icons/fi";
 import { FaHome, FaQuestionCircle } from "react-icons/fa";
@@ -29,14 +29,8 @@ import './management-pages.css';
 import { Card, Button, Input, Select, Label, Badge } from './ui';
 
 const CreateUser = () => {
-  /***************************************
-   * 1) HOOKS
-   * Purpose: Initialize all React Hooks at the top level to comply with Rules of Hooks.
-   * Compliance: ISO 9001 (Quality: Maintainable code structure).
-   ***************************************/
   const navigate = useNavigate();
   const { username: currentUser } = useAuth();
-  const [signatureError, setSignatureError] = useState(null);
   const [userId, setUserId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -49,27 +43,6 @@ const CreateUser = () => {
   const [messageType, setMessageType] = useState("");
   const [showHint, setShowHint] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
-
-  /***************************************
-   * 2) CODE INTEGRITY CHECK
-   * Purpose: Ensures the code has not been tampered with.
-   * Compliance: IS Policy (Security), Code Audit Policy.
-   ***************************************/
-  const signature = '$Panja';
-  const verifySignature = (sig) => {
-    if (sig !== '$Panja') {
-      throw new Error('Signature mismatch: Code integrity compromised');
-    }
-  };
-
-  useEffect(() => {
-    try {
-      verifySignature(signature);
-    } catch (err) {
-      console.error('Unauthorized code execution:', err.message);
-      setSignatureError(err.message);
-    }
-  }, []);
 
   /***************************************
    * 3) FIELD VALIDATION
@@ -197,15 +170,6 @@ const CreateUser = () => {
     "Favorite color",
     "Where you were born"
   ];
-
-  if (signatureError) {
-    return (
-      <div className="app-page reports-page" style={{ color: "var(--danger)", textAlign: "center" }}>
-        <h1>Error: Unauthorized Access</h1>
-        <p>Signature verification failed. Please contact support.</p>
-      </div>
-    );
-  }
 
   /***************************************
    * 6) RENDER

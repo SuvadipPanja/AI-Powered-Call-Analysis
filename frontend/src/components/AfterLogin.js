@@ -1,13 +1,6 @@
-/*
- * Author: $Panja
- * Create Date: 12-12-2024
- * Modified Date: 04-26-2025
- * Purpose: Displays the dashboard with metrics, reports, statistics, and recent activity for call center analytics.
- */
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaTimesCircle, FaChartBar, FaTachometerAlt, FaArrowUp, FaArrowDown, FaSyncAlt, FaComments, FaTimes, FaUsers } from "react-icons/fa";
+import { FaTimesCircle, FaSyncAlt, FaComments, FaTimes } from "react-icons/fa";
 import DashboardStatistics from "./DashboardStatistics";
 import DashboardKpiStrip from "./reports/DashboardKpiStrip";
 import { Bar } from "react-chartjs-2";
@@ -19,7 +12,7 @@ import { buildDashboardQueryParams, DEFAULT_DASHBOARD_FILTERS, resolveDashboardD
 import { apiGetQuery } from "../utils/apiHelpers";
 import useReportFilters from "../hooks/useReportFilters";
 import useDashboardMetrics from "../hooks/useDashboardMetrics";
-import { PageSection, Button, Badge, Spinner } from "./ui/index";
+import { Button, Badge, Spinner } from "./ui/index";
 import KuberPageHero from "./layout/KuberPageHero";
 import "./layout/kuber-hero.css";
 import { baseChartOptions } from "../theme/chartTheme";
@@ -36,19 +29,6 @@ import { useAuth } from "../context/AuthContext";
 const CSAT_DONUT_COLORS = ["#6b9080", "#94a3b8"];
 
 const AfterLogin = () => {
-  /************************************************
-   * (1) Code Integrity & Security
-   * Purpose: Ensures the code has not been tampered with.
-   * Compliance: IS Policy (Security), Code Audit Policy.
-   ************************************************/
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised");
-    }
-  };
-  verifySignature(signature);
-
   const { username, userType, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { chatMessages } = useWebSocket();
@@ -231,28 +211,6 @@ const AfterLogin = () => {
     const result = resetFilters();
     refreshDashboardData(result.filters);
   };
-
-  /************************************************
-   * (10) UI Helpers
-   * Purpose: Helper functions for rendering UI elements (status icons, change indicators).
-   * Compliance: Web Page Policy (User Experience: Clear feedback).
-   ************************************************/
-  const getChangeIndicator = (current, previous) => {
-    if (current === 0 && previous === 0) return { change: 0, icon: null, color: "inherit" };
-    const change = previous !== 0 ? ((current - previous) / previous * 100) : (current > 0 ? 100 : 0);
-    const icon = change > 0 ? <FaArrowUp /> : change < 0 ? <FaArrowDown /> : null;
-    const color = change > 0 ? "#00ff00" : change < 0 ? "#ff4444" : "inherit";
-    return { change: Math.abs(change).toFixed(2), icon, color };
-  };
-
-  /************************************************
-   * (12) Render
-   * Purpose: Renders the dashboard with metrics, reports, statistics, and recent activity sections.
-   * Compliance: Web Page Policy (Responsive Design, User Experience), IS Policy (Accessibility).
-   ************************************************/
-  const canViewSystemMonitoring = ["Super Admin", "Admin"].includes(userType);
-  const canViewAgentManagement = ["Super Admin", "Admin", "Manager"].includes(userType);
-  const canViewUserManagement = ["Super Admin", "Admin", "Manager"].includes(userType);
 
   const toneChartRef = useRef(null);
   const agentChartRef = useRef(null);

@@ -1,15 +1,5 @@
 /**
- * File: ReportDetails.js
- * Purpose: Modern Industrial-Standard Report Dashboard with Smart Chart Adaptation
- * Created By: $Panja
- * Creation Date: 2025-06-22
- * Updated: 2025-06-23 with Dynamic Location and Supervisor Fetching
- * Enhanced: 2025-06-28 with Language Preferences and Call Volume by Time Charts
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Compliance: IS Policy, ISO 27001, ISO 9001, Web Page Policy
- * Features: Smart chart adaptation, modern UI, industrial design, dynamic filtering, real-time metrics
- * Notes: All locations and supervisors are fetched dynamically from the database.
- *        API URLs use config.apiBaseUrl from envConfig.js.
+ * Report dashboard with smart chart adaptation and dynamic filtering.
  */
 
 import React, { useState, useRef, useMemo, useCallback } from 'react';
@@ -46,17 +36,6 @@ import { parseReportResponse as parseReportApiResponse } from '../utils/apiHelpe
 import useReportFilters from '../hooks/useReportFilters';
 import { LuChartBar } from 'react-icons/lu';
 const ReportDetails = () => {
-  /***************************************
-   * 1) CODE INTEGRITY CHECK
-   ***************************************/
-  const signature = "$Panja";
-  const verifySignature = (sig) => {
-    if (sig !== "$Panja") {
-      throw new Error("Signature mismatch: Code integrity compromised.");
-    }
-  };
-  verifySignature(signature);
-
   /***************************************
    * 2) STATE MANAGEMENT
    ***************************************/
@@ -128,7 +107,6 @@ const ReportDetails = () => {
   });
 
   const [auditMetrics, setAuditMetrics] = useState(null);
-  const [auditMetricsLoading, setAuditMetricsLoading] = useState(false);
   const [auditActivity, setAuditActivity] = useState([]);
   const [auditActivityLoading, setAuditActivityLoading] = useState(false);
 
@@ -202,51 +180,6 @@ const ReportDetails = () => {
     supervisor: filters.supervisor !== 'All' ? filters.supervisor : null,
     ...(callType ? { callType } : {}),
   }), [filters]);
-
-  const getDateRange = (type) => {
-    const today = new Date();
-    const formatDate = (date) => date.toISOString().split('T')[0];
-    
-    switch (type) {
-      case 'today':
-        return {
-          fromDate: formatDate(today),
-          toDate: formatDate(today)
-        };
-      case 'yesterday':
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        return {
-          fromDate: formatDate(yesterday),
-          toDate: formatDate(yesterday)
-        };
-      case 'lastWeek':
-        const lastWeekEnd = new Date(today);
-        lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
-        const lastWeekStart = new Date(lastWeekEnd);
-        lastWeekStart.setDate(lastWeekStart.getDate() - 6);
-        return {
-          fromDate: formatDate(lastWeekStart),
-          toDate: formatDate(lastWeekEnd)
-        };
-      case 'lastMonth':
-        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-        const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        return {
-          fromDate: formatDate(lastMonthStart),
-          toDate: formatDate(lastMonthEnd)
-        };
-      case 'lastYear':
-        const lastYearEnd = new Date(today.getFullYear() - 1, 11, 31);
-        const lastYearStart = new Date(today.getFullYear() - 1, 0, 1);
-        return {
-          fromDate: formatDate(lastYearStart),
-          toDate: formatDate(lastYearEnd)
-        };
-      default:
-        return { fromDate: '', toDate: '' };
-    }
-  };
 
   /***************************************
    * 5) ENHANCED API FUNCTIONS
@@ -558,7 +491,6 @@ const ReportDetails = () => {
   };
 
   const fetchAuditMetrics = async () => {
-    setAuditMetricsLoading(true);
     try {
       const resp = await fetch(`${API_BASE_URL}/api/audits/team/summary`);
       if (resp.ok) {
@@ -568,7 +500,6 @@ const ReportDetails = () => {
         }
       }
     } catch { /* audit metrics optional */ }
-    finally { setAuditMetricsLoading(false); }
   };
 
   const formatAuditTimestamp = (value) => {
