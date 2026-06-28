@@ -1,9 +1,35 @@
-# Backend hotfix — bank settings, call processing logs.
+# Backend hotfix — Sprint 3: reports split, upload queue, WS hub.
+#                 Sprint 4: RSA-signed licenses, fingerprint, grace, audit, integrity.
 # Build from project root:
 #   docker build -t ai-call-backend:prod -f production-build/docker/Dockerfile.backend.patch .
 
 FROM ai-call-backend:prod
+COPY backend/package.json /app/package.json
+RUN npm install bull@4.16.5 --omit=dev --no-audit --no-fund || true
 COPY backend/server.js /app/server.js
+COPY backend/uploadHandler.js /app/uploadHandler.js
+COPY backend/middleware/auth.js /app/middleware/auth.js
+COPY backend/middleware/rbac.js /app/middleware/rbac.js
+COPY backend/middleware/sessionProof.js /app/middleware/sessionProof.js
+COPY backend/middleware/logSafety.js /app/middleware/logSafety.js
+COPY backend/middleware/rateLimit.js /app/middleware/rateLimit.js
+COPY backend/middleware/reportScope.js /app/middleware/reportScope.js
+COPY backend/middleware/reportCache.js /app/middleware/reportCache.js
+COPY backend/middleware/licenseGuard.js /app/middleware/licenseGuard.js
+COPY backend/routes/sessionRoutes.js /app/routes/sessionRoutes.js
+COPY backend/routes/reportRoutes.js /app/routes/reportRoutes.js
+COPY backend/routes/reportRoutes.register.js /app/routes/reportRoutes.register.js
+COPY backend/routes/miscRoutes.js /app/routes/miscRoutes.js
+COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
+COPY backend/services/redisClient.js /app/services/redisClient.js
+COPY backend/services/cacheService.js /app/services/cacheService.js
+COPY backend/services/rateLimitStore.js /app/services/rateLimitStore.js
+COPY backend/services/reportHelpers.js /app/services/reportHelpers.js
+COPY backend/services/uploadQueue.js /app/services/uploadQueue.js
+COPY backend/websocket/wsHub.js /app/websocket/wsHub.js
+COPY backend/agentController.js /app/agentController.js
+COPY backend/agentHelper.js /app/agentHelper.js
+COPY backend/testConnection.js /app/testConnection.js
 COPY backend/routes/bankSettingsRoutes.js /app/routes/bankSettingsRoutes.js
 COPY backend/routes/queryCategoryRoutes.js /app/routes/queryCategoryRoutes.js
 COPY backend/services/bankSettingsService.js /app/services/bankSettingsService.js
@@ -13,3 +39,19 @@ COPY backend/services/queryCategoryDefaults.js /app/services/queryCategoryDefaul
 COPY backend/services/dbMigrate.js /app/services/dbMigrate.js
 COPY backend/services/callProcessingLog.js /app/services/callProcessingLog.js
 COPY backend/pythonScriptHandler.js /app/pythonScriptHandler.js
+# Sprint 4 — license tamper-resistance modules + offline/vendor tools
+COPY backend/services/licenseCodec.js /app/services/licenseCodec.js
+COPY backend/services/licenseSecurity.js /app/services/licenseSecurity.js
+COPY backend/services/licenseAudit.js /app/services/licenseAudit.js
+# Sprint 5 — asymmetric (Ed25519) v3 licenses + runtime server fingerprint
+COPY backend/services/licenseV3.js /app/services/licenseV3.js
+COPY backend/services/hardwareId.js /app/services/hardwareId.js
+# Vendor Ed25519 PUBLIC key — baked in (verify-only; cannot forge). Integrity-locked.
+COPY backend/keys/vendor-root-public.pem /app/keys/vendor-root-public.pem
+ENV LICENSE_PUBLIC_KEY_PATH=/app/keys/vendor-root-public.pem
+COPY backend/tools/ /app/tools/
+COPY production-build/docker/license-entrypoint.sh /app/license-entrypoint.sh
+RUN chmod +x /app/license-entrypoint.sh /app/tools/*.js 2>/dev/null || true
+# Build the startup integrity manifest from the freshly-copied source (fail build if empty).
+RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
+  && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)"

@@ -1,0 +1,23 @@
+# Flatten the multi-patched backend image into a SINGLE filesystem layer.
+# The iterative `FROM ai-call-backend:prod` + COPY patches accumulated 450+
+# layers, which overflows the overlayfs mount-options limit on the host
+# ("mount options is too long"). COPY --from / / collapses everything to one
+# layer. Config (entrypoint/cmd/env/ports) is re-declared to match the source.
+#
+# Build:
+#   docker build -t sp-backend:prod -f production-build/docker/Dockerfile.backend.flatten .
+FROM sp-backend:prod AS src
+
+FROM scratch
+COPY --from=src / /
+
+ENV NODE_VERSION=18.20.8 \
+    YARN_VERSION=1.22.22 \
+    NODE_ENV=production \
+    LICENSE_PUBLIC_KEY_PATH=/app/keys/vendor-root-public.pem \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /app
+EXPOSE 5000 8080
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node", "server.js"]

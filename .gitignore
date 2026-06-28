@@ -37,6 +37,21 @@ production/docker-images/*.tar
 production/images/*.tar
 production/model-bundles/*.tar
 
+# License files (machine-bound — generate per server, never commit)
+*.lic
+**/license/*.lic
+!**/license/.gitkeep
+!**/license/README.md
+
+# Vendor signing keys (private key must NEVER be committed)
+vendor-keys/
+**/vendor-root-private.pem
+
+# Sprint 4 — license signing keys & generated artifacts (never commit private keys)
+license-keys/
+**/license-private.pem
+backend/integrity-manifest.json
+
 # Pre-filled deploy secrets (use *.example in repo)
 deploy/ready/**/backend.env
 deploy/ready/**/frontend.env*

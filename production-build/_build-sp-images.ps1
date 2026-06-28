@@ -7,10 +7,21 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 function Step($msg) { Write-Host "===STEP=== $msg" }
 
 # ---------- BACKEND ----------
-Step "BACKEND build"
+Step "BACKEND build (patch)"
 docker build -t ai-call-backend:prod -f "production-build\docker\Dockerfile.backend.patch" .
 if ($LASTEXITCODE -ne 0) { throw "backend build failed" }
 docker tag ai-call-backend:prod sp-backend:prod
+
+# Flatten to a SINGLE layer. The patch Dockerfile (FROM ai-call-backend:prod)
+# stacks ~45 layers per build; repeated rebuilds overflow the overlayfs
+# mount-options limit on prod ("mount options is too long"). Flattening keeps
+# the deployed image at 2 layers regardless of how many times we rebuild.
+Step "BACKEND flatten -> single layer"
+docker build --provenance=false -t sp-backend:prod -f "production-build\docker\Dockerfile.backend.flatten" .
+if ($LASTEXITCODE -ne 0) { throw "backend flatten failed" }
+$bkLayers = (docker inspect sp-backend:prod --format '{{json .RootFS.Layers}}' | ConvertFrom-Json).Count
+Step ("BACKEND layers after flatten: {0}" -f $bkLayers)
+
 docker save -o "$out\sp-backend.tar" sp-backend:prod
 if ($LASTEXITCODE -ne 0) { throw "backend save failed" }
 Step ("BACKEND done {0} MB" -f [math]::Round((Get-Item "$out\sp-backend.tar").Length/1MB,1))

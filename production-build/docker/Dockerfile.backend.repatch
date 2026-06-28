@@ -1,0 +1,25 @@
+# Incremental backend patch that STAYS FLAT.
+# Applies changed source on top of the already-flattened sp-backend:prod,
+# rebuilds the integrity manifest, then collapses back to a single layer so the
+# overlayfs mount-options limit is never hit again.
+#
+# Build:
+#   docker build -t sp-backend:prod -f production-build/docker/Dockerfile.backend.repatch .
+FROM sp-backend:prod AS patched
+COPY backend/server.js /app/server.js
+COPY backend/middleware/licenseGuard.js /app/middleware/licenseGuard.js
+COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
+RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
+  && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)"
+
+FROM scratch
+COPY --from=patched / /
+ENV NODE_VERSION=18.20.8 \
+    YARN_VERSION=1.22.22 \
+    NODE_ENV=production \
+    LICENSE_PUBLIC_KEY_PATH=/app/keys/vendor-root-public.pem \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WORKDIR /app
+EXPOSE 5000 8080
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node", "server.js"]
