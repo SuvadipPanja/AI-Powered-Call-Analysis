@@ -3,7 +3,8 @@
 Offline bundle for **10.64.194.130** (no internet on prod).
 
 **Layout reference:** [`STRUCTURE.md`](STRUCTURE.md)  
-**Full build & debug:** [`PRODUCTION-RUNBOOK.md`](PRODUCTION-RUNBOOK.md)
+**Full build & debug:** [`PRODUCTION-RUNBOOK.md`](PRODUCTION-RUNBOOK.md)  
+**License generation (v3):** [`LICENSE-GENERATION.md`](LICENSE-GENERATION.md)
 
 ## Contents
 
@@ -21,6 +22,7 @@ production/
     ├── validate-prod-layout.sh
     ├── 02-load-images.sh
     ├── 03-up.sh
+    ├── license-deploy.sh      ← deploy backend + fingerprint/status/clean-slate (v3 license)
     └── backup-db.sh
 ```
 
