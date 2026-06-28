@@ -81,7 +81,7 @@ export const ChatProvider = ({ children }) => {
               const existingSession = prev["all"] || { messages: [], minimized: false };
               const updatedSession = {
                 ...prev,
-                ["all"]: {
+                all: {
                   ...existingSession,
                   messages: [
                     ...existingSession.messages,
@@ -145,6 +145,8 @@ export const ChatProvider = ({ children }) => {
         wsRef.current.close();
       }
     };
+    // sendMessage is stable enough for mount-only websocket setup
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, userType, userId, logId, isLoggedIn, navigate]);
 
   const sendMessage = (agentUsername, messageText, resolve = () => {}, maxAttempts = 3, attempt = 1) => {

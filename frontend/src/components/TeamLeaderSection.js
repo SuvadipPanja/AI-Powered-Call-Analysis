@@ -143,6 +143,8 @@ const TeamLeaderSection = () => {
     fetchTeamData();
     fetchAuditQueue();
     fetchKnowledgeEntries();
+    // Refetch when TL filters change; fetch fns are stable for this screen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, filterAgent, fromDate, toDate]);
 
   const fetchTeamData = async () => {

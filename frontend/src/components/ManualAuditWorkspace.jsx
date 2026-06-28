@@ -87,7 +87,7 @@ export default function ManualAuditWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [filename]);
+  }, [filename, aiScoring]);
 
   useEffect(() => {
     if (open) {

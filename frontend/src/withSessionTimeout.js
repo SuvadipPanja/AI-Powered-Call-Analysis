@@ -124,7 +124,7 @@ const withSessionTimeout = (WrappedComponent) => {
       }
 
       console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Inactivity timer reset`);
-    }, [updateSessionInactiveTime, handleSessionTimeout]);
+    }, [updateSessionInactiveTime, handleSessionTimeout, INACTIVITY_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS]);
 
     const validateActiveSession = useCallback(async () => {
       const userId = localStorage.getItem("userId");
@@ -168,7 +168,7 @@ const withSessionTimeout = (WrappedComponent) => {
           resetInactivityTimer();
         }
       }
-    }, [isSessionExpired, resetInactivityTimer, handleSessionTimeout]);
+    }, [isSessionExpired, resetInactivityTimer, handleSessionTimeout, INACTIVITY_TIMEOUT_MS]);
 
     useEffect(() => {
       const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
@@ -205,7 +205,7 @@ const withSessionTimeout = (WrappedComponent) => {
         window.removeEventListener("visibilitychange", handleVisibilityChange);
         window.removeEventListener("popstate", handleNavigation);
       };
-    }, [handleUserActivity, handleVisibilityChange, resetInactivityTimer, validateActiveSession, isSessionExpired, location.pathname]);
+    }, [handleUserActivity, handleVisibilityChange, resetInactivityTimer, validateActiveSession, isSessionExpired, location.pathname, SESSION_CHECK_INTERVAL_MS]);
 
     return (
       <>

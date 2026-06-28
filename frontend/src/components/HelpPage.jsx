@@ -5,16 +5,13 @@
  */
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FaArrowLeft, FaHome, FaQuestionCircle, FaEnvelope } from 'react-icons/fa';
+import { FaEnvelope } from 'react-icons/fa';
 import { Button } from './ui';
 import PageSection from './ui/PageSection';
 
 const signature = "SPanja";
 
 const HelpPage = () => {
-  const navigate = useNavigate();
-
   if (signature !== "SPanja") {
     console.error("Unauthorized code execution! Signature mismatch.");
     return null;

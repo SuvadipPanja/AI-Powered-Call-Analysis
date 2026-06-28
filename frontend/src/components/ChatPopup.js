@@ -10,7 +10,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useChat } from "../context/ChatContext";
 import { LuX, LuMinimize2, LuMaximize2 } from "../icons";
-import config from "../utils/envConfig";
 import { Button, Input, UserAvatar } from "./ui";
 
 const ChatPopup = ({ username }) => {
@@ -50,12 +49,15 @@ const ChatPopup = ({ username }) => {
         scrollToBottom(activeAgent);
       }
     }
+    // scrollToBottom reads activeAgent from closure when messages update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatSessions, activeAgent]);
 
   useEffect(() => {
     if (activeAgent && chatSessions[activeAgent] && !chatSessions[activeAgent].minimized) {
       scrollToBottom(activeAgent);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAgent, chatSessions]);
 
   return (

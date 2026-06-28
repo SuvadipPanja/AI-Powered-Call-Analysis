@@ -12,8 +12,8 @@ import axios from 'axios';
 import config from '../utils/envConfig';
 import { Card, Button, Input, Select, Badge, Modal, Spinner } from './ui';
 import {
-  FaClipboardCheck, FaDownload, FaSearch, FaChartLine, FaUsers,
-  FaCalendarAlt, FaEye, FaArrowUp, FaArrowDown, FaMinus,
+  FaClipboardCheck, FaDownload, FaSearch, FaChartLine,
+  FaEye, FaArrowUp, FaArrowDown, FaMinus,
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import './manual-audit.css';
@@ -27,7 +27,7 @@ export default function TeamAuditDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState({});
-  const [perAgent, setPerAgent] = useState([]);
+  const [, setPerAgent] = useState([]);
   const [paramAverages, setParamAverages] = useState([]);
   const [audits, setAudits] = useState([]);
   const [auditsLoading, setAuditsLoading] = useState(true);

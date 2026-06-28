@@ -35,6 +35,44 @@ import { appendReportFilters } from '../utils/dashboardFilters';
 import { parseReportResponse as parseReportApiResponse } from '../utils/apiHelpers';
 import useReportFilters from '../hooks/useReportFilters';
 import { LuChartBar } from '../icons';
+
+function calculateDateDifference(fromDate, toDate) {
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+  const diffTime = Math.abs(to - from);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+function determineChartTypes(fromDate, toDate) {
+  const days = calculateDateDifference(fromDate, toDate);
+
+  const chartConfig = {
+    inboundType: 'monthly',
+    outboundType: 'monthly',
+    distributionType: 'daily',
+  };
+
+  if (days <= 1) {
+    chartConfig.inboundType = 'hourly';
+    chartConfig.outboundType = 'hourly';
+    chartConfig.distributionType = 'hourly';
+  } else if (days <= 7) {
+    chartConfig.inboundType = 'daily';
+    chartConfig.outboundType = 'daily';
+    chartConfig.distributionType = 'daily';
+  } else if (days <= 30) {
+    chartConfig.inboundType = 'weekly';
+    chartConfig.outboundType = 'weekly';
+    chartConfig.distributionType = 'weekly';
+  } else if (days <= 90) {
+    chartConfig.inboundType = 'monthly';
+    chartConfig.outboundType = 'monthly';
+    chartConfig.distributionType = 'monthly';
+  }
+
+  return chartConfig;
+}
+
 const ReportDetails = () => {
   /***************************************
    * 2) STATE MANAGEMENT
@@ -111,50 +149,8 @@ const ReportDetails = () => {
   const [auditActivityLoading, setAuditActivityLoading] = useState(false);
 
   /***************************************
-   * 3) UTILITY FUNCTIONS
+   * 3) DATA FETCHING
    ***************************************/
-  const calculateDateDifference = (fromDate, toDate) => {
-    const from = new Date(fromDate);
-    const to = new Date(toDate);
-    const diffTime = Math.abs(to - from);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  const determineChartTypes = (fromDate, toDate) => {
-    const days = calculateDateDifference(fromDate, toDate);
-    
-    let config = {
-      inboundType: 'monthly',
-      outboundType: 'monthly',
-      distributionType: 'daily'
-    };
-
-    if (days <= 1) {
-      config.inboundType = 'hourly';
-      config.outboundType = 'hourly';
-      config.distributionType = 'hourly';
-    } else if (days <= 7) {
-      config.inboundType = 'daily';
-      config.outboundType = 'daily';
-      config.distributionType = 'daily';
-    } else if (days <= 30) {
-      config.inboundType = 'weekly';
-      config.outboundType = 'weekly';
-      config.distributionType = 'weekly';
-    } else if (days <= 90) {
-      config.inboundType = 'monthly';
-      config.outboundType = 'monthly';
-      config.distributionType = 'monthly';
-    } else {
-      config.inboundType = 'monthly';
-      config.outboundType = 'monthly';
-      config.distributionType = 'monthly';
-    }
-
-    return config;
-  };
-
   const handleAutoApply = useCallback((activeFilters) => {
     setChartConfig(determineChartTypes(activeFilters.fromDate, activeFilters.toDate));
     fetchAllDataRef.current?.(activeFilters);

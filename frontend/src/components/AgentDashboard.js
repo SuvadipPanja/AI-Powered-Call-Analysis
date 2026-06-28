@@ -87,7 +87,7 @@ const AgentDashboardContent = () => {
     answers: [],
   });
   const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
-  const [currentBroadcast, setCurrentBroadcast] = useState(null);
+  const [currentBroadcast] = useState(null);
   const [chatPopupVisible, setChatPopupVisible] = useState(false);
   const [currentChatMessages, setCurrentChatMessages] = useState([]);
   const [callSearch, setCallSearch] = useState("");

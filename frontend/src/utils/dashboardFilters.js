@@ -19,6 +19,7 @@ export function resolveDashboardDateRange(filters) {
   }
 
   const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
   let start = new Date(now);
   switch (filters?.dateRange) {
     case "Today":
@@ -35,7 +36,7 @@ export function resolveDashboardDateRange(filters) {
       break;
   }
 
-  return { fromDate: formatDate(start), toDate: formatDate(now) };
+  return { fromDate: formatDate(start), toDate: formatDate(end) };
 }
 
 export function buildDashboardQueryParams(filters) {

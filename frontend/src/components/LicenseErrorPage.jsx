@@ -41,6 +41,8 @@ const LicenseErrorPage = () => {
       clearTimeout(inactivityRef.current);
       resetEvents.forEach((evt) => window.removeEventListener(evt, resetTimer));
     };
+    // Mount-only inactivity timer for license error page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

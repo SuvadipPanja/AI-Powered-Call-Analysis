@@ -42,7 +42,6 @@ const ChatBox = ({ username, onClose }) => {
   const [userMessage, setUserMessage] = useState("");
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [isAITyping, setIsAITyping] = useState(false);
-  const [logId] = useState(localStorage.getItem("logId") || "");
   const [aiChatLogId, setAIChatLogId] = useState(null);
   const [aiChatContent, setAIChatContent] = useState("");
   const [categories, setCategories] = useState({});
@@ -367,6 +366,8 @@ const ChatBox = ({ username, onClose }) => {
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+    // handleClose closes popups when clicking outside the widget
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showChatbot, showWelcomeSection, showTermsPrompt, showAIChat, showOptions]);
 
   const widget = (

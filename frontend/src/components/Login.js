@@ -119,7 +119,7 @@ export default function Login({ onLogin }) {
       clearAuthStorage();
       navigate("/");
     }, SESSION_TIMEOUT_MS);
-  }, [navigate]);
+  }, [navigate, SESSION_TIMEOUT_MS]);
   useEffect(() => {
     const hadSession = localStorage.getItem("isLoggedIn") === "true";
     if (!hadSession) {

@@ -7,14 +7,11 @@
  */
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FaUndo, FaHome, FaQuestionCircle, FaEnvelope, FaPhone } from 'react-icons/fa';
-import { Card, Button } from './ui';
+import { FaEnvelope, FaPhone } from 'react-icons/fa';
+import { Button } from './ui';
 import PageSection from './ui/PageSection';
 
 const HelpAgents = () => {
-  const navigate = useNavigate();
-
   return (
     <div className="app-page reports-page">
       <PageSection title="Functionality Overview">

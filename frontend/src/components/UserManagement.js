@@ -11,14 +11,9 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  FaHeadset,
-  FaHome,
   FaUserPlus,
   FaEdit,
   FaTrashAlt,
-  FaCheckCircle,
-  FaTimesCircle,
-  FaQuestionCircle
 } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import './management-pages.css';

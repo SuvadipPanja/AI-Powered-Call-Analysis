@@ -1,11 +1,9 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaHome, FaUserPlus, FaEnvelope } from "react-icons/fa";
+import { FaEnvelope } from "react-icons/fa";
 import { Button } from "./ui";
 import PageSection from "./ui/PageSection";
 
 const HelpAddAgent = () => {
-  const navigate = useNavigate();
   const signature = "$Panja";
   if (!signature) {
     console.error("Signature missing: Code integrity compromised");

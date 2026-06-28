@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import config from "../utils/envConfig";
 
 const WebSocketContext = createContext(null);
@@ -10,8 +10,6 @@ export const WebSocketProvider = ({ children }) => {
   const [supervisors, setSupervisors] = useState([]);
   const [username, setUsername] = useState("");
   const [userType, setUserType] = useState("");
-  const [logId, setLogId] = useState("");
-  const [userId, setUserId] = useState("");
 
   const connectWebSocket = (userId, username, userType, logId) => {
     if (ws && isConnected) {
@@ -42,10 +40,8 @@ export const WebSocketProvider = ({ children }) => {
       websocket.send(JSON.stringify(registerMessage));
       console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [WS] Sent register message:`, registerMessage);
       setWs(websocket);
-      setUserId(userId);
       setUsername(username);
       setUserType(userType);
-      setLogId(logId);
     };
 
     websocket.onmessage = (event) => {
@@ -78,10 +74,8 @@ export const WebSocketProvider = ({ children }) => {
       console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [WS] WebSocket connection closed`);
       setIsConnected(false);
       setWs(null);
-      setUserId("");
       setUsername("");
       setUserType("");
-      setLogId("");
     };
 
     websocket.onerror = (error) => {

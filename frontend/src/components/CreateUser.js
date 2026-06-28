@@ -25,7 +25,7 @@ import { LuUserPlus } from "../icons";
 import apiClient from "../utils/apiClient";
 import { useAuth } from "../context/AuthContext";
 import './management-pages.css';
-import { Card, Button, Input, Select, Label, Badge } from './ui';
+import { Card, Button, Input, Select, Label } from './ui';
 
 const CreateUser = () => {
   const navigate = useNavigate();

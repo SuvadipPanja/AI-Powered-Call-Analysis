@@ -14,24 +14,13 @@
  *  - Reduced navbar size and compacted form layout to fit on one page without scrolling.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './management-pages.css';
 import axios from 'axios';
-import {
-  FaUser,
-  FaEnvelope,
-  FaPhone,
-  FaUserTie,
-  FaStickyNote,
-  FaUserCog,
-  FaIdBadge,
-  FaHome,
-  FaUndo,
-  FaQuestionCircle
-} from 'react-icons/fa';
+import { FaQuestionCircle } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import config from '../utils/envConfig';
-import { Card, Button, Input, Select, Label, Badge } from './ui';
+import { Card, Button, Input, Select, Label } from './ui';
 
 const AddAgent = () => {
   /***************************************
@@ -94,6 +83,20 @@ const AddAgent = () => {
     fetchDropdowns();
   }, []);
 
+  const helpData = useMemo(() => [
+    { ref: nameRef, text: 'Enter the agent\u2019s full name' },
+    { ref: agentIdRef, text: 'Provide the Agent Id' },
+    { ref: typeRef, text: 'Select agent type (Inbound/Outbound)' },
+    { ref: emailRef, text: 'Provide the agent\u2019s email address' },
+    { ref: mobileRef, text: 'Enter a valid mobile number' },
+    { ref: supervisorRef, text: 'Add the agent\u2019s supervisor name' },
+    { ref: managerRef, text: 'Add the agent\u2019s manager name' },
+    { ref: auditorRef, text: 'Add the auditor for the agent' },
+    { ref: notesRef, text: 'Include additional notes or remarks' },
+    { ref: locationRef, text: 'Enter the agent\u2019s location' },
+    { ref: submitRef, text: 'Click here to save agent details' },
+  ], []);
+
   useEffect(() => {
     if (!showHelp) return;
 
@@ -130,21 +133,7 @@ const AddAgent = () => {
     }, hideTime);
 
     return () => clearTimeout(timer);
-  }, [showHelp]);
-
-  const helpData = [
-    { ref: nameRef, text: 'Enter the agent\u2019s full name' },
-    { ref: agentIdRef, text: 'Provide the Agent Id' },
-    { ref: typeRef, text: 'Select agent type (Inbound/Outbound)' },
-    { ref: emailRef, text: 'Provide the agent\u2019s email address' },
-    { ref: mobileRef, text: 'Enter a valid mobile number' },
-    { ref: supervisorRef, text: 'Add the agent\u2019s supervisor name' },
-    { ref: managerRef, text: 'Add the agent\u2019s manager name' },
-    { ref: auditorRef, text: 'Add the auditor for the agent' },
-    { ref: notesRef, text: 'Include additional notes or remarks' },
-    { ref: locationRef, text: 'Enter the agent\u2019s location' },
-    { ref: submitRef, text: 'Click here to save agent details' },
-  ];
+  }, [showHelp, helpData]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });

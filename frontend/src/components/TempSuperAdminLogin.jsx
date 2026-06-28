@@ -29,6 +29,7 @@ const ComplexCaptcha = ({ onChange }) => {
 
   useEffect(() => {
     generateCaptcha();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleChange = (val) => {
@@ -94,6 +95,8 @@ const TempSuperAdminLogin = ({ onLogin }) => {
       clearTimeout(inactivityRef.current);
       resetEvents.forEach((evt) => window.removeEventListener(evt, resetTimer));
     };
+    // Mount-only inactivity timer for temp super-admin login
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /*************************************************

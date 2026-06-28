@@ -8,9 +8,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Line, Bar, Pie, Doughnut, Radar } from 'react-chartjs-2';
-import { useNavigate } from 'react-router-dom';
 import 'chart.js/auto';
-import { Button, Spinner } from './ui';
+import { Spinner } from './ui';
 import PageSection from './ui/PageSection';
 import ChartPanel from './ui/ChartPanel';
 import {
@@ -24,7 +23,6 @@ const noScaleOptions = () =>
   baseChartOptions({ scales: {} });
 
 const EnhancedStatisticsPage = () => {
-  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -97,11 +95,6 @@ const EnhancedStatisticsPage = () => {
     labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
     datasets: [lineDataset('Weekly Call Resolution Time (mins)', [150, 200, 180, 220], 5)],
   }), []);
-
-  const handleNavigation = (path) => {
-    console.log(`Navigating to ${path} at ${new Date().toISOString()}`);
-    navigate(path);
-  };
 
   return (
     <div className="app-page reports-page">
