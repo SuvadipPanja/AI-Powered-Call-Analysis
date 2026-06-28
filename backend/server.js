@@ -14,6 +14,11 @@
 /* ===================== 1) Required Dependencies ===================== */
 // Load environment variables and required Node.js modules
 require('dotenv').config(); // Loads variables from .env file
+// Sprint 6: hydrate secrets from Docker secret files BEFORE any module reads
+// them (auth.js / dbConnection.js read process.env at require-time). File-sourced
+// secrets are never visible via `docker inspect` or /proc/1/environ.
+const { hydrateSecrets } = require("./config/secrets");
+const __secretsFromFiles = hydrateSecrets();
 const express = require("express");
 const bodyParser = require("body-parser");
 const sql = require("./sqlClient");
@@ -5701,12 +5706,40 @@ const { attachWebSocketHub } = require("./websocket/wsHub");
 const wss = attachWebSocketHub(server, { sql, sqlConnect, getISTTimeString, resolveProjectPath });
 
 /* ===================== 12) Start the Server ===================== */
+// Known-weak placeholder values that must never reach production.
+const WEAK_SECRET_VALUES = new Set([
+  "changeme", "change-me", "secret", "password", "passw0rd", "test", "testing",
+  "dev", "development", "default", "admin", "token", "12345678", "your-secret",
+  "your_secret_here", "replace-me", "todo",
+]);
+const MIN_SECRET_LENGTH = 12;
+
+function classifySecret(value) {
+  const v = String(value || "").trim();
+  if (!v) return "missing";
+  if (WEAK_SECRET_VALUES.has(v.toLowerCase())) return "weak";
+  if (v.length < MIN_SECRET_LENGTH) return "weak";
+  return "ok";
+}
+
 /**
- * Logs production security warnings for misconfigured secrets / auth toggles.
+ * Validates production secrets. Fail-closed in production:
+ *   - MISSING required secret  → fatal (exit) unless ALLOW_WEAK_SECRETS=true
+ *   - WEAK required secret     → loud warning; fatal only if ENFORCE_SECRET_STRENGTH=true
+ * In non-production, everything is a warning only.
  */
 function logSecurityConfigWarnings() {
   const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+  const allowWeak = String(process.env.ALLOW_WEAK_SECRETS || "false").toLowerCase() === "true";
+  const enforceStrength = String(process.env.ENFORCE_SECRET_STRENGTH || "false").toLowerCase() === "true";
   const authEnforced = String(process.env.API_AUTH_ENFORCE || "true").toLowerCase() !== "false";
+
+  // Visibility: which secrets came from Docker secret files (names only, no values).
+  if (Array.isArray(__secretsFromFiles) && __secretsFromFiles.length) {
+    const msg = `[SECURITY] Secrets loaded from files (not env): ${__secretsFromFiles.join(", ")}`;
+    console.log(msg);
+    writeLog(`[${getISTTimeString()}] ${msg}`);
+  }
 
   if (!authEnforced) {
     const msg = "[SECURITY] API_AUTH_ENFORCE is FALSE — API authentication is DISABLED. Do not run like this in production.";
@@ -5714,19 +5747,55 @@ function logSecurityConfigWarnings() {
     writeLog(`[${getISTTimeString()}] ${msg}`);
   }
 
-  const requiredInProd = [
+  const required = [
     ["ORCHESTRATOR_SECRET", process.env.ORCHESTRATOR_SECRET],
     ["CALLBACK_SECRET", process.env.CALLBACK_SECRET],
     ["LICENSE_SECRET_KEY", process.env.LICENSE_SECRET_KEY],
     ["SERVICE_TOKEN", process.env.SERVICE_TOKEN || process.env.UPLOAD_SERVICE_TOKEN],
   ];
-  for (const [name, value] of requiredInProd) {
-    if (!value || !String(value).trim()) {
-      const level = isProd ? "[SECURITY]" : "[SECURITY-DEV]";
-      const msg = `${level} ${name} is not set${isProd ? " — required for production. Pipeline/auth protections may be disabled." : " (ok for dev; required in production)."}`;
+
+  const fatal = [];
+  for (const [name, value] of required) {
+    const verdict = classifySecret(value);
+    if (verdict === "ok") continue;
+
+    if (!isProd) {
+      const msg = `[SECURITY-DEV] ${name} is ${verdict} (ok for dev; required & strong in production).`;
       console.warn(msg);
       writeLog(`[${getISTTimeString()}] ${msg}`);
+      continue;
     }
+
+    if (verdict === "missing") {
+      const msg = `[SECURITY] ${name} is MISSING — required for production.`;
+      console.error(msg);
+      writeLog(`[${getISTTimeString()}] ${msg}`);
+      if (!allowWeak) fatal.push(name);
+    } else {
+      // weak
+      const msg = `[SECURITY] ${name} is WEAK (too short or a known placeholder). Use crypto.randomBytes(32).hex.`;
+      console.error(msg);
+      writeLog(`[${getISTTimeString()}] ${msg}`);
+      if (enforceStrength && !allowWeak) fatal.push(name);
+    }
+  }
+
+  if (isProd) {
+    const cors = String(process.env.CORS_ORIGIN || "").trim();
+    if (!cors) {
+      const msg = "[SECURITY] CORS_ORIGIN is empty in production — refusing to start with an open CORS policy.";
+      console.error(msg);
+      writeLog(`[${getISTTimeString()}] ${msg}`);
+      if (!allowWeak) fatal.push("CORS_ORIGIN");
+    }
+  }
+
+  if (fatal.length) {
+    const msg = `[SECURITY] FATAL: refusing to start in production due to: ${fatal.join(", ")}. ` +
+      `Set strong secrets (Docker secrets recommended) or override with ALLOW_WEAK_SECRETS=true (NOT for prod).`;
+    console.error(msg);
+    writeLog(`[${getISTTimeString()}] ${msg}`);
+    process.exit(1);
   }
 }
 

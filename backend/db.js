@@ -1,4 +1,5 @@
 require('dotenv').config();
+try { require('./config/secrets').hydrateSecrets(); } catch (_) { /* optional */ }
 const sql = require("./sqlClient");
 
 // Database Configuration using environment variables
