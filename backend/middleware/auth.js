@@ -1,8 +1,8 @@
 /**
  * Centralized authentication gate.
  *
- * Validates the session token (Authorization: Bearer <token>, x-session-token
- * header, or ?token=) against dbo.ActiveSessions (IsActive = 1). Public routes
+ * Validates the session token (Authorization: Bearer <token> or x-session-token
+ * header) against dbo.ActiveSessions (IsActive = 1). Public routes
  * - login, license verification, forgot-password flow, session management and
  * internal callbacks - are allowlisted and pass through untouched.
  *
@@ -53,7 +53,6 @@ function extractToken(req) {
   const header = req.headers["authorization"];
   if (header && header.startsWith("Bearer ")) return header.slice(7).trim();
   if (req.headers["x-session-token"]) return String(req.headers["x-session-token"]).trim();
-  if (req.query && req.query.token) return String(req.query.token).trim();
   return null;
 }
 
@@ -113,4 +112,4 @@ function authGate(getPool, sql) {
   };
 }
 
-module.exports = { authGate, isPublic };
+module.exports = { authGate, isPublic, extractToken, ENFORCE, SERVICE_TOKEN };

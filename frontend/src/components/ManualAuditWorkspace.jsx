@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import WaveSurfer from 'wavesurfer.js';
 import config from '../utils/envConfig';
+import { createAuthenticatedAudioBlobUrl } from '../utils/authenticatedAudio';
 import apiClient from '../utils/apiClient';
 import { Button, Spinner, Badge, Textarea } from './ui';
 import { FaTimes, FaPlay, FaPause, FaSave, FaClipboardCheck, FaVolumeUp, FaCommentDots } from 'react-icons/fa';
@@ -107,7 +108,9 @@ export default function ManualAuditWorkspace({
     let ws = null;
     let cancelled = false;
 
-    const initWaveform = () => {
+    let objectUrl = null;
+
+    const initWaveform = async () => {
       if (cancelled || !waveRef.current || !waveWrapRef.current) return;
       const container = waveRef.current;
       container.innerHTML = '';
@@ -136,8 +139,18 @@ export default function ManualAuditWorkspace({
         mediaControls: false,
       });
 
-      const audioUrl = `${config.apiBaseUrl}/audio/${encodeURIComponent(audioFile)}`;
-      ws.load(audioUrl);
+      try {
+        objectUrl = await createAuthenticatedAudioBlobUrl(audioFile);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        ws.load(objectUrl);
+      } catch {
+        if (!cancelled) setAudioLoadError('Could not load call recording. Check that the file exists on the server.');
+        return;
+      }
+
       ws.on('ready', () => {
         if (cancelled) return;
         setWaveReady(true);
@@ -160,6 +173,7 @@ export default function ManualAuditWorkspace({
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       try { ws?.destroy(); } catch {}
       wsRef.current = null;
       setWaveReady(false);

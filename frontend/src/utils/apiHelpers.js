@@ -53,9 +53,16 @@ export async function apiGetQuery(path, queryString = "", { label, signal } = {}
 
 /** POST JSON body, return parsed JSON response. */
 export async function apiPost(path, body, { label, signal } = {}) {
+  const token =
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("token") || localStorage.getItem("sessionToken") || ""
+      : "";
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const response = await fetch(apiUrl(path), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body ?? {}),
     signal,
   });

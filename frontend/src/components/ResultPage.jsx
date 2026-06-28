@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import config from "../utils/envConfig";
+import { createAuthenticatedAudioBlobUrl } from "../utils/authenticatedAudio";
 import { parseTranscriptLines } from './ConversationTranscript';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugin/wavesurfer.regions.min.js';
@@ -160,6 +161,9 @@ const ResultPage = () => {
 
   useEffect(() => {
     if (!audioDetails.AudioFileName || !waveformRef.current) return;
+    let objectUrl = null;
+    let cancelled = false;
+
     const ws = WaveSurfer.create({
       container: waveformRef.current,
       waveColor: 'var(--color-accent)',
@@ -192,12 +196,30 @@ const ResultPage = () => {
       }
     });
 
-    ws.load(`${config.apiBaseUrl}/audio/${audioDetails.AudioFileName}`);
+    createAuthenticatedAudioBlobUrl(audioDetails.AudioFileName)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        ws.load(url);
+      })
+      .catch(() => {
+        if (!cancelled) setIsWaveformReady(false);
+      });
+
     ws.on('play', () => setIsPlaying(true));
     ws.on('pause', () => setIsPlaying(false));
     ws.on('finish', () => setIsPlaying(false));
     setWaveSurfer(ws);
-    return () => { ws.destroy(); setWaveSurfer(null); setIsWaveformReady(false); };
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      ws.destroy();
+      setWaveSurfer(null);
+      setIsWaveformReady(false);
+    };
   }, [audioDetails.AudioFileName]);
 
   const handlePlayPause = () => { waveSurfer?.playPause(); };

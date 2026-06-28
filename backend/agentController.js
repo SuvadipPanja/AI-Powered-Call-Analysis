@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const sql = require("./sqlClient");
 const { connectToDatabase } = require("./dbConnection");
+const { requireAccountTypes, AGENT_MANAGER_ROLES } = require("./middleware/rbac");
 
 // Logging utility
 function logAction(message) {
@@ -89,7 +90,7 @@ router.get("/agents/outbound", async (req, res) => {
 /**
  * (3) Add new agent
  */
-router.post("/agents", async (req, res) => {
+router.post("/agents", requireAccountTypes(...AGENT_MANAGER_ROLES), async (req, res) => {
   logAction("Creating a new agent...");
   const {
     name,
@@ -166,7 +167,7 @@ router.post("/agents", async (req, res) => {
 /**
  * (4) Update an agent
  */
-router.put("/agents/:id", async (req, res) => {
+router.put("/agents/:id", requireAccountTypes(...AGENT_MANAGER_ROLES), async (req, res) => {
   const { id } = req.params; // This is a string like "AGT5209"
   logAction(`Updating agent with ID = ${id} ...`);
 
@@ -230,7 +231,7 @@ router.put("/agents/:id", async (req, res) => {
 /**
  * (5) Hard Delete an agent by agent_id
  */
-router.delete("/agents/:id", async (req, res) => {
+router.delete("/agents/:id", requireAccountTypes(...AGENT_MANAGER_ROLES), async (req, res) => {
   const { id } = req.params;
   logAction(`Hard deleting agent ID = ${id} ...`);
   try {
@@ -290,7 +291,7 @@ router.get("/agents/search", async (req, res) => {
  * (7) Deactivate Agent (soft delete)
  *     sets is_active=0, and deactivated_date=GETDATE()
  */
-router.put("/agents/:id/deactivate", async (req, res) => {
+router.put("/agents/:id/deactivate", requireAccountTypes(...AGENT_MANAGER_ROLES), async (req, res) => {
   const { id } = req.params;
   logAction(`Deactivating agent ID = ${id} ...`);
 

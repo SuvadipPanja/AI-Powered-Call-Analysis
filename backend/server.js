@@ -49,6 +49,8 @@ const { logCallEvent, ensureSchema: ensureCallProcessingLogSchema } = require(".
 const { runDatabaseMigrations } = require("./services/dbMigrate");
 const { fetchUserForLogin, getLoginIdForSession, resolveSessionUserId } = require("./authHelper");
 const { resolveAgentIdentity, assertSelfOrElevated, resolveBriefingOwnerUsernames } = require("./agentHelper");
+const { assertSessionOwnership } = require("./middleware/sessionProof");
+const { requireSuperAdmin } = require("./middleware/rbac");
 const { resolveProjectPath, isMissingDbObjectError } = require("./projectPaths");
 
 // Get the host MAC address from environment variable
@@ -1238,10 +1240,22 @@ const corsAllowlist = String(process.env.CORS_ORIGIN || "")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
+
+if (process.env.NODE_ENV === "production" && corsAllowlist.length === 0) {
+  console.error("[FATAL] CORS_ORIGIN must be set to a comma-separated allowlist in production.");
+  process.exit(1);
+}
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow same-origin / tools (no Origin header) and any allowlisted origin.
-    if (!origin || corsAllowlist.length === 0 || corsAllowlist.includes(origin)) {
+    // Allow same-origin / tools (no Origin header).
+    if (!origin) {
+      return callback(null, true);
+    }
+    if (process.env.NODE_ENV === "production" && corsAllowlist.length === 0) {
+      return callback(new Error("CORS is not configured"));
+    }
+    if (corsAllowlist.length === 0 || corsAllowlist.includes(origin)) {
       return callback(null, true);
     }
     return callback(new Error(`Origin ${origin} not allowed by CORS`));
@@ -1369,7 +1383,17 @@ const storageProfilePic = multer.diskStorage({
     cb(null, `${username}${ext}`); // New file saved as username.ext
   }
 });
-const uploadProfilePic = multer({ storage: storageProfilePic });
+const uploadProfilePic = multer({
+  storage: storageProfilePic,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only JPEG, PNG, GIF, or WEBP profile images are allowed."));
+    }
+  },
+});
 
 const brandingDir = resolveStorageDir(process.env.BRANDING_DIR, "uploads/branding");
 const storageAppLogo = multer.diskStorage({
@@ -1544,12 +1568,13 @@ app.get("/api/license-status", async (req, res) => {
  * API 10.4.03 - POST /api/upload-license
  * Uploads a new license key (Super Admin only)
  */
-app.post("/api/upload-license", async (req, res) => {
-  const { username, licenseKey } = req.body;
+app.post("/api/upload-license", requireSuperAdmin, async (req, res) => {
+  const { licenseKey } = req.body;
+  const username = req.user.username;
 
-  if (!username || !licenseKey) {
-    writeLog(`[${getISTTimeString()}] License upload failed: Missing username or licenseKey`);
-    return res.status(400).json({ success: false, message: "Username and license key are required." });
+  if (!licenseKey) {
+    writeLog(`[${getISTTimeString()}] License upload failed: Missing licenseKey`);
+    return res.status(400).json({ success: false, message: "License key is required." });
   }
 
   // License secret is server-side only (LICENSE_SECRET_KEY); never supplied by the client.
@@ -1561,20 +1586,6 @@ app.post("/api/upload-license", async (req, res) => {
 
   try {
     const pool = await connectToDatabase();
-    const userResult = await pool.request()
-      .input("username", sql.NVarChar, username)
-      .query(`SELECT AccountType FROM dbo.Users WHERE Username = @username`);
-
-    if (userResult.recordset.length === 0) {
-      writeLog(`[${getISTTimeString()}] License upload failed: User ${username} not found`);
-      return res.status(404).json({ success: false, message: "User not found." });
-    }
-
-    const userType = userResult.recordset[0].AccountType;
-    if (userType !== "Super Admin") {
-      writeLog(`[${getISTTimeString()}] License upload failed: User ${username} is not a Super Admin`);
-      return res.status(403).json({ success: false, message: "Only Super Admins can upload licenses." });
-    }
 
     const payload = await decodeLicense(licenseKey, secretKey);
 
@@ -1660,32 +1671,17 @@ app.post("/api/upload-license", async (req, res) => {
  * API 10.6.04 - POST /api/delete-license
  * Deletes a license (Super Admin only)
  */
-app.post("/api/delete-license", async (req, res) => {
-  const { username, licenseKey } = req.body;
+app.post("/api/delete-license", requireSuperAdmin, async (req, res) => {
+  const { licenseKey } = req.body;
+  const username = req.user.username;
 
-  if (!username || !licenseKey) {
-    writeLog(`[${getISTTimeString()}] License deletion failed: Missing username or licenseKey`);
-    return res.status(400).json({ success: false, message: "Username and license key are required." });
+  if (!licenseKey) {
+    writeLog(`[${getISTTimeString()}] License deletion failed: Missing licenseKey`);
+    return res.status(400).json({ success: false, message: "License key is required." });
   }
 
   try {
     const pool = await connectToDatabase();
-    const userResult = await pool.request()
-      .input("username", sql.NVarChar, username)
-      .query(`SELECT AccountType FROM dbo.Users WHERE Username = @username`);
-
-    if (userResult.recordset.length === 0) {
-      writeLog(`[${getISTTimeString()}] License deletion failed: User ${username} not found`);
-      return res.status(404).json({ success: false, message: "User not found." });
-    }
-
-    const userType = userResult.recordset[0].AccountType;
-    if (userType !== "Super Admin") {
-      writeLog(`[${getISTTimeString()}] License deletion failed: User ${username} is not a Super Admin (AccountType: ${userType})`);
-      return res.status(403).json({ success: false, message: "Only Super Admins can delete licenses." });
-    }
-    writeLog(`[${getISTTimeString()}] User ${username} verified as Super Admin for license deletion`);
-
     const licenseResult = await pool.request()
       .input("licenseKey", sql.NVarChar, licenseKey)
       .query(`SELECT IsActive FROM Licenses WHERE LicenseKey = @licenseKey`);
@@ -1730,32 +1726,17 @@ app.post("/api/delete-license", async (req, res) => {
  * API 10.7.05 - POST /api/license-details
  * Retrieves details of a specific license (Super Admin only)
  */
-app.post("/api/license-details", async (req, res) => {
-  const { username, licenseKey } = req.body;
+app.post("/api/license-details", requireSuperAdmin, async (req, res) => {
+  const { licenseKey } = req.body;
+  const username = req.user.username;
 
-  if (!username || !licenseKey) {
-    writeLog(`[${getISTTimeString()}] License details fetch failed: Missing username or licenseKey`);
-    return res.status(400).json({ success: false, message: "Username and license key are required." });
+  if (!licenseKey) {
+    writeLog(`[${getISTTimeString()}] License details fetch failed: Missing licenseKey`);
+    return res.status(400).json({ success: false, message: "License key is required." });
   }
 
   try {
     const pool = await connectToDatabase();
-    const userResult = await pool.request()
-      .input("username", sql.NVarChar, username)
-      .query(`SELECT AccountType FROM dbo.Users WHERE Username = @username`);
-
-    if (userResult.recordset.length === 0) {
-      writeLog(`[${getISTTimeString()}] License details fetch failed: User ${username} not found`);
-      return res.status(404).json({ success: false, message: "User not found." });
-    }
-
-    const userType = userResult.recordset[0].AccountType;
-    if (userType !== "Super Admin") {
-      writeLog(`[${getISTTimeString()}] License details fetch failed: User ${username} is not a Super Admin (AccountType: ${userType})`);
-      return res.status(403).json({ success: false, message: "Only Super Admins can view license details." });
-    }
-    writeLog(`[${getISTTimeString()}] User ${username} verified as Super Admin for license details`);
-
     const licenseResult = await pool.request()
       .input("licenseKey", sql.NVarChar, licenseKey)
       .query(`SELECT LicenseKey, EndDate, IsActive FROM Licenses WHERE LicenseKey = @licenseKey`);
@@ -1828,30 +1809,11 @@ app.post("/api/license-details", async (req, res) => {
  * API 10.8.06 - GET /api/license-history
  * Retrieves license upload history for a user (Super Admin only)
  */
-app.get('/api/license-history', async (req, res) => {
-  const { username } = req.query;
-
-  if (!username) {
-    writeLog(`[${getISTTimeString()}] License History: Username not provided`);
-    return res.status(400).json({ success: false, message: 'Username is required' });
-  }
+app.get('/api/license-history', requireSuperAdmin, async (req, res) => {
+  const username = req.user.username;
 
   try {
     const pool = await connectToDatabase();
-    const userResult = await pool.request()
-      .input('username', sql.NVarChar, username)
-      .query('SELECT * FROM Users WHERE Username = @username');
-
-    if (userResult.recordset.length === 0) {
-      writeLog(`[${getISTTimeString()}] License History: User ${username} not found`);
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-
-    if (userResult.recordset[0].AccountType !== 'Super Admin') {
-      writeLog(`[${getISTTimeString()}] License History: User ${username} is not a Super Admin`);
-      return res.status(403).json({ success: false, message: 'Access denied: Super Admin only' });
-    }
-
     const result = await pool.request()
       .query('SELECT * FROM Licenses ORDER BY CreatedAt DESC');
 
@@ -3587,17 +3549,34 @@ app.post('/api/backfill-wpm', async (req, res) => {
 });
 
 /**
- * API 10.32.30 - GET /audio/:filename
- * Serves an audio file
+ * API 10.32.30 - GET /api/audio/stream/:filename
+ * Serves an audio file (authenticated via /api auth gate).
  */
-app.get("/audio/:filename", (req, res) => {
-  const { filename } = req.params;
-  const audioFilePath = path.join(uploadDirectory, filename);
-  if (fs.existsSync(audioFilePath)) {
-    return res.sendFile(audioFilePath);
-  } else {
-    return res.status(404).send("Audio file not found.");
+app.get("/api/audio/stream/:filename", (req, res) => {
+  const safeName = path.basename(String(req.params.filename || ""));
+  if (!safeName || safeName !== req.params.filename) {
+    return res.status(400).json({ success: false, message: "Invalid audio filename." });
   }
+  const audioFilePath = path.join(uploadDirectory, safeName);
+  const resolvedUploadDir = path.resolve(uploadDirectory);
+  const resolvedFilePath = path.resolve(audioFilePath);
+  if (!resolvedFilePath.startsWith(resolvedUploadDir + path.sep) && resolvedFilePath !== resolvedUploadDir) {
+    return res.status(400).json({ success: false, message: "Invalid audio path." });
+  }
+  if (fs.existsSync(resolvedFilePath)) {
+    return res.sendFile(resolvedFilePath);
+  }
+  return res.status(404).json({ success: false, message: "Audio file not found." });
+});
+
+/**
+ * Legacy unauthenticated audio route — disabled for security.
+ */
+app.get("/audio/:filename", (_req, res) => {
+  return res.status(401).json({
+    success: false,
+    message: "Authentication required. Use GET /api/audio/stream/:filename with a valid session token.",
+  });
 });
 
 /**
@@ -4395,6 +4374,10 @@ app.get('/api/script-compliance/:filename', async (req, res) => {
  */
 app.post("/api/user/:username/profile-picture", uploadProfilePic.single("profilePic"), async (req, res) => {
   const username = req.params.username;
+  if (!assertSelfOrElevated(req, username)) {
+    writeLog(`[${getISTTimeString()}] Profile picture upload denied for ${username}`);
+    return res.status(403).json({ success: false, message: "You do not have permission to update this profile picture." });
+  }
   if (!req.file) {
     writeLog(`[${getISTTimeString()}] Profile picture upload failed: No file uploaded for ${username}`);
     return res.status(400).json({ success: false, message: "No file uploaded." });
@@ -4428,6 +4411,9 @@ app.post("/api/user/:username/profile-picture", uploadProfilePic.single("profile
  */
 app.get("/api/user/:username/profile-picture", (req, res) => {
   const username = req.params.username;
+  if (!assertSelfOrElevated(req, username)) {
+    return res.status(403).json({ success: false, message: "You do not have permission to view this profile picture." });
+  }
   const filePath = findProfilePictureFile(username);
 
   if (!filePath) {
@@ -7106,6 +7092,10 @@ app.post("/api/update-session-inactive-time", async (req, res) => {
     return res.status(400).json({ success: false, message: "UserID, logId, and inactiveTime are required." });
   }
 
+  if (!(await assertSessionOwnership(req, res, sqlConnect, sql, { userId, logId }))) {
+    return;
+  }
+
   try {
     const pool = await sqlConnect();
     userId = await resolveSessionUserId(pool, userId);
@@ -7269,6 +7259,10 @@ app.post("/api/invalidate-existing-sessions", async (req, res) => {
   if (!userId) {
     writeLog(`[${getISTTimeString()}] Missing userId in /api/invalidate-existing-sessions`);
     return res.status(400).json({ success: false, message: "userId is required." });
+  }
+
+  if (!(await assertSessionOwnership(req, res, sqlConnect, sql, { userId, logId: currentLogId }))) {
+    return;
   }
 
   try {

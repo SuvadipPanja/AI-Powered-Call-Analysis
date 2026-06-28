@@ -51,9 +51,12 @@ const withSessionTimeout = (WrappedComponent) => {
       try {
         isCheckingSessionRef.current = true;
         retryCountRef.current = 0;
+        const token = localStorage.getItem("token") || localStorage.getItem("sessionToken") || "";
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = `Bearer ${token}`;
         const response = await fetch(`${config.apiBaseUrl}/api/update-session-inactive-time`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({ userId, logId, inactiveTime: new Date().toISOString() }),
         });
         const data = await response.json();
