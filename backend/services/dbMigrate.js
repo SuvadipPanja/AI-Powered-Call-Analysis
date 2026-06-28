@@ -111,6 +111,24 @@ async function ensureViews(pool) {
   }
 }
 
+async function ensureRevaKnowledgeBaseTable(pool) {
+  if (await tableExists(pool, "RevaKnowledgeBase")) return;
+  await pool.request().query(`
+    CREATE TABLE dbo.RevaKnowledgeBase (
+      ID INT IDENTITY(1,1) PRIMARY KEY,
+      Question NVARCHAR(500) NOT NULL,
+      Answer NVARCHAR(MAX) NOT NULL,
+      Category NVARCHAR(200) NOT NULL,
+      UpdatedBy NVARCHAR(100) NULL,
+      CreatedBy NVARCHAR(100) NULL,
+      ModifiedBy NVARCHAR(100) NULL,
+      CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+      ModifiedAt DATETIME NOT NULL DEFAULT GETDATE()
+    );
+  `);
+  console.log("[db-migrate] Created table dbo.RevaKnowledgeBase");
+}
+
 async function ensureCallIntelligenceColumns(pool) {
   // Phase 2d — per-call intelligence columns on Consolidated_Audio_Analysis.
   // Mirrors ai-mvp/db_schema.py :: ALTER_CAA_INTELLIGENCE_SQL so the schema is
@@ -141,6 +159,40 @@ async function ensureCallIntelligenceColumns(pool) {
     );
     console.log(`[db-migrate] Added column Consolidated_Audio_Analysis.${name}`);
   }
+}
+
+async function ensureLicenseAuditTable(pool) {
+  // Sprint 4 — immutable license audit trail.
+  if (await tableExists(pool, "LicenseAuditLog")) return;
+  await pool.request().query(`
+    CREATE TABLE dbo.LicenseAuditLog (
+      AuditID BIGINT IDENTITY(1,1) PRIMARY KEY,
+      EventType NVARCHAR(100) NOT NULL,
+      Outcome NVARCHAR(20) NOT NULL DEFAULT 'info',
+      Detail NVARCHAR(MAX) NULL,
+      Actor NVARCHAR(150) NULL,
+      Fingerprint NVARCHAR(128) NULL,
+      CreatedAt DATETIME NOT NULL DEFAULT GETDATE()
+    );
+    CREATE INDEX IX_LicenseAuditLog_CreatedAt ON dbo.LicenseAuditLog (CreatedAt);
+    CREATE INDEX IX_LicenseAuditLog_EventType ON dbo.LicenseAuditLog (EventType);
+  `);
+  console.log("[db-migrate] Created table dbo.LicenseAuditLog");
+}
+
+async function ensureLicenseTimeGuardTable(pool) {
+  // Sprint 8 — monotonic time-tampering guard (single-row high-water-mark).
+  if (await tableExists(pool, "LicenseTimeGuard")) return;
+  await pool.request().query(`
+    CREATE TABLE dbo.LicenseTimeGuard (
+      Id INT NOT NULL PRIMARY KEY,
+      HighWaterMark DATETIME NOT NULL,
+      LastObserved DATETIME NOT NULL,
+      UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+      CONSTRAINT CK_LicenseTimeGuard_Single CHECK (Id = 1)
+    );
+  `);
+  console.log("[db-migrate] Created table dbo.LicenseTimeGuard");
 }
 
 async function dropUnusedTables(pool) {
@@ -215,8 +267,17 @@ async function runDatabaseMigrations(pool) {
     await ensureCallIntelligenceColumns(pool);
     steps.push("CallIntelligence");
 
+    await ensureRevaKnowledgeBaseTable(pool);
+    steps.push("RevaKnowledgeBase");
+
     await queryCategoryService.ensureSchemaAndSeed(pool);
     steps.push("QueryCategories");
+
+    await ensureLicenseAuditTable(pool);
+    steps.push("LicenseAuditLog");
+
+    await ensureLicenseTimeGuardTable(pool);
+    steps.push("LicenseTimeGuard");
 
     await ensureIndexes(pool);
     steps.push("Indexes");

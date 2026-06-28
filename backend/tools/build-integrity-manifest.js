@@ -25,6 +25,8 @@ const CRITICAL = [
   "services/licenseAudit.js",
   "services/licenseV3.js",
   "services/hardwareId.js",
+  "services/timeGuard.js",
+  "services/aiEntitlement.js",
   "keys/vendor-root-public.pem",
   "middleware/auth.js",
   "middleware/rbac.js",

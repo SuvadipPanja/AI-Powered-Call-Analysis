@@ -9,6 +9,13 @@ FROM sp-backend:prod AS patched
 COPY backend/server.js /app/server.js
 COPY backend/middleware/licenseGuard.js /app/middleware/licenseGuard.js
 COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
+COPY backend/uploadHandler.js /app/uploadHandler.js
+COPY backend/services/timeGuard.js /app/services/timeGuard.js
+COPY backend/services/aiEntitlement.js /app/services/aiEntitlement.js
+COPY backend/services/dbMigrate.js /app/services/dbMigrate.js
+COPY backend/services/uploadQueue.js /app/services/uploadQueue.js
+COPY backend/tools/build-integrity-manifest.js /app/tools/build-integrity-manifest.js
+COPY backend/websocket/wsHub.js /app/websocket/wsHub.js
 RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
   && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)"
 

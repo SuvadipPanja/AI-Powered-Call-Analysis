@@ -138,9 +138,15 @@ node tools/sign-license-v3.js `
   --days 7 `
   --users 50 --agents 60 `
   --features reports,audit,reva,ai-scoring `
-  --ai-modules transcription,diarization,scoring --ai-jobs 4 `
+  --ai-modules chunking,language-detection,diarization,transcription,translation,tone-analysis,scoring,sentiment,sentence-similarity `
+  --ai-jobs 4 `
   --out trial-7day.lic
 ```
+
+> **AI module names** must match the pipeline. Canonical set (see
+> `backend/services/aiEntitlement.js`): `chunking, language-detection,
+> diarization, transcription, translation, tone-analysis, scoring, sentiment,
+> sentence-similarity`. **Omit `--ai-modules` entirely to license all AI modules.**
 
 `--days 7` sets expiry to 7 days from today. After expiry the system enters
 read-only grace, then locks (configurable via `LICENSE_GRACE_DAYS`).
@@ -155,7 +161,8 @@ node tools/sign-license-v3.js `
   --not-before 2026-07-01 --not-after 2027-07-01 `
   --users 500 --agents 600 `
   --features reports,audit,reva,ai-scoring `
-  --ai-modules transcription,diarization,scoring --ai-jobs 8 `
+  --ai-modules chunking,language-detection,diarization,transcription,translation,tone-analysis,scoring,sentiment,sentence-similarity `
+  --ai-jobs 8 `
   --out prod-license.lic
 ```
 
@@ -259,3 +266,21 @@ Env overrides: `DB_CONTAINER`, `BACKEND_CONTAINER`, `DB_NAME` (default
   flags, and AI modules are signed into the token and enforced at runtime.
 - **Grace, then lock** — expired licenses get a read-only grace window before full
   lock, so reporting survives a renewal gap.
+- **Time-tamper guard** — a monotonic high-water-mark (DB) detects clock rollback
+  and VM-snapshot reverts; the system locks if the wall clock moves backwards.
+- **Real-time control** — license state changes (revoke/expiry/tamper) are pushed
+  live over WebSockets to every session; no restart needed.
+- **AI gated by license** — the AI pipeline only runs when the license is active;
+  per-module entitlements (`ai.enabledModules`) are exposed at
+  `GET /api/internal/ai-entitlement` for the AI-MVP to self-enforce.
+
+### Relevant env tunables
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `LICENSE_GRACE_DAYS` | 0 | Read-only days after expiry before full lock |
+| `LICENSE_TIME_GUARD` | true | Enable clock-rollback / snapshot detection |
+| `LICENSE_TIME_SKEW_MINUTES` | 120 | Allowed backward drift before alarm |
+| `LICENSE_TIME_GUARD_INTERVAL_MIN` | 15 | Periodic re-check interval |
+| `LICENSE_INTEGRITY_CHECK` / `LICENSE_INTEGRITY_ENFORCE` | false | Startup file-integrity check / hard-fail |
+| `LICENSE_ENFORCE_SIGNATURE` | false | Reject unsigned (legacy) licenses |

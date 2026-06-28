@@ -14,10 +14,17 @@
  *     --users 500 --agents 600 \
  *     --not-before 2026-07-01 --not-after 2027-07-01 \
  *     --features reports,audit,reva,ai-scoring \
- *     --ai-modules transcription,diarization,scoring --ai-jobs 8 \
+ *     --ai-modules chunking,language-detection,diarization,transcription,translation,tone-analysis,scoring,sentiment,sentence-similarity \
+ *     --ai-jobs 8 \
  *     [--allowed-macs 8C:84:74:6B:08:7E] \
  *     [--revoke <licenseId>,...] \
  *     --out license.lic
+ *
+ *   Canonical AI module names (must match the pipeline; see
+ *   backend/services/aiEntitlement.js CANONICAL_AI_MODULES):
+ *     chunking, language-detection, diarization, transcription, translation,
+ *     tone-analysis, scoring, sentiment, sentence-similarity
+ *   Omit --ai-modules entirely to license ALL AI modules (unrestricted).
  *
  *   Temporary 7-day trial (expiry computed from today):
  *     node tools/sign-license-v3.js --private vendor-keys/vendor-root-private.pem \

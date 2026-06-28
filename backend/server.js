@@ -431,11 +431,29 @@ function markLicenseInvalid(reason, { event = "LICENSE_VALIDATED" } = {}) {
     detail,
     fingerprint: licenseSecurity.getHardwareFingerprint(),
   });
+  broadcastLicenseState(detail);
 }
 
 /* ===================== Sprint 5: v3 (Ed25519) license support ===================== */
 const licenseV3 = require("./services/licenseV3");
 const hardwareId = require("./services/hardwareId");
+const timeGuard = require("./services/timeGuard");
+
+/** Sprint 8 — push current license state to all live sessions (best-effort). */
+function broadcastLicenseState(reason) {
+  try {
+    if (typeof global.wsBroadcastLicense === "function") {
+      global.wsBroadcastLicense({
+        state: global.licenseState || (global.isLicenseExpired ? "expired" : "active"),
+        isExpired: Boolean(global.isLicenseExpired),
+        reason: reason || null,
+        at: new Date().toISOString(),
+      });
+    }
+  } catch {
+    /* never throw from broadcast */
+  }
+}
 
 /** Normalize a verified v3 payload into the shape downstream code expects. */
 function normalizeV3Payload(p) {
@@ -555,6 +573,7 @@ async function applyV3License(pool, licenseKey, { uploadedBy, persistFile = fals
     actor: uploadedBy,
     fingerprint: hardwareId.getServerFingerprint() || licenseSecurity.getHardwareFingerprint(),
   });
+  broadcastLicenseState(warning || `active (${ev.daysUntilExpiry}d remaining)`);
   return { state: ev.state, warning };
 }
 
@@ -690,10 +709,38 @@ function runStartupIntegrityCheck() {
   }
 }
 
+// Sprint 8 — time-tampering guard. Locks the license if the wall clock rolls
+// back below the persisted high-water-mark (clock tamper / VM snapshot revert).
+async function runTimeGuard(label = "startup") {
+  if (!timeGuard.guardEnabled()) return;
+  try {
+    const pool = await connectToDatabase();
+    const result = await timeGuard.checkAndAdvance(pool, sql, new Date());
+    if (!result.ok) {
+      writeLog(`[${getISTTimeString()}] TIME TAMPER (${label}): ${result.reason}`);
+      console.error(`License locked — ${result.reason}`);
+      recordLicenseEvent({ event: "TIME_TAMPER", outcome: "failure", detail: result.reason });
+      // Fail closed regardless of license validity.
+      global.licenseState = "expired";
+      global.isLicenseExpired = true;
+      global.licensePayload = null;
+      broadcastLicenseState(`Time tampering detected (${result.driftMinutes} min rollback)`);
+    }
+  } catch (err) {
+    writeLog(`[${getISTTimeString()}] Time guard error (${label}): ${err.message}`);
+  }
+}
+
 // Initialize license on startup
 (async () => {
   runStartupIntegrityCheck();
   await loadLicenseOnStartup();
+  await runTimeGuard("startup");
+  // Periodic re-check so a mid-run clock rollback is caught without a restart.
+  const intervalMin = parseInt(process.env.LICENSE_TIME_GUARD_INTERVAL_MIN || "15", 10);
+  if (timeGuard.guardEnabled() && intervalMin > 0) {
+    setInterval(() => { runTimeGuard("interval"); }, intervalMin * 60 * 1000).unref?.();
+  }
 })();
 
 /* ===================== 7) Express App & Middleware Setup ===================== */
@@ -2327,6 +2374,26 @@ setInterval(async () => {
  * POST /api/internal/transcription-callback
  * Cloud GPU callback when Jarvis orchestrator cannot reach SQL Server (DB_ENABLED=false).
  */
+/**
+ * GET /api/internal/ai-entitlement
+ * Sprint 9 — lets the AI-MVP orchestrator confirm the license permits AI work
+ * and which modules are enabled. Auth: SERVICE_TOKEN or CALLBACK_SECRET.
+ */
+app.get("/api/internal/ai-entitlement", (req, res) => {
+  const serviceToken = process.env.SERVICE_TOKEN || process.env.UPLOAD_SERVICE_TOKEN;
+  const callbackSecret = process.env.CALLBACK_SECRET;
+  const authHeader = req.headers.authorization || "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const provided = bearer || req.headers["x-service-token"] || req.headers["x-callback-secret"];
+  const allowed = (serviceToken && provided === serviceToken) || (callbackSecret && provided === callbackSecret);
+  if (!allowed) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  const { entitlementSnapshot } = require("./services/aiEntitlement");
+  const snap = entitlementSnapshot();
+  return res.status(200).json({ success: true, ...snap });
+});
+
 app.post("/api/internal/transcription-callback", async (req, res) => {
   const expectedSecret = process.env.CALLBACK_SECRET;
   const providedSecret = req.headers["x-callback-secret"];
