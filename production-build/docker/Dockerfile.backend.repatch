@@ -9,6 +9,7 @@ FROM sp-backend:prod AS patched
 COPY backend/server.js /app/server.js
 COPY backend/middleware/licenseGuard.js /app/middleware/licenseGuard.js
 COPY backend/middleware/logSafety.js /app/middleware/logSafety.js
+COPY backend/middleware/rateLimit.js /app/middleware/rateLimit.js
 COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
 COPY backend/uploadHandler.js /app/uploadHandler.js
 COPY backend/config/secrets.js /app/config/secrets.js

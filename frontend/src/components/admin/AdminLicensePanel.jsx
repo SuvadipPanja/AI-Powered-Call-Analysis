@@ -5,24 +5,35 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-  LuKey, LuShield, LuUser,
+  LuKey, LuShield,
   LuTriangleAlert, LuUpload, LuRefreshCw, LuCopy,
   LuShieldCheck, LuShieldAlert, LuShieldX, LuClock, LuActivity,
   LuFileKey, LuClipboardCheck, LuEye, LuTimer,
+  LuUsers, LuCpu, LuLayers, LuServer, LuBadgeCheck, LuSparkles,
 } from 'react-icons/lu';
 import config from '../../utils/envConfig';
 import apiClient from '../../utils/apiClient';
+import { parseLicenseStatusResponse } from '../../utils/licenseStatus';
 import { Button, Badge, Modal, Spinner, Label, Textarea } from '../ui';
+
+function prettyModule(name) {
+  return String(name || '')
+    .split(/[-_]/)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(' ');
+}
 
 const STATUS_MAP = {
   active: { label: 'Active', icon: LuShieldCheck, tone: 'success', color: 'var(--success)' },
   expiring: { label: 'Expiring Soon', icon: LuShieldAlert, tone: 'warning', color: 'var(--warning)' },
+  grace: { label: 'Read-Only Grace', icon: LuShieldAlert, tone: 'warning', color: 'var(--warning)' },
   expired: { label: 'Expired', icon: LuShieldX, tone: 'danger', color: 'var(--danger)' },
   none: { label: 'Not Licensed', icon: LuShieldX, tone: 'danger', color: 'var(--danger)' },
 };
 
 function getStatusKey(licenseStatus) {
   if (!licenseStatus) return 'none';
+  if (licenseStatus.licenseState === 'grace') return 'grace';
   if (licenseStatus.isExpired) return 'expired';
   if (licenseStatus.daysUntilExpiration <= 14) return 'expiring';
   return 'active';
@@ -65,6 +76,7 @@ export default function AdminLicensePanel({ username, onNotice }) {
   const [licenseKey, setLicenseKey] = useState('');
   const [licenseHistory, setLicenseHistory] = useState([]);
   const [licenseStatus, setLicenseStatus] = useState(null);
+  const [activeDetails, setActiveDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -77,6 +89,19 @@ export default function AdminLicensePanel({ username, onNotice }) {
   const notify = useCallback((msg, type = 'success') => {
     onNoticeRef.current?.(msg, type);
   }, []);
+
+  const fetchActiveDetails = useCallback(async (activeKey) => {
+    if (!activeKey) {
+      setActiveDetails(null);
+      return;
+    }
+    try {
+      const res = await apiClient.post('/api/license-details', { username, licenseKey: activeKey });
+      if (res.data?.success) setActiveDetails(res.data.license);
+    } catch {
+      /* non-fatal — the hero/KPIs fall back to license-status data */
+    }
+  }, [username]);
 
   const fetchLicenseData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -91,7 +116,10 @@ export default function AdminLicensePanel({ username, onNotice }) {
       const statusData = await statusRes.json();
 
       if (historyData.success) {
-        setLicenseHistory(historyData.licenses || []);
+        const licenses = historyData.licenses || [];
+        setLicenseHistory(licenses);
+        const active = licenses.find((l) => l.IsActive);
+        fetchActiveDetails(active?.LicenseKey);
       } else if (historyRes.status === 403) {
         setLicenseHistory([]);
         setError(historyData.message || 'Access denied.');
@@ -101,15 +129,11 @@ export default function AdminLicensePanel({ username, onNotice }) {
       }
 
       if (statusData.success) {
-        setLicenseStatus({
-          isExpired: statusData.isExpired,
-          daysUntilExpiration: statusData.daysUntilExpiration,
-          endDate: statusData.endDate,
-        });
+        setLicenseStatus(parseLicenseStatusResponse(statusData));
       } else if (statusRes.status === 404) {
         setLicenseStatus(null);
       } else {
-        setLicenseStatus({ isExpired: true, daysUntilExpiration: 0 });
+        setLicenseStatus({ isExpired: true, daysUntilExpiration: 0, licenseState: 'expired', graceRemaining: 0 });
       }
 
       setLastRefreshed(new Date());
@@ -119,7 +143,7 @@ export default function AdminLicensePanel({ username, onNotice }) {
     } finally {
       setLoading(false);
     }
-  }, [username, notify]);
+  }, [username, notify, fetchActiveDetails]);
 
   useEffect(() => {
     fetchLicenseData();
@@ -184,6 +208,32 @@ export default function AdminLicensePanel({ username, onNotice }) {
   const statusInfo = STATUS_MAP[statusKey];
   const StatusIcon = statusInfo.icon;
 
+  const ent = useMemo(() => {
+    const d = activeDetails || {};
+    const version = d.licenseVersion || null;
+    const aiModules = Array.isArray(d.aiModules) ? d.aiModules : [];
+    const aiAll = version === 3 && aiModules.length === 0;
+    const maxUsers = d.maxConcurrentUsers ?? d.users ?? 0;
+    return {
+      version,
+      versionLabel: version === 3 ? 'Ed25519 · v3' : version === 2 ? 'AES · v2' : null,
+      customer: d.customer || null,
+      licenseId: d.licenseId || null,
+      issuedAt: d.issuedAt || null,
+      maxUsers,
+      maxUsersLabel: maxUsers ? String(maxUsers) : 'Unlimited',
+      maxAgents: d.maxAgents ?? 0,
+      features: Array.isArray(d.features) ? d.features : [],
+      aiModules,
+      aiAll,
+      aiCountLabel: aiAll ? 'All' : String(aiModules.length || 0),
+      aiMaxJobs: d.aiMaxConcurrentJobs ?? 0,
+      serverFingerprint: d.serverFingerprint || null,
+      allowedMacs: Array.isArray(d.allowedMacs) ? d.allowedMacs : [],
+      issuerKeyId: d.issuerKeyId || null,
+    };
+  }, [activeDetails]);
+
   if (loading) {
     return (
       <div className="admin-license">
@@ -210,18 +260,18 @@ export default function AdminLicensePanel({ username, onNotice }) {
     );
   }
 
-  const activeLicense = licenseHistory.find(l => l.IsActive);
-
   return (
     <div className="admin-license">
-      {/* Warning/Expired banner */}
-      {(statusKey === 'expired' || statusKey === 'expiring') && (
-        <div className={`admin-license__banner admin-license__banner--${statusKey === 'expired' ? 'expired' : 'warning'}`}>
+      {/* Warning/Expired/Grace banner */}
+      {(statusKey === 'expired' || statusKey === 'expiring' || statusKey === 'grace') && (
+        <div className={`admin-license__banner admin-license__banner--${statusKey === 'expired' ? 'expired' : statusKey === 'grace' ? 'grace' : 'warning'}`}>
           <LuTriangleAlert size={18} />
           <span>
             {statusKey === 'expired'
               ? 'Your license has expired — upload a new license key to restore full access.'
-              : `License expires in ${licenseStatus.daysUntilExpiration} day(s) on ${formatDate(licenseStatus.endDate)}. Renew soon to avoid interruption.`}
+              : statusKey === 'grace'
+                ? `License expired — read-only grace mode. ${Math.max(0, licenseStatus.graceRemaining || 0)} day(s) remaining before full lockout. Upload a renewed license to restore write access.`
+                : `License expires in ${licenseStatus.daysUntilExpiration} day(s) on ${formatDate(licenseStatus.endDate)}. Renew soon to avoid interruption.`}
           </span>
         </div>
       )}
@@ -235,18 +285,34 @@ export default function AdminLicensePanel({ username, onNotice }) {
           <div>
             <div className="admin-license__hero-status">
               <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
+              {ent.versionLabel && (
+                <Badge variant={ent.version === 3 ? 'success' : 'default'}>
+                  <LuBadgeCheck size={12} style={{ marginRight: 4, verticalAlign: '-2px' }} />
+                  {ent.versionLabel}
+                </Badge>
+              )}
             </div>
-            <h3 className="admin-license__hero-title">License Status</h3>
+            <h3 className="admin-license__hero-title">
+              {ent.customer ? ent.customer : 'License Status'}
+            </h3>
             <p className="admin-license__hero-subtitle">
               {statusKey === 'active' && `Valid until ${formatDate(licenseStatus?.endDate)}`}
               {statusKey === 'expiring' && `Expires ${formatDate(licenseStatus?.endDate)} — action needed`}
+              {statusKey === 'grace' && `Read-only until ${Math.max(0, licenseStatus?.graceRemaining || 0)} grace day(s) remain`}
               {statusKey === 'expired' && 'Application features are restricted'}
               {statusKey === 'none' && 'No active license found'}
+              {ent.licenseId && (
+                <span className="admin-license__hero-id"> · ID {String(ent.licenseId).slice(0, 8)}</span>
+              )}
             </p>
           </div>
         </div>
         {licenseStatus && statusKey !== 'none' && (
-          <CountdownRing days={Math.max(0, licenseStatus.daysUntilExpiration || 0)} />
+          <CountdownRing
+            days={statusKey === 'grace'
+              ? Math.max(0, licenseStatus.graceRemaining || 0)
+              : Math.max(0, licenseStatus.daysUntilExpiration || 0)}
+          />
         )}
       </div>
 
@@ -255,26 +321,28 @@ export default function AdminLicensePanel({ username, onNotice }) {
         <div className="admin-license__kpi-card">
           <div className="admin-license__kpi-icon"><LuTimer size={18} /></div>
           <div className="admin-license__kpi-body">
-            <span className="admin-license__kpi-label">Days Remaining</span>
+            <span className="admin-license__kpi-label">{statusKey === 'grace' ? 'Grace Days Left' : 'Days Remaining'}</span>
             <strong className="admin-license__kpi-value">
-              {licenseStatus?.daysUntilExpiration != null
-                ? Math.max(0, licenseStatus.daysUntilExpiration)
-                : '—'}
+              {statusKey === 'grace'
+                ? Math.max(0, licenseStatus?.graceRemaining ?? 0)
+                : licenseStatus?.daysUntilExpiration != null
+                  ? Math.max(0, licenseStatus.daysUntilExpiration)
+                  : '—'}
             </strong>
           </div>
         </div>
         <div className="admin-license__kpi-card">
-          <div className="admin-license__kpi-icon"><LuFileKey size={18} /></div>
+          <div className="admin-license__kpi-icon"><LuUsers size={18} /></div>
           <div className="admin-license__kpi-body">
-            <span className="admin-license__kpi-label">License Type</span>
-            <strong className="admin-license__kpi-value">Enterprise</strong>
+            <span className="admin-license__kpi-label">Concurrent Users</span>
+            <strong className="admin-license__kpi-value">{ent.maxUsersLabel}</strong>
           </div>
         </div>
         <div className="admin-license__kpi-card">
-          <div className="admin-license__kpi-icon"><LuUser size={18} /></div>
+          <div className="admin-license__kpi-icon"><LuSparkles size={18} /></div>
           <div className="admin-license__kpi-body">
-            <span className="admin-license__kpi-label">Issued To</span>
-            <strong className="admin-license__kpi-value">{activeLicense?.UploadedBy || username || '—'}</strong>
+            <span className="admin-license__kpi-label">AI Modules</span>
+            <strong className="admin-license__kpi-value">{ent.aiCountLabel}</strong>
           </div>
         </div>
         <div className="admin-license__kpi-card">
@@ -287,6 +355,97 @@ export default function AdminLicensePanel({ username, onNotice }) {
           </div>
         </div>
       </div>
+
+      {/* Entitlements + Hardware binding (v3 rich license metadata) */}
+      {activeDetails && (
+        <div className="admin-license__detail-grid">
+          <section className="admin-settings__panel admin-license__ent-panel">
+            <header className="admin-settings__panel-head">
+              <div>
+                <h3><LuLayers size={18} /> Entitlements</h3>
+                <p>What this license grants on this server.</p>
+              </div>
+            </header>
+            <div className="admin-license__chip-block">
+              <span className="admin-license__chip-title">Application features</span>
+              <div className="admin-license__chips">
+                {ent.features.length === 0 ? (
+                  <span className="admin-license__chip admin-license__chip--muted">Core features</span>
+                ) : (
+                  ent.features.map((f) => (
+                    <span key={f} className="admin-license__chip">{prettyModule(f)}</span>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="admin-license__chip-block">
+              <span className="admin-license__chip-title">AI pipeline modules</span>
+              <div className="admin-license__chips">
+                {ent.aiAll ? (
+                  <span className="admin-license__chip admin-license__chip--ai">All modules</span>
+                ) : ent.aiModules.length === 0 ? (
+                  <span className="admin-license__chip admin-license__chip--muted">None licensed</span>
+                ) : (
+                  ent.aiModules.map((m) => (
+                    <span key={m} className="admin-license__chip admin-license__chip--ai">{prettyModule(m)}</span>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="admin-license__mini-stats">
+              <div><span>Max agents</span><strong>{ent.maxAgents || 'Unlimited'}</strong></div>
+              <div><span>Max AI jobs</span><strong>{ent.aiMaxJobs || 'Unlimited'}</strong></div>
+              <div><span>Issued</span><strong>{formatDate(ent.issuedAt)}</strong></div>
+            </div>
+          </section>
+
+          <section className="admin-settings__panel admin-license__hw-panel">
+            <header className="admin-settings__panel-head">
+              <div>
+                <h3><LuCpu size={18} /> Hardware Binding</h3>
+                <p>This license only runs on this machine.</p>
+              </div>
+              {ent.version === 3 && <Badge variant="success">Locked</Badge>}
+            </header>
+            {ent.serverFingerprint ? (
+              <div className="admin-license__fp">
+                <span className="admin-license__chip-title"><LuServer size={13} /> Server fingerprint</span>
+                <div className="admin-license__fp-row">
+                  <code>{ent.serverFingerprint}</code>
+                  <button
+                    type="button"
+                    className="admin-license__copy-btn"
+                    title="Copy fingerprint"
+                    onClick={() => copyToClipboard(ent.serverFingerprint, 'fp')}
+                  >
+                    {copied === 'fp' ? <LuClipboardCheck size={13} /> : <LuCopy size={13} />}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="admin-license__muted" style={{ margin: 0 }}>
+                {ent.version === 3 ? 'Bound by MAC address.' : 'Legacy MAC-bound license.'}
+              </p>
+            )}
+            {ent.allowedMacs.length > 0 && (
+              <div className="admin-license__chip-block">
+                <span className="admin-license__chip-title">Allowed MAC(s)</span>
+                <div className="admin-license__chips">
+                  {ent.allowedMacs.map((m) => (
+                    <span key={m} className="admin-license__chip admin-license__chip--mono">{m}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {ent.issuerKeyId && (
+              <div className="admin-license__mini-stats">
+                <div><span>Issuer key</span><strong>{ent.issuerKeyId}</strong></div>
+                <div><span>Signature</span><strong>Ed25519</strong></div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {/* Upload license */}
       <section className="admin-settings__panel">
@@ -417,10 +576,40 @@ export default function AdminLicensePanel({ username, onNotice }) {
                   </button>
                 </dd>
               </div>
+              <div>
+                <dt>Edition</dt>
+                <dd>
+                  <Badge variant={selectedLicense.licenseVersion === 3 ? 'success' : 'default'}>
+                    {selectedLicense.licenseVersion === 3 ? 'Ed25519 · v3' : selectedLicense.licenseVersion === 2 ? 'AES · v2' : 'Legacy'}
+                  </Badge>
+                </dd>
+              </div>
+              {selectedLicense.customer && (
+                <div><dt>Customer</dt><dd>{selectedLicense.customer}</dd></div>
+              )}
+              {selectedLicense.licenseId && (
+                <div><dt>License ID</dt><dd><code>{selectedLicense.licenseId}</code></dd></div>
+              )}
               <div><dt>Start Date</dt><dd>{formatDate(selectedLicense.startDate)}</dd></div>
               <div><dt>End Date</dt><dd>{formatDate(selectedLicense.endDate)}</dd></div>
-              <div><dt>Max Users</dt><dd>{selectedLicense.users ?? '—'}</dd></div>
-              <div><dt>MAC Address</dt><dd><code>{selectedLicense.macAddress || '—'}</code></dd></div>
+              <div><dt>Concurrent Users</dt><dd>{selectedLicense.maxConcurrentUsers ?? selectedLicense.users ?? '—'}</dd></div>
+              {(selectedLicense.aiModules?.length > 0 || selectedLicense.licenseVersion === 3) && (
+                <div>
+                  <dt>AI Modules</dt>
+                  <dd>{selectedLicense.aiModules?.length ? selectedLicense.aiModules.map(prettyModule).join(', ') : 'All modules'}</dd>
+                </div>
+              )}
+              {selectedLicense.features?.length > 0 && (
+                <div><dt>Features</dt><dd>{selectedLicense.features.map(prettyModule).join(', ')}</dd></div>
+              )}
+              {selectedLicense.serverFingerprint ? (
+                <div>
+                  <dt>Server Fingerprint</dt>
+                  <dd><code className="admin-license__detail-key">{selectedLicense.serverFingerprint.slice(0, 32)}…</code></dd>
+                </div>
+              ) : (
+                <div><dt>MAC Address</dt><dd><code>{selectedLicense.macAddress || '—'}</code></dd></div>
+              )}
               <div><dt>Application ID</dt><dd><code>{selectedLicense.applicationId || '—'}</code></dd></div>
               <div>
                 <dt>Status</dt>

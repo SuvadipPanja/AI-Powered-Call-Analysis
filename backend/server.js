@@ -1337,15 +1337,29 @@ app.post("/api/license-details", requireSuperAdmin, async (req, res) => {
         return res.status(401).json({ success: false, message: ver.reason || "Invalid signature." });
       }
       const p = ver.payload;
+      const allowedMacs = Array.isArray(p?.hardware?.allowedMacs) ? p.hardware.allowedMacs : [];
       const licenseDetails = {
         licenseKey: license.LicenseKey,
         startDate: p.notBefore,
         endDate: p.notAfter,
         users: p?.limits?.maxConcurrentUsers ?? 0,
-        macAddress: Array.isArray(p?.hardware?.allowedMacs) ? p.hardware.allowedMacs.join(", ") : (p?.hardware?.serverFingerprint ? `fp:${String(p.hardware.serverFingerprint).slice(0, 16)}…` : "—"),
+        macAddress: allowedMacs.length ? allowedMacs.join(", ") : (p?.hardware?.serverFingerprint ? `fp:${String(p.hardware.serverFingerprint).slice(0, 16)}…` : "—"),
         applicationId: p.issuerKeyId || "v3",
         isActive: license.IsActive,
         signature: "$Panja",
+        // Sprint 5/8/9 — rich v3 entitlements for the admin License panel.
+        licenseVersion: 3,
+        licenseId: p.licenseId || null,
+        customer: p.customer || null,
+        issuedAt: p.issuedAt || null,
+        maxConcurrentUsers: p?.limits?.maxConcurrentUsers ?? 0,
+        maxAgents: p?.limits?.maxAgents ?? 0,
+        features: Array.isArray(p?.limits?.features) ? p.limits.features : [],
+        aiModules: Array.isArray(p?.ai?.enabledModules) ? p.ai.enabledModules : [],
+        aiMaxConcurrentJobs: p?.ai?.maxConcurrentJobs ?? 0,
+        serverFingerprint: p?.hardware?.serverFingerprint || null,
+        allowedMacs,
+        issuerKeyId: p.issuerKeyId || "vendor",
       };
       writeLog(`[${getISTTimeString()}] v3 license details fetched by ${username}`);
       return res.status(200).json({ success: true, license: licenseDetails });
@@ -1397,6 +1411,10 @@ app.post("/api/license-details", requireSuperAdmin, async (req, res) => {
       applicationId: payload.appId,
       isActive: license.IsActive,
       signature: payload.signature,
+      licenseVersion: 2,
+      maxConcurrentUsers: payload.users,
+      features: [],
+      aiModules: [],
     };
 
     writeLog(`[${getISTTimeString()}] License details fetched successfully by ${username}`);
