@@ -1,10 +1,6 @@
 /**
  * File: ChatPopup.js
- * Purpose: Component for displaying a chat popup for agent communication.
- * Author: $Panja
- * Creation Date: 2024-12-27
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Updated: 2025-03-28
+ * Purpose: Component for displaying a chat popup for agent communication. * Creation Date: 2024-12-27 * Updated: 2025-03-28
  */
 
 import React, { useState, useEffect, useRef } from "react";

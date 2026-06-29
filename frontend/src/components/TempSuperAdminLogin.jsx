@@ -115,7 +115,7 @@ const TempSuperAdminLogin = ({ onLogin }) => {
    *************************************************/
   const logAttempt = (message) => {
     const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] Author: $Panja - ${message}`);
+    console.log(`[${timestamp}] ${message}`);
   };
 
   /*************************************************

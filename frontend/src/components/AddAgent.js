@@ -1,10 +1,6 @@
 /**
  * File: AddAgent.js
- * Purpose: Component for adding new agents, with improved help pointers and navigation buttons.
- * Author: $Panja
- * Creation Date: 2024-12-27
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Updated: 2025-04-26
+ * Purpose: Component for adding new agents, with improved help pointers and navigation buttons. * Creation Date: 2024-12-27 * Updated: 2025-04-26
  * Summary of Changes:
  *  - Aligned UI with Agents.js and HelpAgents.jsx (gradient navbar, neon cards, enhanced animations).
  *  - Updated button styles, sizes, and icons (FaHome for Dashboard, FaUndo for Back to Previous Page).

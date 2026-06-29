@@ -1,9 +1,7 @@
 /**
  * File: TeamAuditDashboard.jsx
  * Purpose: Audit dashboard for Team Leaders, Managers, Admins — shows audit summary stats,
- *          AI vs Manual score comparison, and list of audits with drill-down.
- * Author: $Panja
- * Date: 2025-06-18
+ *          AI vs Manual score comparison, and list of audits with drill-down. * Date: 2025-06-18
  */
 
 import React, { useState, useEffect, useCallback } from 'react';

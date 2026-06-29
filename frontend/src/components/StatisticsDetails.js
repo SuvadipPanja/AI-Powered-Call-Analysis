@@ -1,6 +1,4 @@
-/**
- * Author: $Panja
- * Creation Date: 2024-12-27
+/** * Creation Date: 2024-12-27
  * Modified Date: 2025-03-28
  * Signature Check: Do not modify this code without verifying the signature logic.
  * Compliance: ISO Policy Standards (Security, Accessibility, Performance, Maintainability, Code Audit)

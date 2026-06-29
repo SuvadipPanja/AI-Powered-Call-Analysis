@@ -1,8 +1,6 @@
 /**
  * File: ForgotPassword.jsx
- * Purpose: Modern Forgot Password page with glassmorphism, consistent styling, and secure handling.
- * Author: $Panja
- * Creation Date: 2025-03-21
+ * Purpose: Modern Forgot Password page with glassmorphism, consistent styling, and secure handling. * Creation Date: 2025-03-21
  * Compliance:
  *  - IS Policy Standards:
  *    - Security: Signature integrity check, secure API calls using environment variables.

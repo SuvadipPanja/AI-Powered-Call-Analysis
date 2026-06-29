@@ -72,9 +72,6 @@ const PIPELINE = [
 ];
 
 const About = () => {
-  const signature = "$Panja";
-  if (signature !== "$Panja") throw new Error("Signature mismatch");
-
   const navigate = useNavigate();
   const { appName } = useAppBranding();
   const footerText = getAppFooter(appName);

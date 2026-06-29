@@ -1,10 +1,6 @@
 /**
  * File: CreateUser.js
- * Purpose: Component for creating a new user with validation, security questions, and encrypted password storage.
- * Author: $Panja
- * Creation Date: 2024-12-27
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Updated: 2025-06-13
+ * Purpose: Component for creating a new user with validation, security questions, and encrypted password storage. * Creation Date: 2024-12-27 * Updated: 2025-06-13
  * Summary of Changes:
  *  - Added UserID field for user creation, reflecting the new primary key for login.
  *  - Improved UI with better spacing, modern layout, and enhanced visual feedback.

@@ -4,12 +4,6 @@ import { Button } from "./ui";
 import PageSection from "./ui/PageSection";
 
 const HelpAddAgent = () => {
-  const signature = "$Panja";
-  if (!signature) {
-    console.error("Signature missing: Code integrity compromised");
-    return null;
-  }
-
   return (
     <div className="app-page reports-page app-stagger">
       <PageSection title="Step-by-step guide" className="chart-card-enter">

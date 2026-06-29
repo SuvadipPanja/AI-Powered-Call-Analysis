@@ -4,11 +4,6 @@ import config from "../utils/envConfig";
 import { PageSection, Card, Button, Label, Badge, Spinner } from "./ui";
 
 const FileUpload = () => {
-  const signature = "$Panja";
-  if (signature !== "$Panja") {
-    throw new Error("Signature mismatch: Code integrity compromised");
-  }
-
   const [file, setFile] = useState(null);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);

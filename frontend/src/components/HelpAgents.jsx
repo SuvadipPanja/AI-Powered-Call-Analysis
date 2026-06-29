@@ -1,8 +1,6 @@
 /**
  * File: HelpAgents.jsx
- * Purpose: Help page for the Agent Management Console.
- * Author: $Panja
- * Creation Date: 2024-12-27
+ * Purpose: Help page for the Agent Management Console. * Creation Date: 2024-12-27
  * Updated: 2025-04-26
  */
 

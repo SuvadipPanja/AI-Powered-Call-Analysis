@@ -1,8 +1,6 @@
 /**
  * File: AuditSection.jsx
- * Purpose: Audit view for Auditors — read-only access to call audit queue and scoring data.
- * Author: $Panja
- * Creation Date: 2025-06-17
+ * Purpose: Audit view for Auditors — read-only access to call audit queue and scoring data. * Creation Date: 2025-06-17
  */
 
 import { useState, useEffect, useCallback } from 'react';

@@ -1,6 +1,4 @@
-/**
- * Author: $Panja
- * Creation Date: 2025-03-11
+/** * Creation Date: 2025-03-11
  * Updated: 2025-04-22
  * Description: Enhanced Team Leader Section with token-driven professional UI.
  * Compliance: IS Policy Standards (Security, Accessibility, Performance, Maintainability, Code Audit)

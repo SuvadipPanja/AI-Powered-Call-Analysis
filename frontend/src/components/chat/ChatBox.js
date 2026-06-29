@@ -1,8 +1,6 @@
 /**
  * File: ChatBox.js
- * Purpose: Chat interface for agents with categorized knowledge base options, providing a floating chat icon, terms acceptance, and options to chat with a supervisor, AI, or view knowledge entries.
- * Author: $Panja
- * Creation Date: 2025-03-27
+ * Purpose: Chat interface for agents with categorized knowledge base options, providing a floating chat icon, terms acceptance, and options to chat with a supervisor, AI, or view knowledge entries. * Creation Date: 2025-03-27
  * Modified Date: 2025-06-08
  * Changes:
  *  - Updated to fetch from RevaKnowledgeBase and display Question as options.

@@ -8,10 +8,6 @@ import { useAppBranding } from "../utils/appBranding";
 const LicenseErrorPage = () => {
   const { appName } = useAppBranding();
   const footerText = getAppFooter(appName);
-  const signature = "$Panja";
-  if (signature !== "$Panja") {
-    throw new Error("Signature mismatch: Code integrity compromised.");
-  }
 
   useEffect(() => {
     localStorage.clear();

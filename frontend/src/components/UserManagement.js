@@ -1,10 +1,6 @@
 /**
  * File: UserManagement.js
- * Purpose: Component for managing users, including listing, editing, deleting, and searching users.
- * Author: $Panja
- * Creation Date: 2024-12-27
- * Signature Check: Do not modify this code without verifying the signature logic.
- * Updated: 2025-06-13
+ * Purpose: Component for managing users, including listing, editing, deleting, and searching users. * Creation Date: 2024-12-27 * Updated: 2025-06-13
  * Summary of Changes:
  *  - Added UserID column to the user table to reflect the new primary key for login.
  */

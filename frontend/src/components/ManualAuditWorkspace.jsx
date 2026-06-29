@@ -1,9 +1,7 @@
 /**
  * File: ManualAuditWorkspace.jsx
  * Purpose: Full-screen audit drawer — listen to audio, score each rubric parameter with rationale,
- *          add tone notes + overall comments, then save to the CallAudits table.
- * Author: $Panja
- * Date: 2025-06-18
+ *          add tone notes + overall comments, then save to the CallAudits table. * Date: 2025-06-18
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
