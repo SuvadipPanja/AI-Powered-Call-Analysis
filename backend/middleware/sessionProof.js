@@ -41,7 +41,14 @@ function tokenFromRequest(req) {
 
 async function assertSessionOwnership(req, res, getPool, sql, { userId, logId = null }) {
   const token = tokenFromRequest(req);
-  const check = await verifySessionOwnership(getPool, sql, { token, userId, logId });
+  let resolvedUserId = userId;
+  try {
+    const pool = await getPool();
+    resolvedUserId = await resolveSessionUserId(pool, userId);
+  } catch {
+    /* keep original userId */
+  }
+  const check = await verifySessionOwnership(getPool, sql, { token, userId: resolvedUserId, logId });
   if (!check.ok) {
     res.status(check.status).json({ success: false, message: check.message });
     return false;

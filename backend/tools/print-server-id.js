@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CUSTOMER TOOL — run INSIDE the backend container on the target server:
- *   docker exec ai_call_backend node tools/print-server-id.js
+ *   docker exec sp_backend node tools/print-server-id.js
  *
  * Prints the server's hardware fingerprint + identity components. Send the
  * `serverFingerprint` value to the vendor so a license can be minted for this

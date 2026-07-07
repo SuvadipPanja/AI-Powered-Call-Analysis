@@ -26,6 +26,16 @@ async function ensureSchemaAndSeed(pool) {
     END
   `);
 
+  // Auto-discovery bookkeeping columns (added in-place for existing installs).
+  await pool.request().query(`
+    IF COL_LENGTH('dbo.AI_Query_Categories', 'AutoAdded') IS NULL
+      ALTER TABLE dbo.AI_Query_Categories ADD AutoAdded BIT NOT NULL DEFAULT 0;
+  `);
+  await pool.request().query(`
+    IF COL_LENGTH('dbo.AI_Query_Categories', 'PendingReview') IS NULL
+      ALTER TABLE dbo.AI_Query_Categories ADD PendingReview BIT NOT NULL DEFAULT 0;
+  `);
+
   const countRes = await pool.request().query("SELECT COUNT(*) AS c FROM dbo.AI_Query_Categories");
   if ((countRes.recordset[0]?.c || 0) > 0) return;
 
@@ -54,6 +64,8 @@ function mapRow(r) {
     color: r.Color || "#94a3b8",
     isActive: r.IsActive === true || r.IsActive === 1,
     sortOrder: r.SortOrder ?? 0,
+    autoAdded: r.AutoAdded === true || r.AutoAdded === 1,
+    pendingReview: r.PendingReview === true || r.PendingReview === 1,
     updatedAt: r.UpdatedAt || null,
     updatedBy: r.UpdatedBy || null,
   };
@@ -63,7 +75,8 @@ async function listCategories(pool, { activeOnly = false } = {}) {
   await ensureSchemaAndSeed(pool);
   const where = activeOnly ? "WHERE IsActive = 1" : "";
   const res = await pool.request().query(`
-    SELECT CategoryID, Name, Description, Keywords, Color, IsActive, SortOrder, UpdatedAt, UpdatedBy
+    SELECT CategoryID, Name, Description, Keywords, Color, IsActive, SortOrder,
+           AutoAdded, PendingReview, UpdatedAt, UpdatedBy
     FROM dbo.AI_Query_Categories
     ${where}
     ORDER BY SortOrder, Name
@@ -92,7 +105,8 @@ async function createCategory(pool, body, username) {
     .query(`
       INSERT INTO dbo.AI_Query_Categories (Name, Description, Keywords, Color, IsActive, SortOrder, UpdatedBy)
       OUTPUT INSERTED.CategoryID, INSERTED.Name, INSERTED.Description, INSERTED.Keywords,
-             INSERTED.Color, INSERTED.IsActive, INSERTED.SortOrder, INSERTED.UpdatedAt, INSERTED.UpdatedBy
+             INSERTED.Color, INSERTED.IsActive, INSERTED.SortOrder,
+             INSERTED.AutoAdded, INSERTED.PendingReview, INSERTED.UpdatedAt, INSERTED.UpdatedBy
       VALUES (@name, @description, @keywords, @color, @isActive, @sortOrder, @updatedBy)
     `);
   return mapRow(res.recordset[0]);
@@ -123,9 +137,11 @@ async function updateCategory(pool, id, body, username) {
     .query(`
       UPDATE dbo.AI_Query_Categories
       SET Name = @name, Description = @description, Keywords = @keywords, Color = @color,
-          IsActive = @isActive, SortOrder = @sortOrder, UpdatedAt = GETDATE(), UpdatedBy = @updatedBy
+          IsActive = @isActive, SortOrder = @sortOrder, PendingReview = 0,
+          UpdatedAt = GETDATE(), UpdatedBy = @updatedBy
       OUTPUT INSERTED.CategoryID, INSERTED.Name, INSERTED.Description, INSERTED.Keywords,
-             INSERTED.Color, INSERTED.IsActive, INSERTED.SortOrder, INSERTED.UpdatedAt, INSERTED.UpdatedBy
+             INSERTED.Color, INSERTED.IsActive, INSERTED.SortOrder,
+             INSERTED.AutoAdded, INSERTED.PendingReview, INSERTED.UpdatedAt, INSERTED.UpdatedBy
       WHERE CategoryID = @id
     `);
   if (!res.recordset.length) { const e = new Error("Category not found."); e.status = 404; throw e; }

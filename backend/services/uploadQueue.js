@@ -67,18 +67,16 @@ function runAiJob(audioFileName, { sql, config, writeLog }) {
 }
 
 async function enqueueAudioProcessing(audioFileName, deps) {
-  // Sprint 9 — defense in depth: never run the AI pipeline without a license
-  // that permits it, even if a caller bypassed the upload handler.
   try {
-    const { checkAiEntitlement } = require("./aiEntitlement");
-    const entitlement = checkAiEntitlement();
-    if (!entitlement.ok) {
-      deps.writeLog(`[Upload Queue] AI dispatch skipped (${audioFileName}): ${entitlement.reason}`);
+    const { assertAiDispatchAllowed } = require("./aiWorkToken");
+    const gate = await assertAiDispatchAllowed(audioFileName);
+    if (!gate.ok) {
+      deps.writeLog(`[Upload Queue] AI dispatch skipped (${audioFileName}): ${gate.reason}`);
       try {
         const pool = await deps.sql.connect(deps.config);
-        await updateUploadStatus(pool, deps.sql, audioFileName, "Error: AI not licensed");
-      } catch { /* best-effort status update */ }
-      return { queued: false, mode: "blocked", reason: entitlement.reason };
+        await updateUploadStatus(pool, deps.sql, audioFileName, `Error: ${gate.reason}`.slice(0, 50));
+      } catch { /* best-effort */ }
+      return { queued: false, mode: "blocked", reason: gate.reason };
     }
   } catch (err) {
     deps.writeLog(`[Upload Queue] Entitlement check error for ${audioFileName}: ${err.message}`);
@@ -106,7 +104,13 @@ function startUploadWorker(deps) {
     return null;
   }
 
-  const concurrency = parseInt(process.env.UPLOAD_QUEUE_CONCURRENCY || "2", 10);
+  const envConcurrency = parseInt(process.env.UPLOAD_QUEUE_CONCURRENCY || "2", 10);
+  let concurrency = envConcurrency;
+  try {
+    const { effectiveMaxConcurrentJobs } = require("./aiEntitlement");
+    const licMax = effectiveMaxConcurrentJobs();
+    if (licMax > 0) concurrency = Math.min(envConcurrency, licMax);
+  } catch { /* ignore */ }
 
   q.process(concurrency, async (job) => {
     const { audioFileName } = job.data;

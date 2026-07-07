@@ -50,6 +50,13 @@ const {
 } = require("./routes/bankSettingsRoutes");
 const { createQueryCategoryRouter } = require("./routes/queryCategoryRoutes");
 const { createSessionRouter } = require("./routes/sessionRoutes");
+const {
+  getSessionTimeoutHours,
+  clampTimeoutHours,
+  bustSessionTimeoutCache,
+  MIN_TIMEOUT_HOURS,
+  MAX_TIMEOUT_HOURS,
+} = require("./sessionPolicy");
 const reportHelpers = require("./services/reportHelpers");
 const { createReportRouter } = require("./routes/reportRoutes");
 const { createMiscRouter } = require("./routes/miscRoutes");
@@ -256,6 +263,11 @@ async function ensureAdminSchema() {
         ('backup_path', '');
     END
   `);
+  // Session inactivity timeout (hours) — seeded for pre-existing installs too.
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM dbo.AppSettings WHERE SettingKey = 'session_timeout_hours')
+      INSERT INTO dbo.AppSettings (SettingKey, SettingValue) VALUES ('session_timeout_hours', '2');
+  `);
   try {
     await pool.request().query(`
       INSERT INTO dbo.Locations (LocationName)
@@ -443,6 +455,9 @@ function markLicenseInvalid(reason, { event = "LICENSE_VALIDATED" } = {}) {
 const licenseV3 = require("./services/licenseV3");
 const hardwareId = require("./services/hardwareId");
 const timeGuard = require("./services/timeGuard");
+const { acquireSessionSeat } = require("./services/seatCounter");
+const licenseRevocation = require("./services/licenseRevocation");
+const licenseRevalidator = require("./services/licenseRevalidator");
 
 /** Sprint 8 — push current license state to all live sessions (best-effort). */
 function broadcastLicenseState(reason) {
@@ -542,6 +557,16 @@ async function applyV3License(pool, licenseKey, { uploadedBy, persistFile = fals
   }
 
   await upsertActiveLicense(pool, licenseKey, v.payload.notAfter, uploadedBy || "System");
+
+  try {
+    await licenseRevocation.mergeRevocationList(
+      pool,
+      v.payload.revocation?.crl || [],
+      uploadedBy ? `upload:${uploadedBy}` : "license-apply"
+    );
+  } catch (crlErr) {
+    writeLog(`[${getISTTimeString()}] WARN: CRL merge failed: ${crlErr.message}`);
+  }
 
   if (persistFile) {
     // Best-effort: persist token to file so restarts reload it. The DB row is
@@ -740,11 +765,31 @@ async function runTimeGuard(label = "startup") {
 (async () => {
   runStartupIntegrityCheck();
   await loadLicenseOnStartup();
+  try {
+    const pool = await connectToDatabase();
+    await licenseRevocation.loadRevokedFromDb(pool);
+  } catch (crlLoadErr) {
+    writeLog(`[${getISTTimeString()}] WARN: could not load revocation list: ${crlLoadErr.message}`);
+  }
   await runTimeGuard("startup");
-  // Periodic re-check so a mid-run clock rollback is caught without a restart.
   const intervalMin = parseInt(process.env.LICENSE_TIME_GUARD_INTERVAL_MIN || "15", 10);
   if (timeGuard.guardEnabled() && intervalMin > 0) {
     setInterval(() => { runTimeGuard("interval"); }, intervalMin * 60 * 1000).unref?.();
+  }
+  const revalidateMin = licenseRevalidator.revalidateIntervalMin();
+  if (revalidateMin > 0) {
+    setInterval(async () => {
+      await licenseRevalidator.revalidateActiveLicense({
+        connectToDatabase,
+        licenseFilePath: path.resolve(process.env.LICENSE_FILE_PATH || "./license/license.lic"),
+        validateV3License,
+        normalizeV3Payload,
+        markLicenseInvalid,
+        broadcastLicenseState,
+        writeLog,
+        getISTTimeString,
+      });
+    }, revalidateMin * 60 * 1000).unref?.();
   }
 })();
 
@@ -1537,29 +1582,21 @@ app.post("/api/login-security", loginLimiter, async (req, res) => {
     const username = user.Username;
     const sessionUserId = getLoginIdForSession(user);
     const userType = user.AccountType || "Agent";
-    const insertLog = await pool.request()
-      .input("UserID", sql.NVarChar, sessionUserId)
-      .input("Username", sql.NVarChar, username)
-      .input("UserType", sql.NVarChar, userType)
-      .input("LoginTime", sql.DateTime, new Date())
-      .query(`
-        INSERT INTO UserSessionLog (UserID, Username, UserType, LoginTime)
-        OUTPUT INSERTED.LogID
-        VALUES (@UserID, @Username, @UserType, @LoginTime);
-      `);
-    const logId = insertLog.recordset[0].LogID;
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-
-    await pool.request()
-      .input("UserID", sql.NVarChar, sessionUserId)
-      .input("Username", sql.NVarChar, username)
-      .input("LogID", sql.Int, logId)
-      .input("LoginTime", sql.DateTime, new Date())
-      .input("Token", sql.NVarChar, sessionToken)
-      .query(`
-        INSERT INTO ActiveSessions (UserID, Username, LogID, LoginTime, IsActive, Token)
-        VALUES (@UserID, @Username, @LogID, @LoginTime, 1, @Token);
-      `);
+    const seat = await acquireSessionSeat(pool, sql, crypto, {
+      userId: sessionUserId,
+      username,
+      userType,
+    });
+    if (!seat.ok) {
+      writeLog(`[${getISTTimeString()}] Login denied (seat limit) for UserID ${sessionUserId}: ${seat.activeCount}/${seat.maxUsers}`);
+      recordLicenseEvent({
+        event: "SEAT_LIMIT_DENIED",
+        outcome: "denied",
+        detail: `user=${sessionUserId} active=${seat.activeCount} max=${seat.maxUsers}`,
+      });
+      return res.status(403).json({ success: false, message: seat.message });
+    }
+    const { logId, sessionToken } = seat;
     writeLog(`[${getISTTimeString()}] Login successful for UserID ${sessionUserId}, Username: ${username}, LogID: ${logId}`);
     return res.status(200).json({
       success: true,
@@ -1848,7 +1885,7 @@ app.get("/api/user/:userId", async (req, res) => {
 app.post("/api/user", async (req, res) => {
   const { userId, username, password, email, userType, SecurityQuestionType, SecurityQuestionAnswer, createdBy } = req.body;
   const loginId = String(userId || "").trim();
-  const creator = String(createdBy || req.user?.username || "").trim();
+  const creator = String(req.user?.username || createdBy || "").trim();
   const validRoles = ["Super Admin", "Admin", "Manager", "Team Leader", "Auditor", "Agent", "IT"];
   if (!loginId || !username || !password || !email || !userType || !SecurityQuestionType || !SecurityQuestionAnswer || !creator) {
     writeLog(`[${getISTTimeString()}] User registration failed: Missing required fields for login ID ${loginId || 'N/A'}`);
@@ -1901,6 +1938,16 @@ app.post("/api/user", async (req, res) => {
   } catch (error) {
     console.error("Registration error:", error);
     writeLog(`[${getISTTimeString()}] Registration error for login ID ${loginId || 'N/A'}: ${error.message}`);
+    const sqlMsg = String(error.message || "");
+    if (/LoginAlias/i.test(sqlMsg) && /invalid column name/i.test(sqlMsg)) {
+      return res.status(500).json({
+        success: false,
+        message: "Database schema is outdated (LoginAlias). Restart the backend to apply migrations.",
+      });
+    }
+    if (error.number === 2627 || error.number === 2601) {
+      return res.status(400).json({ success: false, message: "UserID or username already exists." });
+    }
     res.status(500).json({ success: false, message: "Server error." });
   }
 });
@@ -2089,29 +2136,21 @@ app.post("/api/temp-super-admin-login", loginLimiter, async (req, res) => {
     const username = user.Username;
     const sessionUserId = getLoginIdForSession(user);
     const userType = user.AccountType;
-    const insertLog = await pool.request()
-      .input("UserID", sql.NVarChar, sessionUserId)
-      .input("Username", sql.NVarChar, username)
-      .input("UserType", sql.NVarChar, userType)
-      .input("LoginTime", sql.DateTime, new Date())
-      .query(`
-        INSERT INTO UserSessionLog (UserID, Username, UserType, LoginTime)
-        OUTPUT INSERTED.LogID
-        VALUES (@UserID, @Username, @UserType, @LoginTime);
-      `);
-    const logId = insertLog.recordset[0].LogID;
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-
-    await pool.request()
-      .input("UserID", sql.NVarChar, sessionUserId)
-      .input("Username", sql.NVarChar, username)
-      .input("LogID", sql.Int, logId)
-      .input("LoginTime", sql.DateTime, new Date())
-      .input("Token", sql.NVarChar, sessionToken)
-      .query(`
-        INSERT INTO ActiveSessions (UserID, Username, LogID, LoginTime, IsActive, Token)
-        VALUES (@UserID, @Username, @LogID, @LoginTime, 1, @Token);
-      `);
+    const seat = await acquireSessionSeat(pool, sql, crypto, {
+      userId: sessionUserId,
+      username,
+      userType,
+    });
+    if (!seat.ok) {
+      writeLog(`[${getISTTimeString()}] Temp Super Admin login denied (seat limit) for UserID ${sessionUserId}`);
+      recordLicenseEvent({
+        event: "SEAT_LIMIT_DENIED",
+        outcome: "denied",
+        detail: `temp-super-admin user=${sessionUserId} active=${seat.activeCount} max=${seat.maxUsers}`,
+      });
+      return res.status(403).json({ success: false, message: seat.message });
+    }
+    const { logId, sessionToken } = seat;
 
     writeLog(`[${getISTTimeString()}] Temp Super Admin login successful for UserID ${sessionUserId}, Username: ${username}, LogID: ${logId}`);
     return res.status(200).json({ success: true, username, userType, logId, sessionToken });
@@ -2357,24 +2396,45 @@ app.post("/api/invalidate-session", async (req, res) => {
 });
 
 /* Session Cleanup Job */
-// Periodically clears stale sessions older than 24 hours
+// Sweeps sessions idle past the admin-configured timeout (AppSettings
+// 'session_timeout_hours', default 2h) — catches closed browsers that never
+// hit the authGate again. Same policy the gate enforces per request.
+// GETUTCDATE(): the mssql/tedious driver stores DATETIME values as UTC
+// (useUTC default), so comparing against local GETDATE() would sweep
+// early/late on any DB server whose timezone is not UTC.
 setInterval(async () => {
   try {
     const pool = await connectToDatabase();
-    const result = await pool.request()
-      .query(`
-        UPDATE ActiveSessions
-        SET IsActive = 0
-        WHERE LoginTime < DATEADD(HOUR, -24, GETDATE());
-      `);
+    const timeoutMinutes = Math.round((await getSessionTimeoutHours(connectToDatabase)) * 60);
+    let result;
+    try {
+      result = await pool.request()
+        .input("timeoutMin", sql.Int, timeoutMinutes)
+        .query(`
+          UPDATE ActiveSessions
+          SET IsActive = 0
+          WHERE IsActive = 1
+            AND COALESCE(SessionInactiveTime, LoginTime) < DATEADD(MINUTE, -@timeoutMin, GETUTCDATE());
+        `);
+    } catch (columnErr) {
+      // Older DBs without the SessionInactiveTime column.
+      result = await pool.request()
+        .input("timeoutMin", sql.Int, timeoutMinutes)
+        .query(`
+          UPDATE ActiveSessions
+          SET IsActive = 0
+          WHERE IsActive = 1
+            AND LoginTime < DATEADD(MINUTE, -@timeoutMin, GETUTCDATE());
+        `);
+    }
     if (result.rowsAffected[0] > 0) {
-      writeLog(`[${getISTTimeString()}] Cleared ${result.rowsAffected[0]} stale sessions older than 24 hours.`);
+      writeLog(`[${getISTTimeString()}] Cleared ${result.rowsAffected[0]} session(s) idle for over ${timeoutMinutes} minutes.`);
     }
   } catch (error) {
     console.error(`[${getISTTimeString()}] Error clearing stale sessions: ${error.message}`);
     writeLog(`[${getISTTimeString()}] Error clearing stale sessions: ${error.message}`);
   }
-}, 60 * 60 * 1000); // Run every hour
+}, 15 * 60 * 1000); // Run every 15 minutes
 
 /* Stale audio processing cleanup — mark >1h in-progress calls as failed */
 setInterval(async () => {
@@ -2725,6 +2785,15 @@ app.post("/api/internal/transcription-callback", async (req, res) => {
             .input("agentConvinced", sql.NVarChar, (s.Agent_Convinced || "N/A").toString().slice(0, 20))
             .input("successProb", sql.Float, numOrNull(s.Loan_Success_Probability) || 0)
             .input("intelSummary", sql.NVarChar(sql.MAX), (s.Intelligence_Summary || "").toString().slice(0, 4000))
+            .input("holdDetected", sql.NVarChar, (s.Hold_Detected || "No").toString().slice(0, 10))
+            .input("holdCount", sql.Int, parseInt(s.Hold_Count, 10) || 0)
+            .input("holdTotalSec", sql.Float, numOrNull(s.Hold_Total_Sec))
+            .input("holdLongestSec", sql.Float, numOrNull(s.Hold_Longest_Sec))
+            .input("holdEvents", sql.NVarChar(sql.MAX), (() => {
+              if (s.Hold_Events_JSON) return String(s.Hold_Events_JSON).slice(0, 8000);
+              if (Array.isArray(s.Hold_Events)) return JSON.stringify(s.Hold_Events).slice(0, 8000);
+              return "[]";
+            })())
             .input("intelBlob", sql.NVarChar(sql.MAX), JSON.stringify({
               Primary_Query_Type: s.Primary_Query_Type, Secondary_Query_Types: s.Secondary_Query_Types,
               Escalation_Requested: s.Escalation_Requested, Escalation_Actioned: s.Escalation_Actioned,
@@ -2733,6 +2802,9 @@ app.post("/api/internal/transcription-callback", async (req, res) => {
               Loan_Type: s.Loan_Type, Loan_Interest: s.Loan_Interest, EMI_Affordability: s.EMI_Affordability,
               EMI_Amount: s.EMI_Amount, Loan_Amount: s.Loan_Amount, Agent_Convinced: s.Agent_Convinced,
               Loan_Success_Probability: s.Loan_Success_Probability, Intelligence_Summary: s.Intelligence_Summary,
+              Hold_Detected: s.Hold_Detected, Hold_Count: s.Hold_Count,
+              Hold_Total_Sec: s.Hold_Total_Sec, Hold_Longest_Sec: s.Hold_Longest_Sec,
+              Hold_Events: s.Hold_Events,
             }))
             .input("fileName", sql.NVarChar, audioFile)
             .query(`
@@ -2757,7 +2829,12 @@ app.post("/api/internal/transcription-callback", async (req, res) => {
                   AI_Agent_Convinced = @agentConvinced,
                   AI_Loan_Success_Probability = @successProb,
                   AI_Intelligence_Summary = @intelSummary,
-                  AI_Call_Intelligence = @intelBlob
+                  AI_Call_Intelligence = @intelBlob,
+                  AI_Hold_Detected = @holdDetected,
+                  AI_Hold_Count = @holdCount,
+                  AI_Hold_Total_Sec = @holdTotalSec,
+                  AI_Hold_Longest_Sec = @holdLongestSec,
+                  AI_Hold_Events = @holdEvents
               WHERE AudioFileName = @fileName
             `);
         }
@@ -3135,8 +3212,14 @@ app.post('/api/backfill-wpm', async (req, res) => {
  * Serves an audio file (authenticated via /api auth gate).
  */
 app.get("/api/audio/stream/:filename", (req, res) => {
-  const safeName = path.basename(String(req.params.filename || ""));
-  if (!safeName || safeName !== req.params.filename) {
+  let rawName;
+  try {
+    rawName = decodeURIComponent(String(req.params.filename || ""));
+  } catch {
+    return res.status(400).json({ success: false, message: "Invalid audio filename encoding." });
+  }
+  const safeName = path.basename(rawName);
+  if (!safeName || safeName.includes("..") || rawName.includes("/") || rawName.includes("\\")) {
     return res.status(400).json({ success: false, message: "Invalid audio filename." });
   }
   const audioFilePath = path.join(uploadDirectory, safeName);
@@ -3649,6 +3732,7 @@ app.get("/api/agent/dashboard", async (req, res) => {
         : "CAST(NULL AS NVARCHAR(100))";
       return `
         SELECT TOP 8
+          ADS.AudioFileName,
           ADS.CallDate,
           DATEDIFF(SECOND, 0, TRY_CONVERT(TIME, ADS.AudioDuration)) AS durationSec,
           TRY_CAST(ADS.Overall_Scoring AS DECIMAL(10,2)) AS overallScoring,
@@ -3675,6 +3759,7 @@ app.get("/api/agent/dashboard", async (req, res) => {
       recentCallsRes = await recentCallsRequest.query(buildAgentRecentCallsQuery({ withCallAudits: false }));
     }
     const callHistory = recentCallsRes.recordset.map((row) => ({
+      audioFileName: row.AudioFileName || null,
       callDateTime: row.CallDate,
       durationSec: row.durationSec || 0,
       overallScoring: row.overallScoring || 0,
@@ -5227,6 +5312,18 @@ app.put("/api/admin/settings", async (req, res) => {
     if (!caller || !isAdminRole(caller.AccountType)) {
       return res.status(403).json({ success: false, message: "Only Admin/Super Admin can update settings." });
     }
+    // Session timeout must be a number within the allowed window.
+    if ("session_timeout_hours" in settings) {
+      const clamped = clampTimeoutHours(settings.session_timeout_hours);
+      if (clamped === null) {
+        return res.status(400).json({
+          success: false,
+          message: `session_timeout_hours must be a number between ${MIN_TIMEOUT_HOURS} and ${MAX_TIMEOUT_HOURS}.`,
+        });
+      }
+      settings.session_timeout_hours = String(clamped);
+    }
+
     await ensureAdminSchema();
     const pool = await connectToDatabase();
     for (const [key, value] of Object.entries(settings)) {
@@ -5242,6 +5339,7 @@ app.put("/api/admin/settings", async (req, res) => {
           WHEN NOT MATCHED THEN INSERT (SettingKey, SettingValue, UpdatedBy) VALUES (@key, @value, @updatedBy);
         `);
     }
+    if ("session_timeout_hours" in settings) bustSessionTimeoutCache();
     writeLog(`[${getISTTimeString()}] Settings updated by ${caller.Username}: ${Object.keys(settings).join(", ")}`);
     return res.status(200).json({ success: true, message: "Settings updated." });
   } catch (error) {
@@ -5638,6 +5736,33 @@ function mapCallIntelligenceFromRecord(r) {
       return v != null && v !== "" && !isNaN(Number(v)) ? Number(v) : 0;
     })(),
     summary: pick("AI_Intelligence_Summary", "Intelligence_Summary", ""),
+    holdDetected: pick("AI_Hold_Detected", "Hold_Detected", "No"),
+    holdCount: (() => {
+      const v = pick("AI_Hold_Count", "Hold_Count", 0);
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    })(),
+    holdTotalSec: (() => {
+      const v = pick("AI_Hold_Total_Sec", "Hold_Total_Sec", 0);
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    })(),
+    holdLongestSec: (() => {
+      const v = pick("AI_Hold_Longest_Sec", "Hold_Longest_Sec", 0);
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    })(),
+    holdEvents: (() => {
+      const raw = r.AI_Hold_Events;
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (_) { /* ignore */ }
+      }
+      if (fromBlob && Array.isArray(fromBlob.Hold_Events)) return fromBlob.Hold_Events;
+      return [];
+    })(),
   };
 }
 
@@ -5647,7 +5772,8 @@ const CALL_INTELLIGENCE_SELECT = `
          AI_CSAT_Transferred,
          AI_Loan_Is_Loan_Call, AI_Loan_Type, AI_Loan_Interest, AI_EMI_Affordability,
          AI_EMI_Amount, AI_Loan_Amount, AI_Agent_Convinced,
-         AI_Loan_Success_Probability, AI_Intelligence_Summary, AI_Call_Intelligence
+         AI_Loan_Success_Probability, AI_Intelligence_Summary, AI_Call_Intelligence,
+         AI_Hold_Detected, AI_Hold_Count, AI_Hold_Total_Sec, AI_Hold_Longest_Sec, AI_Hold_Events
   FROM [dbo].[Consolidated_Audio_Analysis]
   WHERE AudioFileName = @filename
 `;
@@ -5830,6 +5956,21 @@ server.listen(PORT, async () => {
     console.log("[INFO] Admin schema (Locations, AppSettings) verified.");
   } catch (err) {
     console.error("[WARN] Admin schema bootstrap failed:", err.message);
+  }
+  // Sessions do not survive a backend restart (compose down/up): tokens live
+  // in the persistent DB, so without this every pre-restart login would stay
+  // valid indefinitely. Disable with SESSION_RESET_ON_BOOT=false if needed.
+  if (String(process.env.SESSION_RESET_ON_BOOT || "true").toLowerCase() !== "false") {
+    try {
+      const pool = await connectToDatabase();
+      const result = await pool.request()
+        .query("UPDATE dbo.ActiveSessions SET IsActive = 0 WHERE IsActive = 1");
+      const cleared = result.rowsAffected[0] || 0;
+      console.log(`[INFO] Startup session reset: invalidated ${cleared} session(s) — all users must log in again.`);
+      writeLog(`[${getISTTimeString()}] Startup session reset: invalidated ${cleared} session(s).`);
+    } catch (err) {
+      console.error("[WARN] Startup session reset failed:", err.message);
+    }
   }
   try {
     const pool = await connectToDatabase();

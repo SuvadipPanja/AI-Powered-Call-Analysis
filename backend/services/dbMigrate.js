@@ -151,6 +151,11 @@ async function ensureCallIntelligenceColumns(pool) {
     ["AI_Loan_Success_Probability", "FLOAT"],
     ["AI_Intelligence_Summary", "NVARCHAR(MAX)"],
     ["AI_Call_Intelligence", "NVARCHAR(MAX)"],
+    ["AI_Hold_Detected", "NVARCHAR(10)"],
+    ["AI_Hold_Count", "INT"],
+    ["AI_Hold_Total_Sec", "FLOAT"],
+    ["AI_Hold_Longest_Sec", "FLOAT"],
+    ["AI_Hold_Events", "NVARCHAR(MAX)"],
   ];
   for (const [name, type] of cols) {
     if (await columnExists(pool, "Consolidated_Audio_Analysis", name)) continue;
@@ -178,6 +183,34 @@ async function ensureLicenseAuditTable(pool) {
     CREATE INDEX IX_LicenseAuditLog_EventType ON dbo.LicenseAuditLog (EventType);
   `);
   console.log("[db-migrate] Created table dbo.LicenseAuditLog");
+}
+
+async function ensureUsersLoginAliasColumn(pool) {
+  if (!(await tableExists(pool, "Users"))) return;
+  if (await columnExists(pool, "Users", "LoginAlias")) {
+    if (!(await indexExists(pool, "UQ_Users_LoginAlias", "Users"))) {
+      await pool.request().query(`
+        CREATE UNIQUE NONCLUSTERED INDEX UQ_Users_LoginAlias
+        ON dbo.Users(LoginAlias)
+        WHERE LoginAlias IS NOT NULL
+      `);
+      console.log("[db-migrate] Created index UQ_Users_LoginAlias on Users.LoginAlias");
+    }
+    return;
+  }
+  await pool.request().query("ALTER TABLE dbo.Users ADD LoginAlias NVARCHAR(50) NULL");
+  console.log("[db-migrate] Added Users.LoginAlias");
+  await pool.request().query(`
+    UPDATE dbo.Users
+    SET LoginAlias = CAST(UserID AS NVARCHAR(50))
+    WHERE LoginAlias IS NULL
+  `);
+  await pool.request().query(`
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_Users_LoginAlias
+    ON dbo.Users(LoginAlias)
+    WHERE LoginAlias IS NOT NULL
+  `);
+  console.log("[db-migrate] Backfilled Users.LoginAlias and created unique index");
 }
 
 async function ensureLicenseTimeGuardTable(pool) {
@@ -232,6 +265,19 @@ async function runDatabaseMigrations(pool) {
   const steps = [];
 
   try {
+    // Session inactivity tracking — the frontend heartbeat writes
+    // SessionInactiveTime and the authGate/cleanup enforce the idle timeout
+    // against it. Without the column, idle time falls back to LoginTime and
+    // ACTIVE users would be logged out N hours after login.
+    if (await tableExists(pool, "ActiveSessions")
+        && !(await columnExists(pool, "ActiveSessions", "SessionInactiveTime"))) {
+      await pool.request().query(
+        "ALTER TABLE dbo.ActiveSessions ADD SessionInactiveTime DATETIME NULL"
+      );
+      console.log("[db-migrate] Added ActiveSessions.SessionInactiveTime");
+    }
+    steps.push("Sessions");
+
     await bankSettingsService.ensureBankSettingsSchema(pool);
     steps.push("BankSettings");
 
@@ -276,6 +322,9 @@ async function runDatabaseMigrations(pool) {
     await ensureLicenseAuditTable(pool);
     steps.push("LicenseAuditLog");
 
+    await ensureUsersLoginAliasColumn(pool);
+    steps.push("UsersLoginAlias");
+
     await ensureLicenseTimeGuardTable(pool);
     steps.push("LicenseTimeGuard");
 
@@ -299,4 +348,10 @@ async function runDatabaseMigrations(pool) {
   }
 }
 
-module.exports = { runDatabaseMigrations };
+module.exports = {
+  runDatabaseMigrations,
+  ensureUsersLoginAliasColumn,
+  columnExists,
+  tableExists,
+  indexExists,
+};

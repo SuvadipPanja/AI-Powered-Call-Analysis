@@ -1,0 +1,9 @@
+# License directory (local dev)
+
+Copy or generate `license.lic` here for local backend runs. **Do not commit the `.lic` file.**
+
+```bash
+node generate-local-license.js
+```
+
+See `docs/LICENSE-DEPLOY.md`.

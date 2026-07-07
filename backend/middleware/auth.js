@@ -2,12 +2,19 @@
  * Centralized authentication gate.
  *
  * Validates the session token (Authorization: Bearer <token> or x-session-token
- * header) against dbo.ActiveSessions (IsActive = 1). Public routes
- * - login, license verification, forgot-password flow, session management and
- * internal callbacks - are allowlisted and pass through untouched.
+ * header) against dbo.ActiveSessions (IsActive = 1) AND enforces the
+ * admin-configurable inactivity timeout (AppSettings 'session_timeout_hours',
+ * default 2h): sessions idle past the limit are invalidated on the spot.
+ * "Activity" = the SessionInactiveTime heartbeat the frontend posts on real
+ * user input — background polling alone cannot keep a session alive.
+ *
+ * Public routes - login, license verification, forgot-password flow, session
+ * management and internal callbacks - are allowlisted and pass through untouched.
  *
  * Enforcement can be disabled with API_AUTH_ENFORCE=false (kept on by default).
  */
+
+const { getSessionTimeoutMs } = require("../sessionPolicy");
 
 const ENFORCE = String(process.env.API_AUTH_ENFORCE || "true").toLowerCase() !== "false";
 
@@ -85,19 +92,58 @@ function authGate(getPool, sql) {
 
     try {
       const pool = await getPool();
-      const result = await pool
-        .request()
-        .input("token", sql.NVarChar, token)
-        .query(`
-          SELECT TOP 1 s.UserID, s.Username, s.LogID, u.AccountType
-          FROM dbo.ActiveSessions s
-          LEFT JOIN dbo.Users u ON s.Username = u.Username
-          WHERE s.Token = @token AND s.IsActive = 1
-        `);
+      let result;
+      let hasInactiveColumn = true;
+      try {
+        result = await pool
+          .request()
+          .input("token", sql.NVarChar, token)
+          .query(`
+            SELECT TOP 1 s.UserID, s.Username, s.LogID, s.LoginTime,
+                   s.SessionInactiveTime, u.AccountType
+            FROM dbo.ActiveSessions s
+            LEFT JOIN dbo.Users u ON s.Username = u.Username
+            WHERE s.Token = @token AND s.IsActive = 1
+          `);
+      } catch (columnErr) {
+        // Older DBs without the SessionInactiveTime column.
+        hasInactiveColumn = false;
+        result = await pool
+          .request()
+          .input("token", sql.NVarChar, token)
+          .query(`
+            SELECT TOP 1 s.UserID, s.Username, s.LogID, s.LoginTime, u.AccountType
+            FROM dbo.ActiveSessions s
+            LEFT JOIN dbo.Users u ON s.Username = u.Username
+            WHERE s.Token = @token AND s.IsActive = 1
+          `);
+      }
       if (!result.recordset.length) {
         return res.status(401).json({ success: false, message: "Invalid or expired session." });
       }
       const row = result.recordset[0];
+
+      // Inactivity timeout (admin-configurable, default 2h). Last activity is
+      // the frontend heartbeat (SessionInactiveTime); LoginTime for sessions
+      // that never sent one.
+      const lastActivity = (hasInactiveColumn && row.SessionInactiveTime) || row.LoginTime;
+      if (lastActivity) {
+        const idleMs = Date.now() - new Date(lastActivity).getTime();
+        const timeoutMs = await getSessionTimeoutMs(getPool);
+        if (idleMs >= timeoutMs) {
+          try {
+            await pool
+              .request()
+              .input("token", sql.NVarChar, token)
+              .query("UPDATE dbo.ActiveSessions SET IsActive = 0 WHERE Token = @token");
+          } catch (_) { /* best effort — 401 below is what matters */ }
+          console.log(
+            `[auth] Session for ${row.Username} timed out after ${Math.round(idleMs / 60000)} min idle`
+          );
+          return res.status(401).json({ success: false, message: "Session timed out due to inactivity." });
+        }
+      }
+
       req.user = {
         userId: row.UserID,
         username: row.Username,

@@ -160,7 +160,15 @@ function evaluateV3(payload, { now = new Date(), serverFingerprint } = {}) {
     return { state: "invalid", reason: "License has no hardware binding" };
   }
 
-  // 3) Revocation (self-contained CRL — newer licenses can revoke older ids).
+  // 3) Revocation — in-token CRL + server-persisted merged CRL (Sprint 8).
+  try {
+    const licenseRevocation = require("./licenseRevocation");
+    if (payload.licenseId && licenseRevocation.isRevoked(payload.licenseId)) {
+      return { state: "invalid", reason: "License revoked" };
+    }
+  } catch {
+    /* optional during tests */
+  }
   if (Array.isArray(payload.revocation?.crl) && payload.licenseId && payload.revocation.crl.includes(payload.licenseId)) {
     return { state: "invalid", reason: "License revoked" };
   }

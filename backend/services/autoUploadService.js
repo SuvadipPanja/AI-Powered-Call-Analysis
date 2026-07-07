@@ -495,6 +495,15 @@ async function processRecord(pool, record, csvPath, allRecords, settings, onProg
       return { stopped: true };
     }
 
+    const { assertAiDispatchAllowed } = require('./aiWorkToken');
+    const gate = await assertAiDispatchAllowed(destFileName);
+    if (!gate.ok) {
+      log(`${tag}: AI blocked — ${gate.reason}`);
+      await cleanupPartialUpload(pool, destFileName, destPath);
+      Object.assign(record, { status: 'Failed', failure_reason: gate.reason, processing_time: '0' });
+      return { failed: true, reason: gate.reason };
+    }
+
     progress('Waiting for AI');
     await new Promise((resolve) => {
       executePythonScript('', [destFileName], (code) => {

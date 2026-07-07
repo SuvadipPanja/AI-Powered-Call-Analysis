@@ -85,24 +85,28 @@ const isRemoteAiMain = () => {
 
 
 
-const orchestratorHeaders = () => {
+const orchestratorHeaders = (audioFile, modules = []) => {
+  const { orchestratorAuthHeaders } = require("./services/aiWorkToken");
+  if (audioFile) {
+    return orchestratorAuthHeaders(audioFile, { modules });
+  }
   const secret = process.env.ORCHESTRATOR_SECRET;
   return secret ? { "X-Orchestrator-Secret": secret } : {};
 };
 
-const postLocalProcessAudio = async (aiMainBase, audioFile) => {
+const postLocalProcessAudio = async (aiMainBase, audioFile, modules) => {
 
   const processUrl = `${aiMainBase}/process-audio`;
 
   writeLog(`[INFO] Target URL: ${processUrl}`);
 
-  return axios.post(processUrl, { audioFile }, { timeout: 30_000, headers: orchestratorHeaders() });
+  return axios.post(processUrl, { audioFile }, { timeout: 30_000, headers: orchestratorHeaders(audioFile, modules) });
 
 };
 
 
 
-const postRemoteUploadAndProcess = async (aiMainBase, audioFile) => {
+const postRemoteUploadAndProcess = async (aiMainBase, audioFile, modules) => {
 
   const uploadDir = resolveAudioUploadDir();
 
@@ -142,7 +146,7 @@ const postRemoteUploadAndProcess = async (aiMainBase, audioFile) => {
 
     maxContentLength: Infinity,
 
-    headers: orchestratorHeaders(),
+    headers: orchestratorHeaders(audioFile, modules),
 
   });
 
@@ -172,6 +176,27 @@ const executePythonScript = async (scriptPath, args = [], cb) => {
 
   const audioFile = args[0];
 
+  let pool = null;
+  try {
+    pool = await connectToDatabase();
+  } catch (dbErr) {
+    writeLog(`[WARN] DB unavailable for call processing log: ${dbErr.message}`);
+  }
+
+  const { assertAiDispatchAllowed } = require("./services/aiWorkToken");
+  const gate = await assertAiDispatchAllowed(audioFile);
+  if (!gate.ok) {
+    writeLog(`[ERROR] AI dispatch blocked for ${audioFile}: ${gate.reason}`);
+    await logCallEvent(pool, {
+      audioFile,
+      stage: "dispatch",
+      message: gate.reason,
+      level: "ERROR",
+    });
+    return cb && cb(1);
+  }
+  const dispatchModules = gate.modules || [];
+
   const aiMainBase = (process.env.AI_MAIN_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const remote = isRemoteAiMain();
@@ -181,13 +206,6 @@ const executePythonScript = async (scriptPath, args = [], cb) => {
   writeLog(`[INFO] Initiating audio processing for file: ${audioFile}`);
 
   writeLog(`[INFO] Mode: ${remote ? 'remote GPU (multipart upload)' : 'local (JSON)'}`);
-
-  let pool = null;
-  try {
-    pool = await connectToDatabase();
-  } catch (dbErr) {
-    writeLog(`[WARN] DB unavailable for call processing log: ${dbErr.message}`);
-  }
 
   await logCallEvent(pool, {
     audioFile,
@@ -200,9 +218,9 @@ const executePythonScript = async (scriptPath, args = [], cb) => {
 
     const resp = remote
 
-      ? await postRemoteUploadAndProcess(aiMainBase, audioFile)
+      ? await postRemoteUploadAndProcess(aiMainBase, audioFile, dispatchModules)
 
-      : await postLocalProcessAudio(aiMainBase, audioFile);
+      : await postLocalProcessAudio(aiMainBase, audioFile, dispatchModules);
 
 
 

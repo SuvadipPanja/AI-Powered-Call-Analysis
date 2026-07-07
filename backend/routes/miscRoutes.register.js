@@ -17,7 +17,7 @@ module.exports = function registerMiscRoutes(router, deps, H) {
     validator,
     si,
   } = deps;
-  const { mapScoringFields, isMissingDbObjectError } = H;
+  const { mapScoringFields, isMissingDbObjectError, manualScoringFromCallAudit, mergeManualScoringFromConsolidated } = H;
   const fs = require("fs");
   const path = require("path");
 
@@ -201,10 +201,37 @@ router.get('/api/custom-scoring-details/:filename', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Scoring data not found.' });
     }
     const record = result.recordset[0];
+    let manualScoring = mapScoringFields(record, 'Manual');
+
+    try {
+      const auditResult = await pool.request()
+        .input('fileName', sql.NVarChar, filename)
+        .query(`
+          SELECT TOP 1 AuditID, OverallManualScore, OverallComments
+          FROM dbo.CallAudits
+          WHERE AudioFileName = @fileName
+          ORDER BY COALESCE(UpdatedAt, CreatedAt) DESC
+        `);
+      if (auditResult.recordset.length > 0) {
+        const audit = auditResult.recordset[0];
+        const scoresResult = await pool.request()
+          .input('auditId', sql.Int, audit.AuditID)
+          .query(`
+            SELECT ParameterName, ManualScore
+            FROM dbo.CallAuditScores
+            WHERE AuditID = @auditId
+          `);
+        const fromAudit = manualScoringFromCallAudit(audit, scoresResult.recordset || []);
+        manualScoring = mergeManualScoringFromConsolidated(manualScoring, fromAudit);
+      }
+    } catch (auditErr) {
+      console.warn('CallAudits merge skipped for custom-scoring-details:', auditErr.message);
+    }
+
     res.status(200).json({
       success: true,
       aiScoring: mapScoringFields(record, 'AI'),
-      manualScoring: mapScoringFields(record, 'Manual'),
+      manualScoring,
     });
   } catch (error) {
     console.error('Error fetching scoring details:', error);

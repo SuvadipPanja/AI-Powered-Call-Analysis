@@ -48,6 +48,21 @@ function maxConcurrentJobs() {
   return Number.isFinite(n) && n > 0 ? n : 0; // 0 = unlimited
 }
 
+/** Env override for shared-GPU prod (0 = use license only). */
+function envMaxConcurrentJobs() {
+  const n = parseInt(process.env.AI_MAX_CONCURRENT_JOBS || "0", 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Effective cap: min(license, env) when both set; env alone when license unlimited. */
+function effectiveMaxConcurrentJobs() {
+  const lic = maxConcurrentJobs();
+  const env = envMaxConcurrentJobs();
+  if (env > 0 && lic > 0) return Math.min(env, lic);
+  if (env > 0) return env;
+  return lic;
+}
+
 /**
  * Is a specific AI module licensed right now?
  * @param {string} mod
@@ -60,8 +75,17 @@ function isModuleEnabled(mod) {
   return mods.includes(mod);
 }
 
+/** Modules required for the full ai-mvp pipeline dispatch. */
+function pipelineModules() {
+  const mods = enabledModules();
+  if (mods.length === 0) {
+    return CANONICAL_AI_MODULES;
+  }
+  return mods;
+}
+
 /**
- * Gate the AI pipeline. Pass the modules a job needs; empty means "any AI".
+ * Gate the AI pipeline. Pass the modules a job needs; empty means full pipeline.
  * @param {string[]} [requiredModules]
  * @returns {{ ok: boolean, reason?: string }}
  */
@@ -100,7 +124,9 @@ module.exports = {
   CANONICAL_AI_MODULES,
   licenseActive,
   enabledModules,
+  pipelineModules,
   maxConcurrentJobs,
+  effectiveMaxConcurrentJobs,
   isModuleEnabled,
   checkAiEntitlement,
   entitlementSnapshot,
