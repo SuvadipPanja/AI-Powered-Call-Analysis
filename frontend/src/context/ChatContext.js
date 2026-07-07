@@ -1,8 +1,6 @@
 /**
  * File: ChatContext.js
- * Purpose: Provides a context for managing chat sessions and WebSocket communication in the application.
- * Author: $Panja
- * Creation Date: 2025-03-27
+ * Purpose: Provides a context for managing chat sessions and WebSocket communication in the application. * Creation Date: 2025-03-27
  * Modified Date: 2025-06-08
  * Changes:
  *  - Enhanced WebSocket readiness check with a callback mechanism.
@@ -19,7 +17,7 @@ const ChatContext = createContext();
 
 export const ChatProvider = ({ children }) => {
   const navigate = useNavigate();
-  const { username, userType, userId, isLoggedIn } = useAuth();
+  const { username, userType, userId, isLoggedIn, logId, token } = useAuth();
   const [chatSessions, setChatSessions] = useState(() => {
     return JSON.parse(localStorage.getItem("chatSessions")) || {};
   });
@@ -28,7 +26,6 @@ export const ChatProvider = ({ children }) => {
   const wsRef = useRef(null); // Ref to track the current WebSocket instance
   const messageQueue = useRef([]); // Queue for pending messages
   const isWsReady = useRef(false); // Flag to track WebSocket readiness
-  const logId = localStorage.getItem("logId") || "";
 
   useEffect(() => {
     if (!isLoggedIn || !username || !userType || !userId || !logId) {
@@ -48,12 +45,14 @@ export const ChatProvider = ({ children }) => {
       newWs.onopen = () => {
         console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [WS] WebSocket opened for ${username} at ${new Date().toISOString()}`);
         isWsReady.current = true;
+        const sessionToken = token || "";
         const registerMessage = {
           type: "register",
           userId,
           username,
           userType,
           logId: parseInt(logId, 10),
+          sessionToken,
         };
         newWs.send(JSON.stringify(registerMessage));
         console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [WS] Sent registration for ${userType} ${username}`);

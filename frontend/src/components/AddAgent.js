@@ -12,10 +12,10 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './management-pages.css';
-import axios from 'axios';
 import { FaQuestionCircle } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-import config from '../utils/envConfig';
+import { fetchAgentFormDropdowns } from '../services/dropdownsService';
+import { createAgent } from '../services/agentsService';
 import { Card, Button, Input, Select, Label } from './ui';
 
 const AddAgent = () => {
@@ -62,16 +62,11 @@ const AddAgent = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [mgrRes, tlRes, audRes, locRes] = await Promise.all([
-          fetch(`${config.apiBaseUrl}/api/dropdown/managers`).then(r => r.json()),
-          fetch(`${config.apiBaseUrl}/api/dropdown/team-leaders`).then(r => r.json()),
-          fetch(`${config.apiBaseUrl}/api/dropdown/auditors`).then(r => r.json()),
-          fetch(`${config.apiBaseUrl}/api/dropdown/locations`).then(r => r.json()),
-        ]);
-        if (mgrRes.success) setDropdownManagers(mgrRes.managers || []);
-        if (tlRes.success) setDropdownTeamLeaders(tlRes.teamLeaders || []);
-        if (audRes.success) setDropdownAuditors(audRes.auditors || []);
-        if (locRes.success) setDropdownLocations(locRes.locations || []);
+        const { managers, teamLeaders, auditors, locations } = await fetchAgentFormDropdowns();
+        setDropdownManagers(managers);
+        setDropdownTeamLeaders(teamLeaders);
+        setDropdownAuditors(auditors);
+        setDropdownLocations(locations);
       } catch (err) {
         console.error('Error loading dropdown data:', err.message);
       }
@@ -138,30 +133,24 @@ const AddAgent = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${config.apiBaseUrl}/api/agents`, formData);
-      if (res.status === 201) {
-        setSuccessMessage('Agent added successfully!');
-        setErrorMessage('');
-        setFormData({
-          name: '',
-          agentId: '',
-          type: 'Inbound',
-          email: '',
-          mobile: '',
-          supervisor: '',
-          manager: '',
-          auditor: '',
-          notes: '',
-          agent_location: ''
-        });
-      } else {
-        setErrorMessage(res.data?.error || 'Failed to add agent. Please try again.');
-        setSuccessMessage('');
-      }
+      await createAgent(formData);
+      setSuccessMessage('Agent added successfully!');
+      setErrorMessage('');
+      setFormData({
+        name: '',
+        agentId: '',
+        type: 'Inbound',
+        email: '',
+        mobile: '',
+        supervisor: '',
+        manager: '',
+        auditor: '',
+        notes: '',
+        agent_location: '',
+      });
     } catch (err) {
       console.error('Error adding agent:', err);
-      const msg = err.response?.data?.error || err.response?.data?.message;
-      setErrorMessage(msg || 'Failed to add agent. Please try again.');
+      setErrorMessage(err.message || 'Failed to add agent. Please try again.');
       setSuccessMessage('');
     }
   };

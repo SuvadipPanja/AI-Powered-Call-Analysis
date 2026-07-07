@@ -7,7 +7,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './management-pages.css';
 import { Card, Button, Input, Select, Badge } from './ui';
-import { apiGet } from '../utils/apiHelpers';
+import { getAuditQueue } from '../services/auditService';
+import { listLocationsDropdown } from '../services/dropdownsService';
 import { useAuth } from '../context/AuthContext';
 
 export default function AuditSection() {
@@ -25,7 +26,7 @@ export default function AuditSection() {
   const fetchAuditQueue = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiGet(`/api/audit-queue/${encodeURIComponent(username)}`, { label: 'audit-queue' });
+      const data = await getAuditQueue(username);
       if (data.success) {
         setCalls(data.calls || []);
       } else {
@@ -40,8 +41,8 @@ export default function AuditSection() {
 
   const fetchLocations = useCallback(async () => {
     try {
-      const data = await apiGet('/api/dropdown/locations', { label: 'dropdown-locations' });
-      if (data.success) setLocations(data.locations || []);
+      const locations = await listLocationsDropdown();
+      setLocations(locations);
     } catch {
       /* ignore */
     }

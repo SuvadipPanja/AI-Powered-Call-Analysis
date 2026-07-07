@@ -1,6 +1,11 @@
 import { useState, useCallback, useMemo } from "react";
 import { resolveDashboardDateRange, buildDashboardQueryParams } from "../utils/dashboardFilters";
-import { apiGetQuery } from "../utils/apiHelpers";
+import { getMetricsOverview } from "../services/reportsService";
+import {
+  buildKpiStats,
+  computeKpiComparison,
+  formatKpiDelta,
+} from "../utils/dashboardKpiUtils";
 
 const EMPTY_PREV = {
   totalCallsProcessed: 0,
@@ -53,8 +58,7 @@ export default function useDashboardMetrics() {
 
       const startDate = new Date(fromDate);
       const endDate = new Date(toDate);
-      const qs = buildDashboardQueryParams(filters);
-      const data = await apiGetQuery("/api/metrics-overview", qs, { label: "metrics-overview" });
+      const data = await getMetricsOverview(buildDashboardQueryParams(filters));
 
       if (!data.success) {
         setFetchFailed(true);
@@ -84,7 +88,7 @@ export default function useDashboardMetrics() {
       });
 
       try {
-        const prevData = await apiGetQuery("/api/metrics-overview", prevQs, { label: "metrics-overview-prev" });
+        const prevData = await getMetricsOverview(prevQs);
         if (prevData.success) {
           setPrevPeriodData({
             totalCallsProcessed: prevData.totalCallsProcessed || 0,
@@ -119,18 +123,13 @@ export default function useDashboardMetrics() {
     }
   }, [resetMetrics]);
 
-  const successRate = totalCallsProcessed > 0
-    ? ((successCount / totalCallsProcessed) * 100).toFixed(1)
-    : "0.0";
-
-  const kpiStats = useMemo(() => ({
-    totalCalls: totalCallsProcessed,
+  const kpiStats = useMemo(() => buildKpiStats({
+    totalCallsProcessed,
     successCount,
     failedCount,
-    avgAiScore: avgAiScoring * 100,
-    avgManualScore: avgManualScoring * 100,
+    avgAiScoring,
+    avgManualScoring,
     aht,
-    successRate,
   }), [
     totalCallsProcessed,
     successCount,
@@ -138,24 +137,19 @@ export default function useDashboardMetrics() {
     avgAiScoring,
     avgManualScoring,
     aht,
-    successRate,
   ]);
 
-  const kpiComparison = useMemo(() => {
-    const pctChange = (current, previous) => {
-      if (current === 0 && previous === 0) return 0;
-      return previous !== 0 ? ((current - previous) / previous) * 100 : (current > 0 ? 100 : 0);
-    };
-    const scorePts = (current, previous) => (current - previous) * 100;
-    return {
-      totalCallsGrowth: pctChange(totalCallsProcessed, prevPeriodData.totalCallsProcessed),
-      successGrowth: pctChange(successCount, prevPeriodData.successCount),
-      failedGrowth: -pctChange(failedCount, prevPeriodData.failedCount),
-      avgAiGrowth: scorePts(avgAiScoring, prevPeriodData.avgAiScoring),
-      avgManualGrowth: scorePts(avgManualScoring, prevPeriodData.avgManualScoring),
-      ahtGrowth: pctChange(aht, prevPeriodData.aht),
-    };
-  }, [
+  const kpiComparison = useMemo(() => computeKpiComparison(
+    {
+      totalCallsProcessed,
+      successCount,
+      failedCount,
+      avgAiScoring,
+      avgManualScoring,
+      aht,
+    },
+    prevPeriodData,
+  ), [
     totalCallsProcessed,
     successCount,
     failedCount,
@@ -164,12 +158,6 @@ export default function useDashboardMetrics() {
     aht,
     prevPeriodData,
   ]);
-
-  const formatDelta = useCallback((value, suffix = "%") => {
-    const n = Number(value) || 0;
-    const sign = n > 0 ? "+" : "";
-    return `${sign}${Math.round(n * 10) / 10}${suffix}`;
-  }, []);
 
   const isNoData = !loading && !error && totalCallsProcessed === 0;
 
@@ -185,10 +173,10 @@ export default function useDashboardMetrics() {
     failedCount,
     prevPeriodData,
     fetchMetrics,
-    successRate,
+    successRate: kpiStats.successRate,
     kpiStats,
     kpiComparison,
-    formatDelta,
+    formatDelta: formatKpiDelta,
     isNoData,
   };
 }

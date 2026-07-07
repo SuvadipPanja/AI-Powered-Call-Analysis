@@ -9,7 +9,23 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { clearAuthStorage } from "../utils/uiPreferences";
 import { useWebSocket } from "./WebSocketContext";
-import { apiGet, apiPost, apiUrl } from "../utils/apiHelpers";
+import { parseLicenseStatusResponse, isFullyExpired } from "../utils/licenseStatus";
+import {
+  checkSession,
+  invalidateExistingSessions,
+  loginSecurity,
+  logoutTrack,
+  updateSessionInactiveTime,
+} from "../services/authService";
+import { setAuthInterceptorReady } from "../utils/apiClient";
+import {
+  readSession,
+  persistSession,
+  patchSession as patchStoredSession,
+  buildLoginSession,
+  buildTempLoginSession,
+} from "../utils/authSession";
+import { getLicenseStatus, verifyLicense } from "../services/licenseService";
 
 const AuthContext = createContext(null);
 
@@ -29,10 +45,13 @@ export function AuthProvider({ children }) {
   const [username, setUsername] = useState("");
   const [userType, setUserType] = useState("");
   const [token, setToken] = useState("");
+  const [logId, setLogId] = useState("");
+  const [loginAlias, setLoginAlias] = useState("");
   const [licenseValid, setLicenseValid] = useState(null);
   const [licenseStatus, setLicenseStatus] = useState(null);
   const [isTempLogin, setIsTempLogin] = useState(false);
   const [showWarningBanner, setShowWarningBanner] = useState(false);
+  const [graceBlockNotice, setGraceBlockNotice] = useState(null);
   const [isValidatingSession, setIsValidatingSession] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
   const [initializationComplete, setInitializationComplete] = useState(false);
@@ -40,14 +59,18 @@ export function AuthProvider({ children }) {
   const validateLicense = useCallback(async () => {
     try {
       logAuth("Validating license…");
-      const result = await apiPost("/api/verify-license", {}, {
-        label: "verify-license",
-        signal: AbortSignal.timeout(15000),
-      });
+      const result = await verifyLicense();
       logAuth("License validation response", result);
 
       if (result.success) {
         setLicenseValid(true);
+        if (result.licenseState) {
+          setLicenseStatus((prev) => ({
+            ...(prev || {}),
+            licenseState: result.licenseState,
+            isExpired: result.licenseState === "expired",
+          }));
+        }
         return true;
       }
       setLicenseValid(false);
@@ -62,27 +85,22 @@ export function AuthProvider({ children }) {
   const fetchLicenseStatus = useCallback(async () => {
     try {
       logAuth("Fetching license status…");
-      const result = await apiGet("/api/license-status", {
-        label: "license-status",
-        signal: AbortSignal.timeout(15000),
-      });
+      const result = await getLicenseStatus();
       logAuth("License status response", result);
 
       if (result.success) {
-        const status = {
-          isExpired: result.isExpired,
-          daysUntilExpiration: result.daysUntilExpiration,
-          endDate: result.endDate,
-        };
-        setLicenseStatus(status);
-        return status;
+        const status = parseLicenseStatusResponse(result);
+        if (status) {
+          setLicenseStatus(status);
+          return status;
+        }
       }
-      const status = { isExpired: true, daysUntilExpiration: 0 };
+      const status = { isExpired: true, daysUntilExpiration: 0, licenseState: "expired", graceRemaining: 0 };
       setLicenseStatus(status);
       return status;
     } catch (error) {
       logAuth("License status could not reach server; treating as transient", error.message);
-      const status = { isExpired: false, daysUntilExpiration: null };
+      const status = { isExpired: false, daysUntilExpiration: null, licenseState: "active", graceRemaining: 0 };
       setLicenseStatus(status);
       return status;
     }
@@ -94,24 +112,18 @@ export function AuthProvider({ children }) {
       return false;
     }
     try {
-      const response = await fetch(apiUrl("/api/check-session"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: sessionUserId, token: sessionToken }),
-        signal: AbortSignal.timeout(5000),
-      });
-      if (response.status >= 500) {
-        logAuth(`Session check server error (${response.status}); keeping local session`);
+      const data = await checkSession(sessionUserId, sessionToken);
+      logAuth("Session check response", data);
+      if (data._httpStatus >= 500) {
+        logAuth(`Session check server error (${data._httpStatus}); keeping local session`);
         return true;
       }
-      const data = await response.json();
-      logAuth("Session check response", data);
       if (!data.success) {
         logAuth(`Session invalid: ${data.message}`);
         return false;
       }
       if (data.userId && data.userId !== sessionUserId) {
-        localStorage.setItem("userId", data.userId);
+        persistSession({ userId: data.userId });
       }
       return true;
     } catch (err) {
@@ -121,24 +133,37 @@ export function AuthProvider({ children }) {
   }, []);
 
   const restoreSessionFromStorage = useCallback(async () => {
-    const storedUserId = localStorage.getItem("userId");
-    const storedToken = localStorage.getItem("token");
-    const storedIsLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    const stored = readSession();
+    const { userId: storedUserId, token: storedToken, isLoggedIn: storedIsLoggedIn, logId: storedLogId } = stored;
 
     logAuth(`Initializing session: storedToken exists=${!!storedToken}, isLoggedIn=${storedIsLoggedIn}`);
 
     if (storedUserId && storedToken && storedIsLoggedIn) {
       setIsValidatingSession(true);
+      if (storedLogId) {
+        try {
+          await updateSessionInactiveTime({
+            userId: storedUserId,
+            logId: storedLogId,
+            inactiveTime: new Date().toISOString(),
+          });
+        } catch {
+          /* keep going — session check is authoritative */
+        }
+      }
       const isValid = await validateSession(storedUserId, storedToken);
       if (isValid) {
-        const resolvedUserId = localStorage.getItem("userId") || storedUserId;
-        setUserId(resolvedUserId);
-        setToken(storedToken);
-        setUsername(localStorage.getItem("username") || "");
-        setUserType(localStorage.getItem("userType") || "");
+        const resolved = readSession();
+        setUserId(resolved.userId || storedUserId);
+        setToken(resolved.token || storedToken);
+        setUsername(resolved.username);
+        setUserType(resolved.userType);
+        setLogId(resolved.logId);
+        setLoginAlias(resolved.loginAlias);
         setIsLoggedIn(true);
-        setIsTempLogin(localStorage.getItem("isTempLogin") === "true");
+        setIsTempLogin(resolved.isTempLogin);
         logAuth("Session restored from localStorage");
+        setAuthInterceptorReady(true);
 
         const currentPath = location.pathname;
         if (currentPath === "/login" || currentPath === "/") {
@@ -152,15 +177,19 @@ export function AuthProvider({ children }) {
         setUsername("");
         setUserType("");
         setToken("");
+        setLogId("");
+        setLoginAlias("");
         setIsTempLogin(false);
         setIsValidatingSession(false);
         navigate("/login", { replace: true });
+        setAuthInterceptorReady(true);
         return;
       }
       setIsValidatingSession(false);
     } else {
       logAuth("No session data");
       setIsValidatingSession(false);
+      setAuthInterceptorReady(true);
       const publicPaths = ["/login", "/forgot-password", "/license-error", "/temp-super-admin-login"];
       if (!publicPaths.some((p) => location.pathname === p || location.pathname.startsWith(p))) {
         navigate("/login", { replace: true });
@@ -179,8 +208,8 @@ export function AuthProvider({ children }) {
         const isLicenseValid = await validateLicense();
         const licenseStatusData = await fetchLicenseStatus();
 
-        const shouldShowLicenseError = !isLicenseValid || licenseStatusData.isExpired;
-        logAuth(`License check: Valid=${isLicenseValid}, Expired=${licenseStatusData.isExpired}, ShouldShowError=${shouldShowLicenseError}`);
+        const shouldShowLicenseError = !isLicenseValid || isFullyExpired(licenseStatusData);
+        logAuth(`License check: Valid=${isLicenseValid}, Expired=${licenseStatusData.isExpired}, State=${licenseStatusData.licenseState}, ShouldShowError=${shouldShowLicenseError}`);
 
         if (shouldShowLicenseError) {
           if (
@@ -191,6 +220,7 @@ export function AuthProvider({ children }) {
             logAuth("Redirecting to license-error due to invalid license");
             navigate("/license-error", { replace: true });
           }
+          setAuthInterceptorReady(true);
         } else {
           await restoreSessionFromStorage();
         }
@@ -219,40 +249,34 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (loginUserId, password, questionType, questionAnswer) => {
     logAuth(`Attempting login for userId: ${loginUserId}`);
 
-    const data = await apiPost("/api/login-security", {
+    const data = await loginSecurity({
       userId: loginUserId,
       password,
       questionType,
       questionAnswer,
-    }, { label: "login-security" });
+    });
     logAuth("Login response", data);
 
     if (!data.success) {
       throw new Error(data.message || "Login failed. Check your credentials.");
     }
 
-    const sessionUserId = data.userId || loginUserId;
+    const session = buildLoginSession(data, loginUserId);
+    persistSession(session);
     setIsLoggedIn(true);
-    setUserId(sessionUserId);
-    setUsername(data.username);
-    setUserType(data.userType);
-    setToken(data.token);
+    setUserId(session.userId);
+    setUsername(session.username);
+    setUserType(session.userType);
+    setToken(session.token);
+    setLogId(session.logId);
+    setLoginAlias(session.loginAlias);
     setIsTempLogin(false);
 
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("userId", sessionUserId);
-    localStorage.setItem("loginAlias", loginUserId);
-    localStorage.setItem("username", data.username);
-    localStorage.setItem("userType", data.userType);
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("logId", String(data.logId));
-    localStorage.removeItem("isTempLogin");
-
     try {
-      const invalidateData = await apiPost("/api/invalidate-existing-sessions", {
+      const invalidateData = await invalidateExistingSessions({
         userId: data.userId || loginUserId,
         currentLogId: data.logId,
-      }, { label: "invalidate-existing-sessions" });
+      });
       logAuth("Invalidate sessions response", invalidateData);
     } catch (err) {
       console.error("[Auth] Error invalidating existing sessions:", err.message);
@@ -264,28 +288,30 @@ export function AuthProvider({ children }) {
     }
 
     logAuth("Redirecting to / after login");
+    setAuthInterceptorReady(true);
     navigate("/", { replace: true });
     return data;
   }, [licenseStatus, navigate]);
 
-  const tempLogin = useCallback(async (tempUsername, tempUserType, logId) => {
+  const tempLogin = useCallback(async (tempUsername, tempUserType, tempLogId, sessionToken, loginUserId) => {
     logAuth(`Temp login for username: ${tempUsername}, userType: ${tempUserType}`);
 
+    const session = buildTempLoginSession({
+      username: tempUsername,
+      userType: tempUserType,
+      logId: tempLogId,
+      sessionToken,
+      userId: loginUserId || tempUsername,
+    });
+    persistSession(session);
     setIsLoggedIn(true);
-    setUserId(tempUsername);
-    setUsername(tempUsername);
-    setUserType(tempUserType);
-    setToken(localStorage.getItem("sessionToken") || localStorage.getItem("token"));
+    setUserId(session.userId);
+    setUsername(session.username);
+    setUserType(session.userType);
+    setToken(session.token);
+    setLogId(session.logId);
+    setLoginAlias("");
     setIsTempLogin(true);
-
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("userId", tempUsername);
-    localStorage.setItem("username", tempUsername);
-    localStorage.setItem("userType", tempUserType);
-    localStorage.setItem("isTempLogin", "true");
-    if (logId) {
-      localStorage.setItem("logId", String(logId));
-    }
 
     if (licenseStatus && licenseStatus.daysUntilExpiration <= 7 && !licenseStatus.isExpired) {
       setShowWarningBanner(true);
@@ -293,22 +319,35 @@ export function AuthProvider({ children }) {
     }
 
     logAuth(`Temp login successful for ${tempUsername}`);
+    setAuthInterceptorReady(true);
     navigate("/admin-settings?tab=license", { replace: true });
     return { success: true };
   }, [licenseStatus, navigate]);
+
+  const patchSession = useCallback((patch) => {
+    patchStoredSession(patch);
+    if (patch.userId !== undefined) setUserId(patch.userId);
+    if (patch.username !== undefined) setUsername(patch.username);
+    if (patch.userType !== undefined) setUserType(patch.userType);
+    if (patch.token !== undefined) setToken(patch.token);
+    if (patch.logId !== undefined) setLogId(patch.logId);
+    if (patch.loginAlias !== undefined) setLoginAlias(patch.loginAlias);
+    if (patch.isTempLogin === true) setIsTempLogin(true);
+    else if (patch.isTempLogin === false) setIsTempLogin(false);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
       const currentUserId = userId;
       const currentToken = token;
-      const currentLogId = localStorage.getItem("logId");
+      const currentLogId = logId;
       if (currentUserId && currentToken && currentLogId) {
         logAuth(`Initiating logout for UserID: ${currentUserId}, LogID: ${currentLogId}`);
-        const data = await apiPost("/api/logout-track", {
+        const data = await logoutTrack({
           userId: currentUserId,
           logId: currentLogId,
           token: currentToken,
-        }, { label: "logout-track" });
+        });
         if (!data.success) {
           console.warn(`[Auth] Logout tracking failed: ${data.message}`);
         }
@@ -320,17 +359,56 @@ export function AuthProvider({ children }) {
     } finally {
       disconnectWebSocket();
       clearAuthStorage();
+      setAuthInterceptorReady(false);
       setIsLoggedIn(false);
       setUserId("");
       setUsername("");
       setUserType("");
       setToken("");
+      setLogId("");
+      setLoginAlias("");
       setIsTempLogin(false);
       setShowWarningBanner(false);
       navigate("/login", { replace: true });
       window.location.reload();
     }
-  }, [userId, token, disconnectWebSocket, navigate]);
+  }, [userId, token, logId, disconnectWebSocket, navigate]);
+
+  useEffect(() => {
+    let timer;
+    const onGraceBlocked = (e) => {
+      const msg = e.detail?.message || "This action is blocked — the license is in read-only grace mode.";
+      setGraceBlockNotice(msg);
+      clearTimeout(timer);
+      timer = setTimeout(() => setGraceBlockNotice(null), 8000);
+    };
+    const onLicenseChanged = (e) => {
+      const detail = e.detail || {};
+      const state = detail.state || (detail.isExpired ? "expired" : "active");
+      setLicenseStatus((prev) => ({
+        ...prev,
+        licenseState: state,
+        isExpired: state === "expired",
+        graceRemaining: detail.graceRemaining ?? prev?.graceRemaining ?? 0,
+      }));
+      if (state === "expired" && isLoggedIn) {
+        setGraceBlockNotice(detail.reason || "License expired — you will be signed out.");
+        clearTimeout(timer);
+        timer = setTimeout(() => logout(), 4000);
+      } else if (state === "grace") {
+        setGraceBlockNotice("License is in read-only grace mode. Some actions are disabled.");
+        clearTimeout(timer);
+        timer = setTimeout(() => setGraceBlockNotice(null), 10000);
+      }
+    };
+    window.addEventListener("license-grace-blocked", onGraceBlocked);
+    window.addEventListener("license-state-changed", onLicenseChanged);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("license-grace-blocked", onGraceBlocked);
+      window.removeEventListener("license-state-changed", onLicenseChanged);
+    };
+  }, [isLoggedIn, logout]);
 
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -350,32 +428,40 @@ export function AuthProvider({ children }) {
     username,
     userType,
     token,
+    logId,
+    loginAlias,
     isTempLogin,
     licenseValid,
     licenseStatus,
     showWarningBanner,
+    graceBlockNotice,
     isInitializing,
     isValidatingSession,
     initializationComplete,
     login,
     logout,
     tempLogin,
+    patchSession,
   }), [
     isLoggedIn,
     userId,
     username,
     userType,
     token,
+    logId,
+    loginAlias,
     isTempLogin,
     licenseValid,
     licenseStatus,
     showWarningBanner,
+    graceBlockNotice,
     isInitializing,
     isValidatingSession,
     initializationComplete,
     login,
     logout,
     tempLogin,
+    patchSession,
   ]);
 
   return (

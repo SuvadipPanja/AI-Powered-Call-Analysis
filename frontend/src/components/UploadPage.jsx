@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
-import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useNavigate } from 'react-router-dom';
-import config from '../utils/envConfig';
+import { getAgentsByCallType } from '../services/agentsService';
+import { getAudioStatus, getLatestAudio, uploadAudio } from '../services/uploadService';
 import {
   FaCloudUploadAlt,
   FaCheckCircle,
@@ -23,7 +23,6 @@ import {
   FaClock,
   FaPhoneAlt,
   FaGlobeAmericas,
-  FaSpinner,
 } from 'react-icons/fa';
 import {
   LuFileAudio,
@@ -33,7 +32,7 @@ import UploadAgentPicker from './UploadAgentPicker';
 import KpiCard from './shared/KpiCard';
 import RecentActivityPanel from './shared/RecentActivityPanel';
 import { probeAudioChannels, channelLabel, isStereoRecording } from '../utils/probeAudioChannels';
-import './reports/reports-page.css';
+import { deriveStepStates, effectiveActiveIndex, parseDetectedLanguage } from '../utils/processingStepStates';
 import './upload-flow.css';
 import './upload-page.css';
 
@@ -89,35 +88,6 @@ function LiveSpectrum({ bars = 24, className = '' }) {
   );
 }
 
-function ProgressRing({ percent, children }) {
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  const offset = c - (Math.min(100, Math.max(0, percent)) / 100) * c;
-  return (
-    <div className="upload-progress-ring" aria-hidden="true">
-      <svg viewBox="0 0 120 120">
-        <defs>
-          <linearGradient id="uploadRingGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" />
-            <stop offset="60%" stopColor="var(--accent-2)" />
-            <stop offset="100%" stopColor="var(--accent-3)" />
-          </linearGradient>
-        </defs>
-        <circle className="upload-progress-ring__track" cx="60" cy="60" r={r} />
-        <circle
-          className="upload-progress-ring__value"
-          cx="60"
-          cy="60"
-          r={r}
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-        />
-      </svg>
-      <div className="upload-progress-ring__center">{children}</div>
-    </div>
-  );
-}
-
 /* Celebratory success animation: confetti burst + drawn checkmark */
 function SuccessCelebration() {
   const pieces = Array.from({ length: 14 });
@@ -138,23 +108,43 @@ function SuccessCelebration() {
 
 const PROCESS_STEPS = [
   { key: 'upload', label: 'Upload', icon: FaServer },
+  { key: 'language', label: 'Language', icon: FaGlobeAmericas },
   { key: 'transcribe', label: 'Transcribe', icon: FaMicrophoneAlt },
   { key: 'translate', label: 'Translate', icon: FaLanguage },
   { key: 'score', label: 'AI Score', icon: FaBrain },
-  { key: 'complete', label: 'Report', icon: FaCheckCircle },
+  { key: 'tone', label: 'Tone', icon: FaBrain },
+  { key: 'compliance', label: 'Compliance', icon: FaFileAlt },
+  { key: 'result', label: 'Result', icon: FaCheckCircle },
 ];
 
 const STAGE_TO_INDEX = {
   uploaded: 0,
   upload: 0,
   queued: 0,
-  transcribing: 1,
-  diarizing: 1,
-  translating: 2,
-  transcribed: 3,
-  scoring: 3,
-  enriching: 3,
-  complete: 4,
+  language: 1,
+  language_detection: 1,
+  'language-detection': 1,
+  detecting: 1,
+  detected: 1,
+  transcribing: 2,
+  diarizing: 2,
+  transcription: 2,
+  translating: 3,
+  translation: 3,
+  transcribed: 4,
+  scoring: 4,
+  score: 4,
+  tone: 5,
+  tone_analysis: 5,
+  'tone-analysis': 5,
+  sentiment: 5,
+  compliance: 6,
+  script_compliance: 6,
+  'script-compliance': 6,
+  enriching: 6,
+  complete: 7,
+  result: 7,
+  report: 7,
   failed: 0,
 };
 
@@ -169,12 +159,16 @@ function resolveDisplayAiStatus({ aiStatus, processStatus, stage, activeIndex, n
 
   const engineRunning =
     activeIndex >= 1 ||
-    ['transcribing', 'diarizing', 'transcribed', 'scoring'].includes(st) ||
+    ['language', 'language_detection', 'transcribing', 'diarizing', 'transcribed', 'scoring', 'tone', 'compliance'].includes(st) ||
     merged.includes('in progress') ||
+    merged.includes('language') ||
     merged.includes('transcrib') ||
     merged.includes('processing') ||
     merged.includes('translating') ||
     merged.includes('scoring') ||
+    merged.includes('tone') ||
+    merged.includes('sentiment') ||
+    merged.includes('compliance') ||
     merged.includes('enriching') ||
     merged.includes('diar');
 
@@ -189,20 +183,16 @@ function resolveDisplayLanguage({ originalLanguage, stage, message, description,
   }
 
   const text = `${message || ''} ${description || ''}`;
-  const explicit = text.match(/\bLanguage detected:\s*(English|Hindi)\b/i)
-    || text.match(/\b(English|Hindi)\b(?:\s+transcript|\s+for analysis)?/i);
-  if (explicit) {
-    const lang = explicit[1] || explicit[0];
-    return lang.charAt(0).toUpperCase() + lang.slice(1).toLowerCase();
-  }
+  const parsed = parseDetectedLanguage(text);
+  if (parsed) return parsed;
 
   const stageKey = (stage || '').toLowerCase();
-  if (!isFailed && ['translating', 'scoring', 'transcribed', 'enriching', 'complete'].includes(stageKey)) {
+  if (!isFailed && ['translating', 'scoring', 'tone', 'compliance', 'transcribed', 'enriching', 'complete', 'result'].includes(stageKey)) {
     if (/english/i.test(text)) return 'English';
     if (/hindi/i.test(text)) return 'Hindi';
   }
 
-  if (!isFailed && (activeIndex >= 1 || ['transcribing', 'diarizing'].includes(stageKey))) {
+  if (!isFailed && (activeIndex === 1 || (activeIndex >= 2 && !parsed && !originalLanguage))) {
     return 'Detecting…';
   }
 
@@ -216,7 +206,7 @@ function deriveProcessingSnapshot({ status, processStatus, aiStatus, stage, prog
   const merged = `${normalized} ${rawProcess} ${rawAi}`.toLowerCase();
 
   let activeIndex = 0;
-  let percent = 5;
+  let percent = 0;
   let title = 'Upload received';
   let description = 'Backend has accepted the audio file and is preparing the processing job.';
 
@@ -228,38 +218,61 @@ function deriveProcessingSnapshot({ status, processStatus, aiStatus, stage, prog
       ? `Failed at ${failureStage || 'processing'}: ${failureReason}`
       : (rawProcess || rawAi || 'Backend returned a failure status.');
   } else if (merged.includes('success') || merged.includes('ai process complete')) {
-    activeIndex = 4;
+    activeIndex = 7;
     percent = 100;
     title = 'Report ready';
     description = 'AI processing completed successfully. The report is ready to open.';
+  } else if (merged.includes('script compliance') || merged.includes('compliance')) {
+    activeIndex = 6;
+    percent = 90;
+    title = 'Script compliance';
+    description = 'Checking mandatory script, disclaimers, and call compliance.';
+  } else if (merged.includes('tone') || merged.includes('sentiment')) {
+    activeIndex = 5;
+    percent = 82;
+    title = 'Tone analysis';
+    description = 'Measuring tone, sentiment, and customer emotion signals.';
   } else if (merged.includes('enriching')) {
-    activeIndex = 3;
+    activeIndex = 6;
     percent = 88;
     title = 'Enrichment in progress';
     description = 'Analyzing tone, sentiment, and script compliance.';
   } else if (merged.includes('scoring')) {
-    activeIndex = 3;
-    percent = 72;
+    activeIndex = 4;
+    percent = 70;
     title = 'AI scoring in progress';
     description = 'Scoring call quality on English transcript.';
   } else if (merged.includes('translating')) {
-    activeIndex = 2;
-    percent = 50;
+    activeIndex = 3;
+    percent = 55;
     title = 'Translating to English';
     description = 'Hindi transcript is being converted to English for analysis.';
   } else if (merged.includes('transcribed')) {
-    activeIndex = 3;
-    percent = 70;
+    activeIndex = 4;
+    percent = 65;
     title = 'Transcript completed';
     description = 'Transcript saved. Waiting for scoring.';
-  } else if (merged.includes('transcrib') || merged.includes('processing') || merged.includes('in progress')) {
+  } else if (
+    merged.includes('language detected')
+    && (merged.includes('converting speech') || merged.includes('speech to text') || merged.includes('speaker labels'))
+  ) {
+    activeIndex = 2;
+    percent = 35;
+    title = 'Transcribing audio';
+    description = 'Detected language saved. Converting speech to text with speaker labels.';
+  } else if (merged.includes('language detected') || merged.includes('detected language') || merged.includes('language')) {
     activeIndex = 1;
+    percent = 25;
+    title = 'Language detected';
+    description = 'Language detection completed. Preparing transcription.';
+  } else if (merged.includes('transcrib') || merged.includes('processing') || merged.includes('in progress')) {
+    activeIndex = 2;
     percent = 35;
     title = 'Transcribing audio';
     description = 'Converting speech to text with speaker labels.';
   } else if (merged.includes('pending') || merged.includes('uploaded')) {
     activeIndex = 0;
-    percent = 8;
+    percent = 0;
     title = 'Queued for processing';
     description = 'File is uploaded. Waiting for the processing worker.';
   }
@@ -267,18 +280,30 @@ function deriveProcessingSnapshot({ status, processStatus, aiStatus, stage, prog
   const stageKey = (stage || '').toLowerCase();
   if (stageKey) {
     if (typeof STAGE_TO_INDEX[stageKey] === 'number') activeIndex = STAGE_TO_INDEX[stageKey];
-    if (typeof progress === 'number') percent = progress;
+    if (typeof progress === 'number' && progress > 0) percent = progress;
     if (message) description = message;
 
     const stageTitles = {
       uploaded: 'Upload received',
       queued: 'Queued for processing',
+      language: 'Language detection',
+      language_detection: 'Language detection',
+      'language-detection': 'Language detection',
+      detected: 'Language detected',
       transcribing: 'Transcribing audio',
       translating: 'Translating to English',
       transcribed: 'Transcript completed',
       scoring: 'AI scoring in progress',
+      tone: 'Tone analysis',
+      tone_analysis: 'Tone analysis',
+      'tone-analysis': 'Tone analysis',
+      compliance: 'Script compliance',
+      script_compliance: 'Script compliance',
+      'script-compliance': 'Script compliance',
       enriching: 'Enrichment in progress',
       complete: 'Report ready',
+      result: 'Report ready',
+      report: 'Report ready',
       failed: 'Processing failed',
     };
     title = stageTitles[stageKey] || title;
@@ -301,14 +326,43 @@ function deriveProcessingSnapshot({ status, processStatus, aiStatus, stage, prog
     activeIndex,
   });
 
+  const isFailed = activeIndex === 0 && /fail/i.test(title);
+  const resolvedLanguage = displayLanguage !== '—' && displayLanguage !== 'Detecting…'
+    ? displayLanguage
+    : (parseDetectedLanguage(`${message || ''} ${description || ''}`) || null);
+  const stepStates = deriveStepStates({
+    activeIndex,
+    isFailed,
+    message: message || description,
+    description,
+    detectedLanguage: resolvedLanguage || originalLanguage || displayLanguage,
+  });
+
+  // Sequential progress: starts at 0%, advances only as each stage goes live/completes.
+  const effIndex = effectiveActiveIndex(stepStates);
+  const STEP_PERCENTS = [0, 12, 28, 45, 62, 78, 92, 100];
+  const failedNow = merged.includes('fail') || merged.includes('error');
+  const completeNow = merged.includes('success') || merged.includes('ai process complete') || activeIndex >= 7;
+  if (!failedNow && !completeNow && !(typeof progress === 'number' && progress > 0)) {
+    percent = STEP_PERCENTS[Math.min(Math.max(effIndex, 0), STEP_PERCENTS.length - 1)];
+  }
+
   const taskList = Array.isArray(subtasks) && subtasks.length > 0
     ? subtasks
   : [
       { key: 'upload', label: 'Upload', percent: activeIndex > 0 ? 100 : percent, status: activeIndex > 0 ? 'done' : 'active' },
-      { key: 'transcribe', label: 'Transcription', percent: activeIndex > 1 ? 100 : activeIndex === 1 ? percent : 0, status: activeIndex > 1 ? 'done' : activeIndex === 1 ? 'active' : 'pending' },
-      { key: 'translate', label: 'Translation', percent: activeIndex > 2 ? 100 : activeIndex === 2 ? percent : 0, status: activeIndex > 2 ? 'done' : activeIndex === 2 ? 'active' : 'pending' },
-      { key: 'scoring', label: 'AI Scoring', percent: activeIndex > 3 ? 100 : activeIndex === 3 ? percent : 0, status: activeIndex > 3 ? 'done' : activeIndex === 3 ? 'active' : 'pending' },
-      { key: 'complete', label: 'Report', percent: activeIndex >= 4 ? 100 : 0, status: activeIndex >= 4 ? 'done' : 'pending' },
+      {
+        key: 'language',
+        label: 'Language Detection',
+        percent: stepStates[1]?.state === 'done' ? 100 : stepStates[1]?.state === 'active' ? percent : 0,
+        status: stepStates[1]?.state || 'pending',
+      },
+      { key: 'transcribe', label: 'Transcription', percent: activeIndex > 2 ? 100 : activeIndex === 2 ? percent : 0, status: activeIndex > 2 ? 'done' : activeIndex === 2 ? 'active' : 'pending' },
+      { key: 'translate', label: 'Translation', percent: activeIndex > 3 ? 100 : activeIndex === 3 ? percent : 0, status: activeIndex > 3 ? 'done' : activeIndex === 3 ? 'active' : 'pending' },
+      { key: 'scoring', label: 'AI Scoring', percent: activeIndex > 4 ? 100 : activeIndex === 4 ? percent : 0, status: activeIndex > 4 ? 'done' : activeIndex === 4 ? 'active' : 'pending' },
+      { key: 'tone', label: 'Tone Analysis', percent: activeIndex > 5 ? 100 : activeIndex === 5 ? percent : 0, status: activeIndex > 5 ? 'done' : activeIndex === 5 ? 'active' : 'pending' },
+      { key: 'compliance', label: 'Script Compliance', percent: activeIndex > 6 ? 100 : activeIndex === 6 ? percent : 0, status: activeIndex > 6 ? 'done' : activeIndex === 6 ? 'active' : 'pending' },
+      { key: 'result', label: 'Result', percent: activeIndex >= 7 ? 100 : 0, status: activeIndex >= 7 ? 'done' : 'pending' },
     ];
 
   return {
@@ -327,41 +381,80 @@ function deriveProcessingSnapshot({ status, processStatus, aiStatus, stage, prog
     originalLanguage: displayLanguage !== '—' && displayLanguage !== 'Detecting…' ? displayLanguage : (originalLanguage || null),
     displayLanguage,
     hasTranscript: Boolean(hasTranscript),
+    stepStates,
+    effectiveActiveIndex: effIndex,
     checkedAt: checkedAt
       ? new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
   };
 }
 
-function ConsoleMetric({ icon: Icon, label, value, tone, wide }) {
+/* Design 2 — Orbital Radial. Central ring + 8 stage nodes orbiting around it. */
+function OrbitalRadial({ steps, stepStates, percent, centerLabel }) {
+  const safePct = Math.min(100, Math.max(0, Math.round(percent)));
+  const r = 52;
+  const circumference = 2 * Math.PI * r;
+  const orbitRadius = 42;
+
   return (
-    <div
-      className={`proc-metric${tone ? ` proc-metric--${tone}` : ''}${wide ? ' proc-metric--wide' : ''}`}
-      title={typeof value === 'string' ? value : undefined}
-    >
-      <div className="proc-metric__icon" aria-hidden="true">
-        <Icon />
+    <div className="proc-orbit" role="group" aria-label="Processing stages">
+      <div className="proc-orbit__ring">
+        <svg className="proc-orbit__ring-svg" viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <linearGradient id="procOrbitGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="var(--success)" />
+              <stop offset="100%" stopColor="var(--accent-bright)" />
+            </linearGradient>
+          </defs>
+          <circle className="proc-orbit__ring-track" cx="60" cy="60" r={r} />
+          <circle
+            className="proc-orbit__ring-value"
+            cx="60"
+            cy="60"
+            r={r}
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - safePct / 100)}
+          />
+        </svg>
+        <div className="proc-orbit__center">
+          <span className="proc-orbit__pct">{safePct}%</span>
+          <span className="proc-orbit__center-label">{centerLabel}</span>
+        </div>
       </div>
-      <div className="proc-metric__text">
-        <span className="proc-metric__label">{label}</span>
-        <span className="proc-metric__value">{value}</span>
-      </div>
+
+      {steps.map((step, index) => {
+        const angle = ((-90 + index * (360 / steps.length)) * Math.PI) / 180;
+        const x = 50 + orbitRadius * Math.cos(angle);
+        const y = 50 + orbitRadius * Math.sin(angle);
+        const state = stepStates[index]?.state || 'pending';
+        const statusLabel = stepStates[index]?.statusLabel || 'Waiting';
+        const Icon = step.icon;
+        const onLeft = x < 48;
+        return (
+          <div
+            key={step.key}
+            className={`proc-orbit__node proc-orbit__node--${state} proc-orbit__node--${onLeft ? 'left' : 'right'}`}
+            style={{ left: `${x}%`, top: `${y}%` }}
+          >
+            <span className="proc-orbit__dot" aria-hidden="true"><Icon /></span>
+            <span className="proc-orbit__node-text">
+              <span className="proc-orbit__node-label">{step.label}</span>
+              <span className="proc-orbit__node-status">{statusLabel}</span>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-/* Industrial-grade live processing console: file identity, elapsed clock,
-   progress ring, accurate per-stage pipeline, and run context. */
+/* Live processing modal — Design 2 (Orbital Radial). */
 function ProcessingStatusModal({ snapshot, meta, elapsedSec = 0 }) {
   const current = snapshot || deriveProcessingSnapshot({});
   const isFailed = current.activeIndex === 0 && /fail/i.test(current.title);
-  const isComplete = current.activeIndex >= 4 && current.percent >= 100;
+  const isComplete = current.activeIndex >= PROCESS_STEPS.length - 1 && current.percent >= 100;
   const phase = isFailed ? 'fail' : isComplete ? 'done' : 'live';
 
-  const stageLabel = PROCESS_STEPS[Math.min(current.activeIndex, PROCESS_STEPS.length - 1)]?.label || 'Processing';
-  const engineTone = isFailed ? 'fail'
-    : /complete|success|done/i.test(current.aiStatus) ? 'ok'
-      : /start|progress|run/i.test(current.aiStatus) ? 'live' : 'wait';
   const language = current.displayLanguage
     || resolveDisplayLanguage({
       originalLanguage: current.originalLanguage,
@@ -371,15 +464,26 @@ function ProcessingStatusModal({ snapshot, meta, elapsedSec = 0 }) {
       isFailed,
       activeIndex: current.activeIndex,
     });
+  const stepStates = current.stepStates || deriveStepStates({
+    activeIndex: current.activeIndex,
+    isFailed,
+    message: current.description,
+    description: current.description,
+    detectedLanguage: language !== 'Detecting…' && language !== '—' ? language : current.originalLanguage,
+  });
+  const centerIndex = typeof current.effectiveActiveIndex === 'number'
+    ? current.effectiveActiveIndex
+    : Math.min(current.activeIndex, PROCESS_STEPS.length - 1);
+  const activeStep = PROCESS_STEPS[Math.min(centerIndex, PROCESS_STEPS.length - 1)] || PROCESS_STEPS[0];
 
   return (
-    <div className={`proc-console proc-console--${phase}`}>
+    <div className={`proc-console proc-console--orbit proc-console--${phase}`}>
       <header className="proc-console__head">
         <div className="proc-console__head-id">
           <span className={`proc-console__dot proc-console__dot--${phase}`} aria-hidden="true" />
           <div className="proc-console__head-text">
             <div className="proc-console__eyebrow">
-              {isFailed ? 'Processing failed' : isComplete ? 'Processing complete' : 'Live processing'}
+              {isFailed ? 'Processing failed' : isComplete ? 'Complete' : 'Live processing'}
             </div>
             <div className="proc-console__file" title={meta?.displayName || meta?.fileName}>
               <FaFileAudio aria-hidden="true" />
@@ -392,44 +496,17 @@ function ProcessingStatusModal({ snapshot, meta, elapsedSec = 0 }) {
         </div>
       </header>
 
-      <div className="proc-console__hero">
-        <ProgressRing percent={current.percent}>
-          <span className="proc-console__pct">{current.percent}%</span>
-          <span className="proc-console__pct-label">{stageLabel}</span>
-        </ProgressRing>
-        <div className="proc-console__metrics">
-          <ConsoleMetric icon={FaServer} label="Stage" value={stageLabel} />
-          <ConsoleMetric icon={FaBrain} label="AI engine" value={current.aiStatus} tone={engineTone} />
-          <ConsoleMetric icon={FaGlobeAmericas} label="Language" value={language} wide />
-        </div>
-      </div>
+      <OrbitalRadial
+        steps={PROCESS_STEPS}
+        stepStates={stepStates}
+        percent={current.percent}
+        centerLabel={activeStep.label}
+      />
 
-      <p className={`proc-console__message ${isFailed ? 'proc-console__message--fail' : ''}`}>
-        {!isFailed && !isComplete && <FaSpinner className="proc-console__spin" aria-hidden="true" />}
+      <p className={`proc-console__statusline ${isFailed ? 'proc-console__statusline--fail' : ''}`}>
+        <span className={`proc-console__statusline-dot proc-console__statusline-dot--${phase}`} aria-hidden="true" />
         <span>{current.description}</span>
       </p>
-
-      <div className="proc-console__progress">
-        <div className="proc-console__progress-head">
-          <span>Overall progress</span>
-          <strong>{current.percent}%</strong>
-        </div>
-        <div
-          className="proc-console__progress-bar"
-          role="progressbar"
-          aria-valuenow={current.percent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        >
-          <span
-            className="proc-console__progress-fill"
-            style={{ width: `${Math.min(100, Math.max(0, current.percent))}%` }}
-          />
-          {[20, 40, 60, 80].map((p) => (
-            <i key={p} className="proc-console__progress-tick" style={{ left: `${p}%` }} aria-hidden="true" />
-          ))}
-        </div>
-      </div>
 
       <footer className="proc-console__foot">
         <div className="proc-console__context">
@@ -482,8 +559,8 @@ const UploadPage = () => {
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const response = await axios.get(`${config.apiBaseUrl}/api/agents/${callType}`);
-        setAgentsList(response.data || []);
+        const data = await getAgentsByCallType(callType);
+        setAgentsList(data || []);
       } catch (error) {
         console.error('Error fetching agents:', error.message);
         toast.error('Failed to fetch agents.', { position: 'top-center', autoClose: 3000, theme: 'dark' });
@@ -524,10 +601,8 @@ const UploadPage = () => {
 
     const pollStatus = async () => {
       try {
-        const res = await axios.get(
-          `${config.apiBaseUrl}/api/audio-status/${encodeURIComponent(currentFileName)}`
-        );
-        const { status, processStatus, aiStatus, displayAiStatus, stage, progress, message, checkedAt, failureStage, failureReason, subtasks, originalLanguage, hasTranscript } = res.data;
+        const res = await getAudioStatus(currentFileName);
+        const { status, processStatus, aiStatus, displayAiStatus, stage, progress, message, checkedAt, failureStage, failureReason, subtasks, originalLanguage, hasTranscript } = res;
         setProcessingSnapshot(deriveProcessingSnapshot({
           status,
           processStatus,
@@ -584,7 +659,7 @@ const UploadPage = () => {
           toast.error(errorDetail || 'Processing failed.', { position: 'top-center', autoClose: 8000, theme: 'dark' });
         }
       } catch (error) {
-        if (error.response?.status === 404) return;
+        if (error.status === 404) return;
         clearInterval(interval);
         setIsProcessing(false);
         toast.error('Failed to fetch status.', { position: 'top-center', autoClose: 3000, theme: 'dark' });
@@ -641,7 +716,7 @@ const UploadPage = () => {
         setAudioChannels(channels);
         if (channels != null && channels < 2) {
           toast.warn('Mono audio detected — Agent and Customer cannot be separated accurately.', {
-            position: 'top-center',
+        position: 'top-center',
             autoClose: 6000,
             theme: 'colored',
           });
@@ -724,12 +799,10 @@ const UploadPage = () => {
     formData.append('date', adjustedDate.toISOString().split('T')[0]);
 
     try {
-      const response = await axios.post(`${config.apiBaseUrl}/upload-audio`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      if (response.data.success) {
+      const response = await uploadAudio(formData);
+      if (response.success) {
         toast.success('Upload successful.', { position: 'top-center', autoClose: 2000, theme: 'colored' });
-        const uploadedFileName = response.data.audioFileName;
+        const uploadedFileName = response.audioFileName;
         // Capture run context before the form resets, so the processing
         // console can show accurate file/agent/date details.
         setProcessingMeta({
@@ -752,18 +825,18 @@ const UploadPage = () => {
         bumpRecentActivity();
         if (uploadedFileName) {
           setCurrentFileName(uploadedFileName);
-          setIsProcessing(true);
-          setHasShownSuccessToast(false);
-        } else {
-          const latestAudio = await axios.get(`${config.apiBaseUrl}/api/latest-audio`);
-          if (latestAudio.data.success) {
-            setCurrentFileName(latestAudio.data.data.AudioFileName);
+            setIsProcessing(true);
+            setHasShownSuccessToast(false);
+          } else {
+          const latestAudio = await getLatestAudio();
+          if (latestAudio.success) {
+            setCurrentFileName(latestAudio.data.AudioFileName);
             setIsProcessing(true);
             setHasShownSuccessToast(false);
           }
         }
       } else {
-        toast.error(response.data.message || 'Upload failed.', { position: 'top-center', autoClose: 3000, theme: 'dark' });
+        toast.error(response.message || 'Upload failed.', { position: 'top-center', autoClose: 3000, theme: 'dark' });
       }
     } catch (error) {
       toast.error('Upload failed. Try again.', { position: 'top-center', autoClose: 3000, theme: 'dark' });
@@ -817,7 +890,7 @@ const UploadPage = () => {
       <Modal
         open={isProcessing && !showSuccessModal && !showUploadedModal && !showTranscribedModal && !showFailureModal}
         onClose={() => {}}
-        maxWidth="620px"
+        maxWidth="560px"
         flush
         className="upload-process-modal-shell"
       >
@@ -832,8 +905,8 @@ const UploadPage = () => {
           <div className="upload-result-modal__actions">
             <Button variant="primary" onClick={() => navigate(`/results/${currentFileName}`)}>View results</Button>
             <Button variant="secondary" onClick={closeModals}>Close</Button>
-          </div>
         </div>
+      </div>
       </Modal>
 
       <Modal open={showUploadedModal} onClose={closeModals}>
@@ -842,7 +915,7 @@ const UploadPage = () => {
           <h2>File uploaded</h2>
           <p>Start the AI service to begin processing.</p>
           <Button variant="secondary" onClick={closeModals}>Close</Button>
-        </div>
+          </div>
       </Modal>
 
       <Modal open={showSuccessModal} onClose={closeModals}>
@@ -853,8 +926,8 @@ const UploadPage = () => {
           <div className="upload-result-modal__actions">
             <Button variant="primary" onClick={() => navigate(`/results/${currentFileName}`)}>View results</Button>
             <Button variant="secondary" onClick={closeModals}>Upload another</Button>
+            </div>
           </div>
-        </div>
       </Modal>
 
       <Modal open={showFailureModal} onClose={closeModals}>
@@ -874,8 +947,8 @@ const UploadPage = () => {
         {isLoading && (
           <div className="upload-loading">
             <Spinner /> Uploading to server…
-          </div>
-        )}
+        </div>
+      )}
 
         <div
           ref={dropWrapRef}
@@ -957,14 +1030,14 @@ const UploadPage = () => {
             <div className="upload-field upload-field--anim" style={{ '--delay': '0.05s' }}>
               <label className="upload-field__label" htmlFor="call-date">
                 <FaCalendarAlt aria-hidden="true" /> Call date
-              </label>
+          </label>
               <div className="upload-datepicker-field">
                 <FaCalendarAlt className="upload-datepicker-field__icon" aria-hidden="true" />
-                <DatePicker
-                  id="call-date"
-                  selected={selectedDate}
+          <DatePicker
+            id="call-date"
+            selected={selectedDate}
                   onChange={setSelectedDate}
-                  dateFormat="yyyy-MM-dd"
+            dateFormat="yyyy-MM-dd"
                   placeholderText="Select date"
                   className="ui-input upload-datepicker-input"
                   wrapperClassName="upload-datepicker-wrap"
@@ -973,14 +1046,14 @@ const UploadPage = () => {
                   popperContainer={datePopperContainer}
                   popperPlacement="bottom-start"
                   popperModifiers={datePopperModifiers}
-                  showPopperArrow={false}
+            showPopperArrow={false}
                   maxDate={new Date()}
                   disabled={!audioFile}
                   autoComplete="off"
                   isClearable={Boolean(selectedDate)}
                 />
               </div>
-            </div>
+        </div>
 
             <div className="upload-field upload-field--anim" style={{ '--delay': '0.1s' }}>
               <span className="upload-field__label">Call type</span>
@@ -995,7 +1068,7 @@ const UploadPage = () => {
                   aria-pressed={callType === 'inbound'}
                   disabled={!audioFile}
                 >
-                  Inbound
+              Inbound
                 </button>
                 <button
                   type="button"
@@ -1004,10 +1077,10 @@ const UploadPage = () => {
                   aria-pressed={callType === 'outbound'}
                   disabled={!audioFile}
                 >
-                  Outbound
+              Outbound
                 </button>
-              </div>
-            </div>
+          </div>
+        </div>
 
             <div className="upload-form__full upload-field--anim" style={{ '--delay': '0.15s' }}>
               <UploadAgentPicker
@@ -1038,7 +1111,7 @@ const UploadPage = () => {
             <p className="upload-footnote">
               <FaUser aria-hidden="true" /> Encrypted upload · processed securely on your server
             </p>
-          </div>
+            </div>
         </div>
 
         {!audioFile && (

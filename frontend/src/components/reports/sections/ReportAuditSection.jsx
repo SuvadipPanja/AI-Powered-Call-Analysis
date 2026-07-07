@@ -1,5 +1,5 @@
 import { LuShieldCheck, LuClipboardCheck } from 'react-icons/lu';
-import { Badge, Spinner, Button, Card } from '../../ui';
+import { Badge, Button, Card, EmptyState, PageLoading } from '../../ui';
 
 export default function ReportAuditSection({
   auditMetrics,
@@ -57,14 +57,14 @@ export default function ReportAuditSection({
           </div>
           {auditMetrics.parameterAverages?.length > 0 && (
             <Card style={{ overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="ui-table">
+              <div className="ui-table-wrap ui-table-wrap--stack">
+                <table className="ui-table ui-table--stack-sm" aria-label="Audit parameter score comparison">
                   <thead>
                     <tr>
-                      <th>Parameter</th>
-                      <th>Avg AI Score</th>
-                      <th>Avg Manual Score</th>
-                      <th>Delta</th>
+                      <th scope="col">Parameter</th>
+                      <th scope="col">Avg AI Score</th>
+                      <th scope="col">Avg Manual Score</th>
+                      <th scope="col">Delta</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -73,10 +73,10 @@ export default function ReportAuditSection({
                         ? (pa.avgManual - pa.avgAI).toFixed(1) : null;
                       return (
                         <tr key={pa.ParameterName}>
-                          <td style={{ fontWeight: 600 }}>{pa.ParameterName}</td>
-                          <td>{pa.avgAI != null ? `${parseFloat(pa.avgAI).toFixed(1)}%` : '—'}</td>
-                          <td>{pa.avgManual != null ? `${parseFloat(pa.avgManual).toFixed(1)}%` : '—'}</td>
-                          <td>
+                          <td data-label="Parameter" style={{ fontWeight: 600 }}>{pa.ParameterName}</td>
+                          <td data-label="Avg AI Score">{pa.avgAI != null ? `${parseFloat(pa.avgAI).toFixed(1)}%` : '—'}</td>
+                          <td data-label="Avg Manual Score">{pa.avgManual != null ? `${parseFloat(pa.avgManual).toFixed(1)}%` : '—'}</td>
+                          <td data-label="Delta">
                             {diff != null && (
                               <Badge variant={parseFloat(diff) > 2 ? 'success' : parseFloat(diff) < -2 ? 'error' : 'info'}>
                                 {parseFloat(diff) > 0 ? '+' : ''}{diff}
@@ -106,22 +106,20 @@ export default function ReportAuditSection({
         </div>
 
         {auditActivityLoading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 24, color: 'var(--text-muted)' }}>
-            <Spinner /> Loading audit activity…
-          </div>
+          <PageLoading inline message="Loading audit activity…" />
         ) : auditActivity.length > 0 ? (
           <Card style={{ overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="ui-table">
+            <div className="ui-table-wrap ui-table-wrap--stack">
+              <table className="ui-table ui-table--stack-sm" aria-label="Manual audit activity log">
                 <thead>
                   <tr>
-                    <th>Call / File</th>
-                    <th>Agent</th>
-                    <th>Audited By</th>
-                    <th>Role</th>
-                    <th>Supervisor</th>
-                    <th>Audited On</th>
-                    <th>Manual Score</th>
+                    <th scope="col">Call / File</th>
+                    <th scope="col">Agent</th>
+                    <th scope="col">Audited By</th>
+                    <th scope="col">Role</th>
+                    <th scope="col" className="ui-table__col--hide-sm">Supervisor</th>
+                    <th scope="col">Audited On</th>
+                    <th scope="col">Manual Score</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -130,21 +128,21 @@ export default function ReportAuditSection({
                     const isTeamLeader = String(row.AuditorRole || '').toLowerCase() === 'team leader';
                     return (
                       <tr key={row.AuditID || `${row.AudioFileName}-${auditedOn}`}>
-                        <td>
+                        <td data-label="Call / File">
                           <span className="ellipsis" title={row.AudioFileName} style={{ maxWidth: 220, display: 'inline-block' }}>
                             {row.AudioFileName}
                           </span>
                         </td>
-                        <td>{row.AgentName || '—'}</td>
-                        <td style={{ fontWeight: 600 }}>{row.AuditorUsername || '—'}</td>
-                        <td>
+                        <td data-label="Agent">{row.AgentName || '—'}</td>
+                        <td data-label="Audited By" style={{ fontWeight: 600 }}>{row.AuditorUsername || '—'}</td>
+                        <td data-label="Role">
                           <Badge variant={isTeamLeader ? 'accent' : 'info'}>
                             {row.AuditorRole || '—'}
                           </Badge>
                         </td>
-                        <td>{row.AgentSupervisor || '—'}</td>
-                        <td>{auditedOn}</td>
-                        <td>
+                        <td className="ui-table__col--hide-sm" data-label="Supervisor">{row.AgentSupervisor || '—'}</td>
+                        <td data-label="Audited On">{auditedOn}</td>
+                        <td data-label="Manual Score">
                           {row.OverallManualScore != null
                             ? `${parseFloat(row.OverallManualScore).toFixed(1)}%`
                             : '—'}
@@ -157,9 +155,13 @@ export default function ReportAuditSection({
             </div>
           </Card>
         ) : (
-          <Card style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+          <EmptyState
+            icon={<LuClipboardCheck />}
+            title="No manual audits"
+            variant="fill"
+          >
             No manual audits found for the selected date range and filters.
-          </Card>
+          </EmptyState>
         )}
       </section>
     </>

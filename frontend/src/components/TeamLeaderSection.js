@@ -19,7 +19,15 @@ import {
   LuFileText,
   LuBanknote,
 } from "../icons";
-import config from "../utils/envConfig";
+import { getAuditQueue } from "../services/auditService";
+import { getTeamAgents } from "../services/agentPortalService";
+import {
+  createRevaKnowledge,
+  deleteRevaKnowledge,
+  listRevaKnowledge,
+  updateRevaKnowledge,
+} from "../services/revaService";
+import { postBriefing, postKnowledgeTest } from "../services/uploadService";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
 import KpiCard from "./shared/KpiCard";
@@ -33,7 +41,6 @@ import {
   Modal,
   Spinner,
 } from "./ui";
-import "./reports/reports-page.css";
 import "./management-pages.css";
 import "./team-leader-page.css";
 import ReportChartCard from "./reports/ReportChartCard";
@@ -148,8 +155,7 @@ const TeamLeaderSection = () => {
   const fetchTeamData = async () => {
     setLoadingTeam(true);
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/team-agents/${sanitizeInput(username)}`);
-      const agentsData = await response.json();
+      const agentsData = await getTeamAgents(sanitizeInput(username));
 
       if (agentsData.success && agentsData.agents) {
         setAgents(agentsData.agents);
@@ -180,15 +186,11 @@ const TeamLeaderSection = () => {
 
   const fetchAuditQueue = async () => {
     try {
-      const url = `${config.apiBaseUrl}/api/audit-queue/${sanitizeInput(username)}${
-        (filterAgent || fromDate || toDate)
-          ? `?${filterAgent ? `agentName=${encodeURIComponent(sanitizeInput(filterAgent))}` : ''}${
-              fromDate ? `${filterAgent ? '&' : ''}fromDate=${sanitizeInput(fromDate)}` : ''
-            }${toDate ? `${(filterAgent || fromDate) ? '&' : ''}toDate=${sanitizeInput(toDate)}` : ''}`
-          : ''
-      }`;
-      const response = await fetch(url);
-      const data = await response.json();
+      const data = await getAuditQueue(sanitizeInput(username), {
+        agentName: filterAgent ? sanitizeInput(filterAgent) : undefined,
+        fromDate: fromDate ? sanitizeInput(fromDate) : undefined,
+        toDate: toDate ? sanitizeInput(toDate) : undefined,
+      });
       if (data.success && data.auditQueue) {
         setAuditQueue(data.auditQueue);
       } else {
@@ -202,8 +204,7 @@ const TeamLeaderSection = () => {
 
   const fetchKnowledgeEntries = async () => {
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/reva-knowledge`);
-      const data = await response.json();
+      const data = await listRevaKnowledge();
       if (data.success && data.categories) {
         setKnowledgeCategories(data.categories);
       } else {
@@ -222,12 +223,7 @@ const TeamLeaderSection = () => {
       return;
     }
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/upload-briefing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: sanitizeInput(username), content: sanitizedContent }),
-      });
-      const result = await response.json();
+      const result = await postBriefing({ username: sanitizeInput(username), content: sanitizedContent });
       if (result.success) {
         setBriefingMessage("Success: Briefing uploaded successfully!");
         setBriefingContent("");
@@ -254,16 +250,11 @@ const TeamLeaderSection = () => {
       return;
     }
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/upload-knowledge-test`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: sanitizeInput(username),
-          questions: sanitizedQuestions,
-          createdAt: new Date().toISOString(),
-        }),
+      const result = await postKnowledgeTest({
+        username: sanitizeInput(username),
+        questions: sanitizedQuestions,
+        createdAt: new Date().toISOString(),
       });
-      const result = await response.json();
       if (result.success) {
         setKnowledgeMessage("Success: Knowledge Test questions uploaded successfully!");
         setQuestions([emptyQuestion(), emptyQuestion(), emptyQuestion(), emptyQuestion(), emptyQuestion()]);
@@ -328,17 +319,12 @@ const TeamLeaderSection = () => {
       return;
     }
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/reva-knowledge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: sanitizedKnowledge.question,
-          answer: sanitizedKnowledge.answer,
-          category: sanitizedKnowledge.category,
-          username: sanitizeInput(username),
-        }),
+      const result = await createRevaKnowledge({
+        question: sanitizedKnowledge.question,
+        answer: sanitizedKnowledge.answer,
+        category: sanitizedKnowledge.category,
+        username: sanitizeInput(username),
       });
-      const result = await response.json();
       if (result.success) {
         setKnowledgeBaseMessage("Success: Knowledge entry added successfully!");
         setNewKnowledge({ question: "", answer: "", category: "" });
@@ -364,17 +350,12 @@ const TeamLeaderSection = () => {
       return;
     }
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/reva-knowledge/${selectedKnowledge.ID}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: sanitizedKnowledge.Question,
-          answer: sanitizedKnowledge.Answer,
-          category: sanitizedKnowledge.Category,
-          username: sanitizeInput(username),
-        }),
+      const result = await updateRevaKnowledge(selectedKnowledge.ID, {
+        question: sanitizedKnowledge.Question,
+        answer: sanitizedKnowledge.Answer,
+        category: sanitizedKnowledge.Category,
+        username: sanitizeInput(username),
       });
-      const result = await response.json();
       if (result.success) {
         setKnowledgeBaseMessage("Success: Knowledge entry updated successfully!");
         setShowUpdateKnowledgeForm(false);
@@ -392,11 +373,7 @@ const TeamLeaderSection = () => {
   const handleDeleteKnowledge = async (id) => {
     if (!window.confirm("Are you sure you want to delete this knowledge entry?")) return;
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/reva-knowledge/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-      });
-      const result = await response.json();
+      const result = await deleteRevaKnowledge(id);
       if (result.success) {
         setKnowledgeBaseMessage("Success: Knowledge entry deleted successfully!");
         fetchKnowledgeEntries();

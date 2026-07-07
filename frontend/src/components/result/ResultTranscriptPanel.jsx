@@ -1,4 +1,4 @@
-import { FaExpand, FaCompress, FaFileAudio, FaLanguage } from 'react-icons/fa';
+import { FaExpand, FaCompress, FaFileAudio, FaLanguage, FaAlignLeft } from 'react-icons/fa';
 import { Spinner, EmptyState } from '../ui';
 import ConversationTranscript from '../ConversationTranscript';
 
@@ -11,6 +11,8 @@ export default function ResultTranscriptPanel({
   transcriptMessages,
   originalMessages,
   summary,
+  summaryLoading = false,
+  summaryError = false,
   agentUsername,
   onSeek,
 }) {
@@ -62,9 +64,21 @@ export default function ResultTranscriptPanel({
         )}
 
         {transcriptTab === 'summary' && (
-          <div className="rp-summary">
-            <p>{summary}</p>
-          </div>
+          summaryLoading ? (
+            <div className="rp-center"><Spinner /></div>
+          ) : summaryError ? (
+            <EmptyState variant="error" icon={<FaAlignLeft />} title="Summary unavailable">
+              We could not load the call summary. Try refreshing the page.
+            </EmptyState>
+          ) : !summary ? (
+            <EmptyState icon={<FaAlignLeft />} title="No summary">
+              A summary has not been generated for this call yet.
+            </EmptyState>
+          ) : (
+            <div className="rp-summary">
+              <p>{summary}</p>
+            </div>
+          )
         )}
       </div>
     </section>

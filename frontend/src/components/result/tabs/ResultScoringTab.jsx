@@ -9,13 +9,14 @@ import {
 import { readChartPalette } from '../../../theme/chartTheme';
 import {
   formatScoreCell,
+  formatFeedbackText,
   getScoreBand,
   hexA,
   rubricPercent,
   RUBRIC,
 } from '../resultUtils';
 import ScoreRing from '../ScoreRing';
-import { TabooAnalysisPanel } from '../SecureDownloadModal';
+import TabooAnalysisPanel from '../TabooAnalysisPanel';
 
 export default function ResultScoringTab({
   loading,
@@ -131,13 +132,13 @@ export default function ResultScoringTab({
             <ScoreRing value={finalManualOverall} size={100} strokeWidth={8} label="Manual" variant="good" />
           )}
         </div>
-        {aiScoring.Feedback && String(aiScoring.Feedback).trim() && (
+        {aiScoring.Feedback && String(formatFeedbackText(aiScoring.Feedback)).trim() && (
           <div className="rp-feedback-card">
             <div className="rp-feedback-header">
               <LuInfo className="rp-feedback-icon" />
               <span>AI Coaching Feedback</span>
             </div>
-            <p className="rp-feedback-text">{aiScoring.Feedback}</p>
+            <p className="rp-feedback-text">{formatFeedbackText(aiScoring.Feedback)}</p>
           </div>
         )}
       </div>

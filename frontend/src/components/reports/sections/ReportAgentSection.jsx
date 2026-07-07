@@ -69,6 +69,9 @@ export default function ReportAgentSection({
                   <th>Location</th>
                   <th className="ui-table__col--hide-sm">Supervisor</th>
                   <th>Calls</th>
+                  <th className="ui-table__col--hide-sm">Hold</th>
+                  <th className="ui-table__col--hide-sm">Hold %</th>
+                  <th className="ui-table__col--hide-sm">Avg hold</th>
                   <th>Avg time</th>
                   <th>AI score</th>
                   <th className="ui-table__col--hide-sm">Manual</th>
@@ -83,6 +86,13 @@ export default function ReportAgentSection({
                     <td data-label="Location"><Badge>{row.AgentLocation || 'N/A'}</Badge></td>
                     <td className="ui-table__col--hide-sm" data-label="Supervisor">{row.AgentSupervisor || 'N/A'}</td>
                     <td data-label="Calls">{row.totalCalls || 0}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Hold">{row.callsWithHold ?? 0}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Hold %">
+                      {row.holdRatePct != null ? `${row.holdRatePct}%` : '—'}
+                    </td>
+                    <td className="ui-table__col--hide-sm" data-label="Avg hold">
+                      {row.avgHoldSec != null && row.avgHoldSec > 0 ? `${row.avgHoldSec}s` : '—'}
+                    </td>
                     <td data-label="Avg time">{row.avgHandlingTime || '—'}</td>
                     <td data-label="AI score">{row.avgAIScore ? `${row.avgAIScore}%` : '—'}</td>
                     <td className="ui-table__col--hide-sm" data-label="Manual">{row.avgManualScore ? `${row.avgManualScore}%` : '—'}</td>

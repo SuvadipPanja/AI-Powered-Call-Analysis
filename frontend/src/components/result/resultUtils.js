@@ -106,6 +106,28 @@ export function getScoreBand(pct) {
   return '';
 }
 
+export function formatFeedbackText(val) {
+  if (val == null || val === '') return '';
+  if (Array.isArray(val)) return val.filter(Boolean).map(String).join(' ');
+  const s = String(val).trim();
+  if (!s) return '';
+  try {
+    const parsed = JSON.parse(s);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String).join(' ');
+    if (typeof parsed === 'string') return parsed;
+  } catch { /* fall through */ }
+  if (s.startsWith('[') && s.endsWith(']')) {
+    const inner = s.slice(1, -1).trim();
+    if (!inner) return '';
+    return inner
+      .split(/',\s*'|",\s*"/)
+      .map((part) => part.replace(/^['"]|['"]$/g, '').trim())
+      .filter(Boolean)
+      .join(' ');
+  }
+  return s;
+}
+
 export function generateStrongPassword(length = 16) {
   const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const lower = 'abcdefghijklmnopqrstuvwxyz';

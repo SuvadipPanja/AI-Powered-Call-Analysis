@@ -1,4 +1,4 @@
-import { LuChartLine } from '../../../icons';
+import { LuChartLine, LuTriangleAlert, LuClock } from '../../../icons';
 import { EmptyState, PageLoading } from '../../ui';
 import ScoreRing from '../ScoreRing';
 import { QUERY_TYPE_COLORS, hexA } from '../resultUtils';
@@ -26,18 +26,16 @@ export default function ResultIntelligenceTab({
   const actioned = String(i.escalationActioned).toLowerCase() === 'yes';
   const csatDone = String(i.csatTransferred).toLowerCase() === 'yes';
 
+  const colorFor = (name) => categoryColors[name] || QUERY_TYPE_COLORS[name] || 'var(--text-muted)';
+  const primaryColor = colorFor(i.primaryQueryType);
+
   const chip = (label, color) => (
     <span
+      className="rp-intel__chip"
       style={{
-        display: 'inline-block',
-        padding: '4px 12px',
-        borderRadius: 999,
         background: hexA(color, 0.12),
         color,
         border: `1px solid ${hexA(color, 0.35)}`,
-        fontSize: 13,
-        fontWeight: 600,
-        margin: '3px 6px 3px 0',
       }}
     >
       {label}
@@ -45,120 +43,168 @@ export default function ResultIntelligenceTab({
   );
 
   const fmtMoney = (v) => (v == null ? '—' : `₹${Number(v).toLocaleString('en-IN')}`);
-  const cardStyle = {
-    background: 'var(--surface, #fff)',
-    border: '1px solid var(--border, #e5e7eb)',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+
+  const fmtHoldDuration = (sec) => {
+    const n = Number(sec);
+    if (!Number.isFinite(n) || n <= 0) return '0s';
+    const total = Math.round(n);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m) return `${m}m ${s}s`;
+    return `${s}s`;
   };
-  const labelStyle = {
-    fontSize: 12,
-    color: 'var(--text-muted, #64748b)',
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  };
-  const valStyle = { fontSize: 15, fontWeight: 600, color: 'var(--text, #0f172a)' };
-  const colorFor = (name) => categoryColors[name] || QUERY_TYPE_COLORS[name] || '#64748b';
-  const primaryColor = colorFor(i.primaryQueryType);
+
+  const holdDetected = String(i.holdDetected || 'No').toLowerCase() === 'yes';
+  const holdEvents = Array.isArray(i.holdEvents) ? i.holdEvents : [];
 
   return (
     <div className="rp-intel">
-      <div style={cardStyle}>
-        <div style={labelStyle}>Customer Query</div>
+      {/* Customer Query */}
+      <div className="rp-intel__card">
+        <div className="rp-intel__label">Customer Query</div>
         <div style={{ marginTop: 10 }}>
           {chip(i.primaryQueryType, primaryColor)}
-          <span style={{ fontSize: 12, color: 'var(--text-muted,#64748b)', marginLeft: 4 }}>primary</span>
+          <span className="rp-intel__label" style={{ marginLeft: 4 }}>primary</span>
         </div>
         {Array.isArray(i.secondaryQueryTypes) && i.secondaryQueryTypes.length > 0 && (
           <div style={{ marginTop: 8 }}>
             {i.secondaryQueryTypes.map((q) => chip(q, colorFor(q)))}
-            <span style={{ fontSize: 12, color: 'var(--text-muted,#64748b)', marginLeft: 4 }}>also discussed</span>
+            <span className="rp-intel__label" style={{ marginLeft: 4 }}>also discussed</span>
           </div>
         )}
-        {i.summary && <p style={{ marginTop: 12, color: 'var(--text,#0f172a)', fontSize: 14 }}>{i.summary}</p>}
+        {i.summary && <p className="rp-intel__summary">{i.summary}</p>}
       </div>
 
-      <div style={cardStyle}>
-        <div style={labelStyle}>Escalation</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 12 }}>
+      {/* Escalation */}
+      <div className="rp-intel__card">
+        <div className="rp-intel__label">Escalation</div>
+        <div className="rp-intel__row">
           <div>
-            <div style={labelStyle}>Senior transfer requested</div>
-            <div style={{ ...valStyle, color: escalated ? '#dc2626' : '#16a34a' }}>{escalated ? 'Yes' : 'No'}</div>
+            <div className="rp-intel__label">Senior transfer requested</div>
+            <div className={`rp-intel__val ${escalated ? 'rp-intel__val--negative' : 'rp-intel__val--positive'}`}>
+              {escalated ? 'Yes' : 'No'}
+            </div>
           </div>
           <div>
-            <div style={labelStyle}>Agent actioned it</div>
-            <div style={{ ...valStyle, color: !escalated ? '#64748b' : (actioned ? '#16a34a' : '#dc2626') }}>
+            <div className="rp-intel__label">Agent actioned it</div>
+            <div className={`rp-intel__val ${!escalated ? 'rp-intel__val--muted' : actioned ? 'rp-intel__val--positive' : 'rp-intel__val--negative'}`}>
               {i.escalationActioned}
             </div>
           </div>
           <div>
-            <div style={labelStyle}>Category</div>
-            <div style={valStyle}>{i.escalationCategory}</div>
+            <div className="rp-intel__label">Category</div>
+            <div className="rp-intel__val">{i.escalationCategory}</div>
           </div>
         </div>
         {escalated && !actioned && (
-          <p style={{ marginTop: 10, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>
-            ⚠ Customer requested a senior but the transfer was not actioned.
+          <p className="rp-intel__warning">
+            <LuTriangleAlert size={14} aria-hidden />
+            Customer requested a senior but the transfer was not actioned.
           </p>
         )}
       </div>
 
-      <div style={cardStyle}>
-        <div style={labelStyle}>C-SAT Feedback Transfer</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-          <div style={{ ...valStyle, color: csatDone ? '#16a34a' : '#64748b' }}>
+      {/* C-SAT */}
+      <div className="rp-intel__card">
+        <div className="rp-intel__label">C-SAT Feedback Transfer</div>
+        <div className="rp-intel__csat-row">
+          <div className={`rp-intel__val ${csatDone ? 'rp-intel__val--positive' : 'rp-intel__val--muted'}`}>
             {csatDone ? 'Transferred to C-SAT' : 'Not transferred'}
           </div>
           {csatDone && chip('C-SAT captured', '#16a34a')}
         </div>
-        <p style={{ marginTop: 8, color: 'var(--text-muted,#64748b)', fontSize: 13 }}>
+        <p className="rp-intel__note">
           {csatDone
             ? 'Agent routed the call to the feedback/scoring (C-SAT) system so the customer could rate the call.'
             : 'Agent did not transfer the call to the feedback/scoring (C-SAT) system.'}
         </p>
       </div>
 
+      {/* Agent Hold Time */}
+      <div className="rp-intel__card">
+        <div className="rp-intel__label">
+          <LuClock size={14} aria-hidden style={{ marginRight: 6, verticalAlign: -2 }} />
+          Agent Hold Time
+        </div>
+        {holdDetected ? (
+          <>
+            <div className="rp-intel__row">
+              <div>
+                <div className="rp-intel__label">Hold detected</div>
+                <div className="rp-intel__val rp-intel__val--negative">Yes</div>
+              </div>
+              <div>
+                <div className="rp-intel__label">Episodes</div>
+                <div className="rp-intel__val">{i.holdCount || holdEvents.length || 0}</div>
+              </div>
+              <div>
+                <div className="rp-intel__label">Total hold</div>
+                <div className="rp-intel__val">{fmtHoldDuration(i.holdTotalSec)}</div>
+              </div>
+              <div>
+                <div className="rp-intel__label">Longest hold</div>
+                <div className="rp-intel__val">{fmtHoldDuration(i.holdLongestSec)}</div>
+              </div>
+            </div>
+            {holdEvents.length > 0 && (
+              <ul className="rp-intel__hold-list">
+                {holdEvents.map((ev, idx) => (
+                  <li key={`hold-${idx}`}>
+                    Episode {idx + 1}: {fmtHoldDuration(ev.duration_sec)}
+                    {' · '}
+                    {ev.trigger === 'phrase' ? 'Explicit hold phrase' : 'Long silence gap'}
+                    {' · '}
+                    {Number(ev.start_sec).toFixed(1)}s–{Number(ev.end_sec).toFixed(1)}s
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p className="rp-intel__note">No agent hold was detected on this call.</p>
+        )}
+      </div>
+
+      {/* Loan Lead */}
       {isLoan ? (
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+        <div className="rp-intel__card">
+          <div className="rp-intel__loan-header">
             <div>
-              <div style={labelStyle}>Loan Lead</div>
+              <div className="rp-intel__label">Loan Lead</div>
               <div style={{ marginTop: 8 }}>{chip(i.loanType, '#16a34a')}</div>
             </div>
-            <div style={{ textAlign: 'center' }}>
+            <div className="rp-intel__loan-ring">
               <ScoreRing value={i.successProbability} label="success" size={84} />
-              <div style={{ ...labelStyle, marginTop: 4 }}>Conversion likelihood</div>
+              <div className="rp-intel__label" style={{ marginTop: 4 }}>Conversion likelihood</div>
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 16 }}>
+          <div className="rp-intel__row">
             <div>
-              <div style={labelStyle}>Customer interest</div>
-              <div style={valStyle}>{i.customerInterest}</div>
+              <div className="rp-intel__label">Customer interest</div>
+              <div className="rp-intel__val">{i.customerInterest}</div>
             </div>
             <div>
-              <div style={labelStyle}>Can pay EMI on time</div>
-              <div style={valStyle}>{i.emiAffordability}</div>
+              <div className="rp-intel__label">Can pay EMI on time</div>
+              <div className="rp-intel__val">{i.emiAffordability}</div>
             </div>
             <div>
-              <div style={labelStyle}>EMI amount</div>
-              <div style={valStyle}>{fmtMoney(i.emiAmount)}</div>
+              <div className="rp-intel__label">EMI amount</div>
+              <div className="rp-intel__val">{fmtMoney(i.emiAmount)}</div>
             </div>
             <div>
-              <div style={labelStyle}>Loan amount</div>
-              <div style={valStyle}>{fmtMoney(i.loanAmount)}</div>
+              <div className="rp-intel__label">Loan amount</div>
+              <div className="rp-intel__val">{fmtMoney(i.loanAmount)}</div>
             </div>
             <div>
-              <div style={labelStyle}>Agent convinced customer</div>
-              <div style={valStyle}>{i.agentConvinced}</div>
+              <div className="rp-intel__label">Agent convinced customer</div>
+              <div className="rp-intel__val">{i.agentConvinced}</div>
             </div>
           </div>
         </div>
       ) : (
-        <div style={cardStyle}>
-          <div style={labelStyle}>Loan Lead</div>
-          <p style={{ marginTop: 8, color: 'var(--text-muted,#64748b)', fontSize: 14 }}>No loan was discussed on this call.</p>
+        <div className="rp-intel__card">
+          <div className="rp-intel__label">Loan Lead</div>
+          <p className="rp-intel__note">No loan was discussed on this call.</p>
         </div>
       )}
     </div>

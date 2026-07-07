@@ -1,4 +1,4 @@
-import { FaMoon, FaSun } from "react-icons/fa";
+import { LuMoon, LuSun } from "../../icons";
 import { useTheme } from "../../theme/ThemeProvider";
 
 /**
@@ -20,7 +20,7 @@ export default function ThemeToggle({ compact = false }) {
         className="ui-theme-toggle ui-theme-toggle--compact"
       >
         <span className="ui-theme-toggle__icon" key={theme}>
-          {isLight ? <FaMoon /> : <FaSun />}
+          {isLight ? <LuMoon /> : <LuSun />}
         </span>
       </button>
     );
@@ -35,9 +35,9 @@ export default function ThemeToggle({ compact = false }) {
       aria-label="Toggle color theme"
       className={`ui-theme-track ${isLight ? "is-light" : "is-dark"}`}
     >
-      <span className="ui-theme-track__thumb">{isLight ? <FaSun /> : <FaMoon />}</span>
-      <FaSun className="ui-theme-track__sun" />
-      <FaMoon className="ui-theme-track__moon" />
+      <span className="ui-theme-track__thumb">{isLight ? <LuSun /> : <LuMoon />}</span>
+      <LuSun className="ui-theme-track__sun" />
+      <LuMoon className="ui-theme-track__moon" />
     </button>
   );
 }

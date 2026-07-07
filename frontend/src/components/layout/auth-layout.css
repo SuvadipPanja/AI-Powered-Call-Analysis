@@ -488,6 +488,12 @@ select.auth-input-has-icon { padding-left: 2.25rem !important; }
   border-radius: var(--radius-sm);
 }
 
+.license-grace-banner--inline {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 980px) {
   .auth2 { grid-template-columns: 1fr; }

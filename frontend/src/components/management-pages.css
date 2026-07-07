@@ -87,7 +87,11 @@
   min-width: 900px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 1024px) {
+  .mgmt-table-wrap.ui-table-wrap--stack {
+    overflow-x: visible;
+  }
+
   .mgmt-table-wrap .ui-table.ui-table--stack-sm {
     min-width: 0;
   }

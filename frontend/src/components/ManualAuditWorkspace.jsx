@@ -7,9 +7,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import WaveSurfer from 'wavesurfer.js';
-import config from '../utils/envConfig';
 import { createAuthenticatedAudioBlobUrl } from '../utils/authenticatedAudio';
-import apiClient from '../utils/apiClient';
+import { getAuditByFileName, saveAudit } from '../services/auditService';
 import { Button, Spinner, Badge, Textarea } from './ui';
 import { FaTimes, FaPlay, FaPause, FaSave, FaClipboardCheck, FaVolumeUp, FaCommentDots } from 'react-icons/fa';
 import { toast } from 'react-toastify';
@@ -54,14 +53,15 @@ export default function ManualAuditWorkspace({
   const waveRef = useRef(null);
   const waveWrapRef = useRef(null);
   const wsRef = useRef(null);
+  const closeBtnRef = useRef(null);
 
   const loadExistingAudit = useCallback(async () => {
     if (!filename) return;
     setLoading(true);
     try {
-      const resp = await apiClient.get(`/api/audits/${encodeURIComponent(filename)}`);
-      if (resp.data.success && resp.data.audit) {
-        const audit = resp.data.audit;
+      const resp = await getAuditByFileName(filename);
+      if (resp.success && resp.audit) {
+        const audit = resp.audit;
         setExistingAudit(audit);
         setOverallComments(audit.OverallComments || '');
         setToneNotes(audit.ToneNotes || '');
@@ -100,12 +100,24 @@ export default function ManualAuditWorkspace({
   }, [open, loadExistingAudit]);
 
   useEffect(() => {
+    if (!open) return undefined;
+    closeBtnRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
+  useEffect(() => {
     const audioFile = audioDetails?.AudioFileName || filename;
-    if (!open || !waveRef.current || !audioFile) return;
+    if (!open || loading || !audioFile) return;
 
     let ws = null;
     let cancelled = false;
-
     let objectUrl = null;
 
     const initWaveform = async () => {
@@ -129,7 +141,7 @@ export default function ManualAuditWorkspace({
         height: 80,
         responsive: true,
         normalize: true,
-        backend: 'MediaElement',
+        backend: 'WebAudio',
         fillParent: true,
         scrollParent: false,
         hideScrollbar: true,
@@ -143,9 +155,13 @@ export default function ManualAuditWorkspace({
           URL.revokeObjectURL(objectUrl);
           return;
         }
-        ws.load(objectUrl);
-      } catch {
-        if (!cancelled) setAudioLoadError('Could not load call recording. Check that the file exists on the server.');
+        await ws.load(objectUrl);
+      } catch (err) {
+        if (!cancelled) {
+          setAudioLoadError(err?.message || 'Could not load call recording. Check that the file exists on the server.');
+        }
+        try { ws?.destroy(); } catch {}
+        ws = null;
         return;
       }
 
@@ -180,7 +196,7 @@ export default function ManualAuditWorkspace({
       setCurrentTime(0);
       setDuration(0);
     };
-  }, [open, audioDetails, filename]);
+  }, [open, loading, audioDetails, filename]);
 
   const togglePlay = () => {
     if (wsRef.current) {
@@ -247,13 +263,13 @@ export default function ManualAuditWorkspace({
         aiScoresSnapshot: aiScoring || {},
       };
 
-      const resp = await apiClient.post('/api/audits', body);
-      if (resp.data.success) {
+      const resp = await saveAudit(body);
+      if (resp.success) {
         toast.success('Audit saved successfully!');
-        if (onAuditSaved) onAuditSaved(resp.data.auditId);
+        if (onAuditSaved) onAuditSaved(resp.auditId);
         onClose();
       } else {
-        const msg = resp.data.message || 'Unknown error';
+        const msg = resp.message || 'Unknown error';
         setSaveError(msg);
         toast.error(`Save failed: ${msg}`);
       }
@@ -282,14 +298,20 @@ export default function ManualAuditWorkspace({
   const aiOverall = aiScoring?.['Overall Scoring'];
 
   return createPortal(
-    <div className="audit-ws-overlay" onClick={onClose}>
-      <div className="audit-ws" onClick={e => e.stopPropagation()}>
+    <div className="audit-ws-overlay" onClick={onClose} role="presentation">
+      <div
+        className="audit-ws"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="audit-ws-title"
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
         <header className="audit-ws__header">
           <div className="audit-ws__header-left">
-            <FaClipboardCheck className="audit-ws__header-icon" />
+            <FaClipboardCheck className="audit-ws__header-icon" aria-hidden="true" />
             <div>
-              <h2 className="audit-ws__title">Manual Audit</h2>
+              <h2 id="audit-ws-title" className="audit-ws__title">Manual Audit</h2>
               <span className="audit-ws__subtitle">{filename}</span>
             </div>
           </div>
@@ -297,8 +319,8 @@ export default function ManualAuditWorkspace({
             {existingAudit && (
               <Badge variant="accent">Editing Existing Audit</Badge>
             )}
-            <button type="button" className="audit-ws__close" onClick={onClose} aria-label="Close">
-              <FaTimes />
+            <button type="button" className="audit-ws__close" onClick={onClose} aria-label="Close manual audit" ref={closeBtnRef}>
+              <FaTimes aria-hidden="true" />
             </button>
           </div>
         </header>

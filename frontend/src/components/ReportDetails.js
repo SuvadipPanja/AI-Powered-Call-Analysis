@@ -5,7 +5,7 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import 'chart.js/auto';
 import config from "../utils/envConfig";
-import { PageLoading } from './ui';
+import { PageLoading, PageError } from './ui';
 import KuberPageHero from './layout/KuberPageHero';
 import './layout/kuber-hero.css';
 import ReportKpiStrip from './reports/ReportKpiStrip';
@@ -15,15 +15,39 @@ import ReportIntentSection from './reports/sections/ReportIntentSection';
 import ReportAgentSection from './reports/sections/ReportAgentSection';
 import ReportAuditSection from './reports/sections/ReportAuditSection';
 import { fetchLoanLeadsReport } from '../utils/loanLeadsData';
-import './reports/reports-page.css';
+import {
+  mapToneSentimentChart,
+  mapQueryTypeChart,
+  mapEscalationReport,
+  mapHoldReport,
+  mapLeadClassificationChart,
+} from '../utils/dashboardChartMappers';
+import { formatKpiDelta } from '../utils/dashboardKpiUtils';
+import {
+  getAgentHandlingSummary,
+  getAgentPerformanceMetrics,
+  getCallResolutionStatus,
+  getCallVolumeByTime,
+  getCallVolumeTrendsEnhanced,
+  getEscalationSummary,
+  getHoldSummary,
+  getLanguagePreferences,
+  getLeadClassification,
+  getMetricsOverview,
+  getPerformanceComparison,
+  getQueryTypeDistribution,
+  getRealtimeMetrics,
+  getRubricComparison,
+  getToneSentimentSummary,
+} from '../services/reportsService';
+import { getTeamAuditList, getTeamAuditSummary } from '../services/auditService';
+import { exportTeamAudits } from '../services/uploadService';
 import {
   buildUnifiedCallVolumeChart,
   unifiedCallVolumeOptions,
   buildPeakTimeChart,
   modernPeakTimeOptions,
   buildModernDoughnutData,
-  buildColoredDoughnutData,
-  buildSentimentSummaryChart,
   modernDoughnutOptions,
   buildAgentRankingChart,
   modernAgentRankingOptions,
@@ -31,8 +55,7 @@ import {
   modernRadarOptions,
   formatVolumeTrendLabels,
 } from './reports/reportsChartConfig';
-import { appendReportFilters } from '../utils/dashboardFilters';
-import { parseReportResponse as parseReportApiResponse } from '../utils/apiHelpers';
+import { appendReportFilters, buildReportQueryParams } from '../utils/dashboardFilters';
 import useReportFilters from '../hooks/useReportFilters';
 import { LuChartBar } from '../icons';
 
@@ -98,6 +121,7 @@ const ReportDetails = () => {
   const [escalationDonut, setEscalationDonut] = useState(null);
   const [loanLeadData, setLoanLeadData] = useState(null);
   const [loanTypeDonut, setLoanTypeDonut] = useState(null);
+  const [holdData, setHoldData] = useState(null);
 
   const volumeChartRef = useRef(null);
   const languageChartRef = useRef(null);
@@ -165,7 +189,7 @@ const ReportDetails = () => {
     resetFilters: resetReportFilters,
   } = useReportFilters({
     mode: 'auto',
-    maxRangeDays: 365,
+    maxRangeDays: null,
     onAutoApply: handleAutoApply,
   });
 
@@ -180,12 +204,13 @@ const ReportDetails = () => {
   /***************************************
    * 5) ENHANCED API FUNCTIONS
    ***************************************/
-  const API_BASE_URL = config.apiBaseUrl;
 
   const stampReportFilters = (queryParams, activeFilters = filtersRef.current) => {
     appendReportFilters(queryParams, activeFilters);
     return queryParams;
   };
+
+  const API_BASE_URL = config.apiBaseUrl;
 
 
   const fetchRealTimeMetrics = async (f = filtersRef.current) => {
@@ -195,8 +220,7 @@ const ReportDetails = () => {
       if (f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/realtime-metrics?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'realtime-metrics');
+      const result = await getRealtimeMetrics(queryParams);
       if (result?.success && result.data) {
         setRealTimeStats(result.data);
       }
@@ -214,8 +238,7 @@ const ReportDetails = () => {
       if (f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/performance-comparison?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'performance-comparison');
+      const result = await getPerformanceComparison(queryParams);
       if (result?.success && result.data) {
         setPerformanceComparison(result.data);
       }
@@ -238,8 +261,7 @@ const ReportDetails = () => {
       }
       if (f.agent && f.agent !== 'All') queryParams.append('agent', f.agent);
 
-      const response = await fetch(`${API_BASE_URL}/api/metrics-overview?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'metrics-overview');
+      const result = await getMetricsOverview(queryParams);
       if (result?.success) {
         setMetricsOverview({
           avgAiScoring: result.avgAiScoring ?? null,
@@ -260,8 +282,7 @@ const ReportDetails = () => {
       if (f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/language-preferences?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'language-preferences');
+      const result = await getLanguagePreferences(queryParams);
       if (result?.success && result.data?.length > 0) {
         setLanguagePreferencesData(buildModernDoughnutData(
           result.data.map((item) => item.language || 'Unknown'),
@@ -284,8 +305,7 @@ const ReportDetails = () => {
       if (f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/call-volume-by-time?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'call-volume-by-time');
+      const result = await getCallVolumeByTime(queryParams);
       if (result?.success && result.data?.length) {
         const labels = result.data.map((item) => item.timePeriod);
         const values = result.data.map((item) => item.callCount || 0);
@@ -321,8 +341,7 @@ const ReportDetails = () => {
       if (f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/call-volume-trends-enhanced?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'call-volume-trends');
+      const result = await getCallVolumeTrendsEnhanced(queryParams);
       if (result?.success && result.data?.length > 0) {
         const sorted = [...result.data].reverse();
         const labels = formatVolumeTrendLabels(sorted, days);
@@ -362,8 +381,7 @@ const ReportDetails = () => {
       if (f.fromDate) queryParams.append('fromDate', f.fromDate);
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
-      const response = await fetch(`${API_BASE_URL}/api/reports/rubric-comparison?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'rubric-comparison');
+      const result = await getRubricComparison(queryParams);
       if (result?.success && result.data?.length) {
         const rows = result.data.filter((d) => d.ai != null || d.manual != null);
         setRubricRows(rows.map((d) => ({
@@ -388,17 +406,8 @@ const ReportDetails = () => {
 
   const fetchToneSentiment = async (f = filtersRef.current) => {
     try {
-      const queryParams = new URLSearchParams();
-      if (f.fromDate) queryParams.append('fromDate', f.fromDate);
-      if (f.toDate) queryParams.append('toDate', f.toDate);
-      stampReportFilters(queryParams, f);
-      const response = await fetch(`${API_BASE_URL}/api/reports/tone-sentiment-summary?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'tone-sentiment');
-      if (result?.success && result.data?.length) {
-        setToneChartData(buildSentimentSummaryChart(result.data));
-      } else {
-        setToneChartData(null);
-      }
+      const result = await getToneSentimentSummary(buildReportQueryParams(f));
+      setToneChartData(mapToneSentimentChart(result));
     } catch (error) {
       console.error('Error fetching sentiment summary:', error);
     }
@@ -406,20 +415,8 @@ const ReportDetails = () => {
 
   const fetchLeadClassification = async (f = filtersRef.current) => {
     try {
-      const queryParams = new URLSearchParams();
-      if (f.fromDate) queryParams.append('fromDate', f.fromDate);
-      if (f.toDate) queryParams.append('toDate', f.toDate);
-      stampReportFilters(queryParams, f);
-      const response = await fetch(`${API_BASE_URL}/api/reports/lead-classification?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'lead-classification');
-      if (result?.success && result.data?.length) {
-        setLeadChartData(buildModernDoughnutData(
-          result.data.map((item) => item.label || 'Unknown'),
-          result.data.map((item) => item.count),
-        ));
-      } else {
-        setLeadChartData(null);
-      }
+      const result = await getLeadClassification(buildReportQueryParams(f));
+      setLeadChartData(mapLeadClassificationChart(result));
     } catch (error) {
       console.error('Error fetching lead classification:', error);
     }
@@ -427,21 +424,8 @@ const ReportDetails = () => {
 
   const fetchQueryTypeDistribution = async (f = filtersRef.current) => {
     try {
-      const queryParams = new URLSearchParams();
-      if (f.fromDate) queryParams.append('fromDate', f.fromDate);
-      if (f.toDate) queryParams.append('toDate', f.toDate);
-      stampReportFilters(queryParams, f);
-      const response = await fetch(`${API_BASE_URL}/api/reports/query-type-distribution?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'query-type-distribution');
-      if (result?.success && result.data?.length) {
-        setQueryTypeData(buildColoredDoughnutData(
-          result.data.map((item) => item.label || 'Unclassified'),
-          result.data.map((item) => item.count),
-          result.data.map((item) => item.color),
-        ));
-      } else {
-        setQueryTypeData(null);
-      }
+      const result = await getQueryTypeDistribution(buildReportQueryParams(f));
+      setQueryTypeData(mapQueryTypeChart(result));
     } catch (error) {
       console.error('Error fetching query-type distribution:', error);
     }
@@ -449,34 +433,27 @@ const ReportDetails = () => {
 
   const fetchEscalationSummary = async (f = filtersRef.current) => {
     try {
-      const queryParams = new URLSearchParams();
-      if (f.fromDate) queryParams.append('fromDate', f.fromDate);
-      if (f.toDate) queryParams.append('toDate', f.toDate);
-      stampReportFilters(queryParams, f);
-      const response = await fetch(`${API_BASE_URL}/api/reports/escalation-summary?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'escalation-summary');
-      if (result?.success && result.data) {
-        setEscalationData(result.data.totals || null);
-        const cats = result.data.byCategory || [];
-        setEscalationDonut(cats.length
-          ? buildModernDoughnutData(cats.map((c) => c.label), cats.map((c) => c.count))
-          : null);
-      } else {
-        setEscalationData(null);
-        setEscalationDonut(null);
-      }
+      const result = await getEscalationSummary(buildReportQueryParams(f));
+      const { totals, donut } = mapEscalationReport(result);
+      setEscalationData(totals);
+      setEscalationDonut(donut);
     } catch (error) {
       console.error('Error fetching escalation summary:', error);
     }
   };
 
+  const fetchHoldSummary = async (f = filtersRef.current) => {
+    try {
+      const result = await getHoldSummary(buildReportQueryParams(f));
+      setHoldData(mapHoldReport(result));
+    } catch (error) {
+      console.error('Error fetching hold summary:', error);
+    }
+  };
+
   const fetchLoanLeads = async (f = filtersRef.current) => {
     try {
-      const queryParams = new URLSearchParams();
-      if (f.fromDate) queryParams.append('fromDate', f.fromDate);
-      if (f.toDate) queryParams.append('toDate', f.toDate);
-      stampReportFilters(queryParams, f);
-      const { totals, donutData } = await fetchLoanLeadsReport(queryParams.toString());
+      const { totals, donutData } = await fetchLoanLeadsReport(buildReportQueryParams(f).toString());
       setLoanLeadData(totals);
       setLoanTypeDonut(donutData);
     } catch (error) {
@@ -488,12 +465,9 @@ const ReportDetails = () => {
 
   const fetchAuditMetrics = async () => {
     try {
-      const resp = await fetch(`${API_BASE_URL}/api/audits/team/summary`);
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success) {
-          setAuditMetrics(data);
-        }
+      const data = await getTeamAuditSummary();
+      if (data?.success) {
+        setAuditMetrics(data);
       }
     } catch { /* audit metrics optional */ }
   };
@@ -519,14 +493,9 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('to', f.toDate);
       if (f.location && f.location !== 'All') queryParams.append('location', f.location);
       if (f.supervisor && f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
-      const resp = await fetch(`${API_BASE_URL}/api/audits/team/list?${queryParams}`);
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success) {
-          setAuditActivity(data.audits || []);
-        } else {
-          setAuditActivity([]);
-        }
+      const data = await getTeamAuditList(queryParams.toString());
+      if (data?.success) {
+        setAuditActivity(data.audits || []);
       } else {
         setAuditActivity([]);
       }
@@ -539,9 +508,7 @@ const ReportDetails = () => {
 
   const handleAuditExport = async () => {
     try {
-      const resp = await fetch(`${API_BASE_URL}/api/audits/team/export`);
-      if (!resp.ok) throw new Error('Export failed');
-      const blob = await resp.blob();
+      const blob = await exportTeamAudits('');
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -562,8 +529,7 @@ const ReportDetails = () => {
       if (f.supervisor !== 'All') queryParams.append('supervisor', f.supervisor);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/call-resolution-status?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'call-resolution-status');
+      const result = await getCallResolutionStatus(queryParams);
       if (result?.success && result.data?.length > 0) {
         setResolutionData(buildModernDoughnutData(
           result.data.map((item) => item.resolutionStatus || 'Unknown'),
@@ -587,8 +553,7 @@ const ReportDetails = () => {
       queryParams.append('limit', '5');
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/agent-performance-metrics?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'agent-performance-metrics');
+      const result = await getAgentPerformanceMetrics(queryParams);
       if (result?.success && result.data?.length > 0) {
         const sortedData = [...result.data]
           .sort((a, b) => parseFloat(b.avgAIScore || 0) - parseFloat(a.avgAIScore || 0))
@@ -615,8 +580,7 @@ const ReportDetails = () => {
       if (f.toDate) queryParams.append('toDate', f.toDate);
       stampReportFilters(queryParams, f);
 
-      const response = await fetch(`${API_BASE_URL}/api/reports/agent-handling-summary?${queryParams}`);
-      const result = await parseReportApiResponse(response, 'agent-handling-summary');
+      const result = await getAgentHandlingSummary(queryParams);
       if (result?.success) {
         setAgentSummaryData(result.data || []);
       } else {
@@ -668,6 +632,7 @@ const ReportDetails = () => {
         fetchLeadClassification(activeFilters),
         fetchQueryTypeDistribution(activeFilters),
         fetchEscalationSummary(activeFilters),
+        fetchHoldSummary(activeFilters),
         fetchLoanLeads(activeFilters),
         fetchAuditMetrics(),
         fetchAuditActivity(activeFilters),
@@ -687,17 +652,41 @@ const ReportDetails = () => {
     { key: 'AgentLocation', label: 'Location' },
     { key: 'AgentSupervisor', label: 'Supervisor' },
     { key: 'totalCalls', label: 'Calls' },
+    { key: 'callsWithHold', label: 'With hold' },
+    { key: 'holdRatePct', label: 'Hold %' },
+    { key: 'avgHoldSec', label: 'Avg hold (s)' },
     { key: 'avgHandlingTime', label: 'Avg time' },
     { key: 'avgAIScore', label: 'AI score' },
     { key: 'avgManualScore', label: 'Manual score' },
     { key: 'satisfaction', label: 'Resolution' },
   ]), []);
 
-  const formatDelta = (value, suffix = '%') => {
-    const n = Number(value) || 0;
-    const sign = n > 0 ? '+' : '';
-    return `${sign}${Math.round(n * 10) / 10}${suffix}`;
-  };
+  const holdTableColumns = useMemo(() => ([
+    { key: 'totalCalls', label: 'Total calls' },
+    { key: 'withHold', label: 'Calls with hold' },
+    { key: 'holdPct', label: 'Hold rate %' },
+    { key: 'avgHoldSec', label: 'Avg hold (sec)' },
+    { key: 'longestHoldSec', label: 'Longest hold (sec)' },
+    { key: 'totalHoldEvents', label: 'Hold episodes' },
+    { key: 'totalHoldSec', label: 'Total hold (sec)' },
+  ]), []);
+
+  const holdTableRows = useMemo(() => {
+    if (!holdData) return [];
+    const total = Number(holdData.total) || 0;
+    const withHold = Number(holdData.withHold) || 0;
+    return [{
+      totalCalls: total,
+      withHold,
+      holdPct: total > 0 ? `${Math.round((withHold / total) * 100)}%` : '0%',
+      avgHoldSec: holdData.avgHoldSec != null ? Number(holdData.avgHoldSec).toFixed(1) : '—',
+      longestHoldSec: holdData.longestHoldSec != null ? Number(holdData.longestHoldSec).toFixed(1) : '—',
+      totalHoldEvents: holdData.totalHoldEvents ?? 0,
+      totalHoldSec: holdData.totalHoldSec != null ? Number(holdData.totalHoldSec).toFixed(1) : '—',
+    }];
+  }, [holdData]);
+
+  const formatDelta = formatKpiDelta;
 
   const chartOptions = useMemo(() => ({
     volume: unifiedCallVolumeOptions(volumeTrendsData),
@@ -798,7 +787,11 @@ const ReportDetails = () => {
       />
 
       {error && (
-        <div className="auth-alert auth-alert--error">{error}</div>
+        <PageError
+          message={error}
+          onRetry={() => fetchAllData(filtersRef.current)}
+          retryLabel="Retry"
+        />
       )}
 
       {loading && (
@@ -856,6 +849,9 @@ const ReportDetails = () => {
             escalationDonut={escalationDonut}
             loanLeadData={loanLeadData}
             loanTypeDonut={loanTypeDonut}
+            holdData={holdData}
+            holdTableColumns={holdTableColumns}
+            holdTableRows={holdTableRows}
             queryTypeChartRef={queryTypeChartRef}
             escalationChartRef={escalationChartRef}
             loanTypeChartRef={loanTypeChartRef}

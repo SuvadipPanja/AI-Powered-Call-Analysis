@@ -5,7 +5,7 @@
  *  - Added UserID column to the user table to reflect the new primary key for login.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   FaUserPlus,
   FaEdit,
@@ -13,7 +13,15 @@ import {
 } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import './management-pages.css';
-import config from '../utils/envConfig';
+import {
+  deleteUser as deleteUserApi,
+  listUsers,
+  searchUsers,
+  updateUserEmail,
+  updateUserPassword,
+  updateUserRole,
+  updateUserSecurityQuestion,
+} from '../services/usersService';
 import { Card, Button, Input, Select, Label, Modal, Badge, UserAvatar } from './ui';
 
 export default function UserManagement() {
@@ -78,27 +86,34 @@ export default function UserManagement() {
     return passwordHint === "Strong!";
   }, [passwordHint]);
 
+  const showNotification = useCallback((msg, type) => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 4000);
+  }, []);
+
   /***************************************
    * 5) FETCH USERS
    * Purpose: Fetches the list of users from the API on component mount.
    * Compliance: ISO 27001 (Secure API calls).
    ***************************************/
-  useEffect(() => {
-    fetch(`${config.apiBaseUrl}/api/users/list`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.success && Array.isArray(d.users)) {
-          setUsers(d.users);
-        } else {
-          setUsers([]);
-          showNotification('Failed to load users: Invalid response', 'error');
-        }
-      })
-      .catch(() => {
+  const loadUsers = useCallback(async () => {
+    try {
+      const d = await listUsers();
+      if (d.success && Array.isArray(d.users)) {
+        setUsers(d.users);
+      } else {
         setUsers([]);
-        showNotification('Failed to load users', 'error');
-      });
-  }, []);
+        showNotification('Failed to load users: Invalid response', 'error');
+      }
+    } catch {
+      setUsers([]);
+      showNotification('Failed to load users', 'error');
+    }
+  }, [showNotification]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   /***************************************
    * 6) SEARCH USERS
@@ -113,13 +128,9 @@ export default function UserManagement() {
     };
   };
 
-  const searchUsers = async (query) => {
+  const searchUsersHandler = async (query) => {
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/users/search?q=${encodeURIComponent(query)}`);
-      if (!res.ok) {
-        throw new Error('Search request failed');
-      }
-      const data = await res.json();
+      const data = await searchUsers(query);
       if (data.success && Array.isArray(data.users)) {
         setUsers(data.users);
       } else {
@@ -135,22 +146,9 @@ export default function UserManagement() {
 
   const debouncedSearch = debounce((query) => {
     if (query.trim() === '') {
-      fetch(`${config.apiBaseUrl}/api/users/list`)
-        .then(r => r.json())
-        .then(d => {
-          if (d.success && Array.isArray(d.users)) {
-            setUsers(d.users);
-          } else {
-            setUsers([]);
-            showNotification('Failed to load users: Invalid response', 'error');
-          }
-        })
-        .catch(() => {
-          setUsers([]);
-          showNotification('Failed to load users', 'error');
-        });
+      loadUsers();
     } else {
-      searchUsers(query.trim());
+      searchUsersHandler(query.trim());
     }
   }, 300);
 
@@ -162,14 +160,9 @@ export default function UserManagement() {
 
   /***************************************
    * 7) HELPERS
-   * Purpose: Utility functions for notifications and user actions.
+   * Purpose: Utility functions for user actions.
    * Compliance: ISO 9001 (Quality: Modular code).
    ***************************************/
-  const showNotification = (msg, type) => {
-    setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 4000);
-  };
-
   const openEdit = u => {
     setCurrent(u);
     setForm({
@@ -186,13 +179,10 @@ export default function UserManagement() {
     setIsModalOpen(true);
   };
 
-  const deleteUser = async u => {
+  const deleteUser = async (u) => {
     if (!window.confirm(`Delete user "${u.Username}"?`)) return;
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/user/${encodeURIComponent(u.Username)}`, {
-        method: 'DELETE'
-      });
-      const json = await res.json();
+      const json = await deleteUserApi(u.Username);
       if (json.success) {
         setUsers(prev => prev.filter(x => x.Username !== u.Username));
         showNotification('User deleted', 'success');
@@ -213,47 +203,20 @@ export default function UserManagement() {
     setSaving(true);
     setEditError('');
     const username = current.Username;
-    const tasks = [];
-
-    tasks.push(
-      fetch(`${config.apiBaseUrl}/api/user/${encodeURIComponent(username)}/email`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: form.email })
-      }).then(r => r.json())
-    );
+    const tasks = [
+      updateUserEmail(username, form.email),
+    ];
 
     if (form.newPass) {
-      tasks.push(
-        fetch(`${config.apiBaseUrl}/api/user/${encodeURIComponent(username)}/password`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ newPassword: form.newPass })
-        }).then(r => r.json())
-      );
+      tasks.push(updateUserPassword(username, form.newPass));
     }
 
-    // The security answer is never returned by the API, so the field starts
-    // empty. Only update the security question/answer when the admin actually
-    // provides a new answer — otherwise we'd wipe the existing one.
     if (form.answer && form.answer.trim()) {
-      tasks.push(
-        fetch(`${config.apiBaseUrl}/api/user/${encodeURIComponent(username)}/security-question`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: form.question, answer: form.answer })
-        }).then(r => r.json())
-      );
+      tasks.push(updateUserSecurityQuestion(username, { question: form.question, answer: form.answer }));
     }
 
     if (form.role && form.role !== current.AccountType) {
-      tasks.push(
-        fetch(`${config.apiBaseUrl}/api/user/${encodeURIComponent(username)}/role`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: form.role })
-        }).then(r => r.json())
-      );
+      tasks.push(updateUserRole(username, form.role));
     }
 
     try {
@@ -322,26 +285,26 @@ export default function UserManagement() {
       </div>
 
       <Card className="mgmt-table-card">
-        <div className="mgmt-table-wrap">
-        <table className="ui-table">
+        <div className="mgmt-table-wrap ui-table-wrap ui-table-wrap--stack">
+        <table className="ui-table ui-table--stack-sm" aria-label="User accounts">
           <thead>
             <tr>
               {['Username', 'UserID', 'Role', 'Email', 'Sec. Question', 'Created By', 'Created At', ''].map(h => (
-                <th key={h}>{h}</th>
+                <th key={h || 'actions'} scope="col">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {Array.isArray(users) && users.map(u => (
               <tr key={u.Username}>
-                <td>
+                <td data-label="Username">
                   <span className="mgmt-user-cell">
                     <UserAvatar username={u.Username} size="sm" alt="" />
                     <span>{u.Username}</span>
                   </span>
                 </td>
-                <td>{u.UserID || 'NULL'}</td>
-                <td>
+                <td className="ui-table__col--hide-sm" data-label="UserID">{u.UserID || 'NULL'}</td>
+                <td data-label="Role">
                   <Badge variant={
                     u.AccountType === 'Super Admin' ? 'info' :
                     u.AccountType === 'Admin' ? 'info' :
@@ -353,11 +316,11 @@ export default function UserManagement() {
                     {u.AccountType || 'Agent'}
                   </Badge>
                 </td>
-                <td>{u.Email || 'NULL'}</td>
-                <td>{u.SecurityQuestionType || 'NULL'}</td>
-                <td>{u.CreatedBy || 'NULL'}</td>
-                <td>{u.CreationDate ? new Date(u.CreationDate).toLocaleString() : 'NULL'}</td>
-                <td style={{ whiteSpace: 'nowrap' }}>
+                <td className="ui-table__col--hide-sm" data-label="Email">{u.Email || 'NULL'}</td>
+                <td className="ui-table__col--hide-sm" data-label="Sec. Question">{u.SecurityQuestionType || 'NULL'}</td>
+                <td className="ui-table__col--hide-sm" data-label="Created By">{u.CreatedBy || 'NULL'}</td>
+                <td data-label="Created At">{u.CreationDate ? new Date(u.CreationDate).toLocaleString() : 'NULL'}</td>
+                <td data-label="Actions" className="ui-table__cell--actions" style={{ whiteSpace: 'nowrap' }}>
                   <Button
                     variant="primary"
                     size="sm"

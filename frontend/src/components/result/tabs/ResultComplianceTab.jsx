@@ -2,7 +2,7 @@ import { LuClipboardCheck, LuShield } from '../../../icons';
 import { EmptyState } from '../../ui';
 import { readChartPalette } from '../../../theme/chartTheme';
 import { alphaColor } from '../resultUtils';
-import { TabooAnalysisPanel } from '../SecureDownloadModal';
+import TabooAnalysisPanel from '../TabooAnalysisPanel';
 
 export default function ResultComplianceTab({ scriptCompliance, toneAnalysis, onSeek }) {
   if (scriptCompliance === null) {

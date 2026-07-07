@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import config from "../utils/envConfig";
 import { useWebSocket } from "../context/WebSocketContext";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import AuthLayout from "./layout/AuthLayout";
 import { getAppFooter } from "../utils/appMeta";
 import { useAppBranding } from "../utils/appBranding";
+import { clearAuthStorage } from "../utils/uiPreferences";
+import { tempSuperAdminLogin } from "../services/authService";
 
 /************************************************
  * ComplexCaptcha Component
@@ -64,8 +65,8 @@ const TempSuperAdminLogin = ({ onLogin }) => {
    * (2) Clear Local Storage on Page Load
    *************************************************/
   useEffect(() => {
-    localStorage.clear();
-    console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Local storage cleared`);
+    clearAuthStorage();
+    console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Auth storage cleared`);
   }, []);
 
   /*************************************************
@@ -80,7 +81,7 @@ const TempSuperAdminLogin = ({ onLogin }) => {
     clearTimeout(inactivityRef.current);
     inactivityRef.current = setTimeout(() => {
       alert("Session expired due to inactivity. Redirecting to license-error...");
-      localStorage.clear();
+      clearAuthStorage();
       navigate("/license-error");
     }, SESSION_TIMEOUT_MS);
   };
@@ -150,19 +151,12 @@ const TempSuperAdminLogin = ({ onLogin }) => {
 
     try {
       logAttempt("Temporary Super Admin login attempt initiated");
-      console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Sending request to: ${config.apiBaseUrl}/api/temp-super-admin-login`);
-      const response = await fetch(`${config.apiBaseUrl}/api/temp-super-admin-login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: userId.trim(),
-          password: password.trim(),
-          questionType: questionType.trim(),
-          questionAnswer: questionAnswer.trim(),
-        }),
+      const data = await tempSuperAdminLogin({
+        userId: userId.trim(),
+        password: password.trim(),
+        questionType: questionType.trim(),
+        questionAnswer: questionAnswer.trim(),
       });
-      console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Response received:`, response);
-      const data = await response.json();
       console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Response data:`, data);
 
       if (data.success) {
@@ -171,25 +165,10 @@ const TempSuperAdminLogin = ({ onLogin }) => {
           logAttempt("Failed: User is not a Super Admin");
           return;
         }
-        // Store session token and logId in localStorage
-        localStorage.setItem("sessionToken", data.sessionToken);
-        localStorage.setItem("logId", data.logId);
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("userId", userId);
-        localStorage.setItem("username", data.username);
-        localStorage.setItem("userType", data.userType);
-        localStorage.setItem("token", data.sessionToken);
-        console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Stored sessionToken: ${data.sessionToken}`);
-        console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [TempSuperAdminLogin] Stored logId: ${data.logId}`);
-
-        // Call onLogin to set temporary login state
-        await onLogin(data.username, data.userType, data.logId);
-        // Establish WebSocket connection after successful login
+        await onLogin(data.username, data.userType, data.logId, data.sessionToken, userId.trim());
         await connectWebSocket(userId, data.username, data.userType, String(data.logId));
         setError("");
         logAttempt("Temporary Super Admin login successful");
-        // Navigate with session token in URL (mimicking old behavior)
-        navigate(`/admin-settings?tab=license`);
       } else {
         setError(data.message || "Login failed. Check your credentials.");
         logAttempt(`Failed: ${data.message || "Unknown error"}`);

@@ -18,14 +18,14 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuUserPlus } from "../icons";
-import apiClient from "../utils/apiClient";
+import { createUser } from "../services/usersService";
 import { useAuth } from "../context/AuthContext";
 import './management-pages.css';
 import { Card, Button, Input, Select, Label } from './ui';
 
 const CreateUser = () => {
   const navigate = useNavigate();
-  const { username: currentUser } = useAuth();
+  const { username: currentUser, loginAlias, userId: authUserId } = useAuth();
   const [userId, setUserId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -123,7 +123,7 @@ const CreateUser = () => {
     if (!validateFields()) return;
 
     try {
-      const response = await apiClient.post("/api/user", {
+      const data = await createUser({
         userId,
         username,
         password,
@@ -131,10 +131,10 @@ const CreateUser = () => {
         userType,
         SecurityQuestionType: securityQuestionType,
         SecurityQuestionAnswer: securityQuestionAnswer,
-        createdBy: currentUser,
+        createdBy: currentUser || loginAlias || authUserId,
       });
 
-      if (response.data.success) {
+      if (data.success) {
         setMessage("User created successfully.");
         setMessageType("success");
         setUserId("");
@@ -148,12 +148,11 @@ const CreateUser = () => {
         setShowHint(false);
         setPasswordStrength(0);
       } else {
-        setMessage(response.data.message || "Failed to create user.");
+        setMessage(data.message || "Failed to create user.");
         setMessageType("error");
       }
     } catch (err) {
-      const serverMessage = err?.response?.data?.message;
-      setMessage(serverMessage || "Failed to create user.");
+      setMessage(err?.message || "Failed to create user.");
       setMessageType("error");
     }
   };

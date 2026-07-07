@@ -7,11 +7,19 @@ export default function ResultAudioPlayer({
   onPlayPause,
   onDownloadClick,
   duration,
+  waveReady = false,
+  loadError = '',
 }) {
   return (
     <section className="rp-player">
       <div className="rp-player__controls">
-        <button type="button" className="rp-player__play" onClick={onPlayPause} aria-label={isPlaying ? 'Pause' : 'Play'}>
+        <button
+          type="button"
+          className="rp-player__play"
+          onClick={onPlayPause}
+          disabled={Boolean(loadError) || !waveReady}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
+        >
           {isPlaying ? <FaPause /> : <FaPlay />}
         </button>
         <FaVolumeUp className="rp-player__vol-icon" />
@@ -20,12 +28,16 @@ export default function ResultAudioPlayer({
       <span className="rp-player__duration">
         {duration ? formatTimeSec(duration) : '--:--'}
       </span>
+      {loadError ? (
+        <span className="rp-player__error" role="alert">{loadError}</span>
+      ) : null}
       <button
         type="button"
         className="rp-player__download"
         onClick={onDownloadClick}
         aria-label="Download Audio"
         title="Download secure ZIP"
+        disabled={Boolean(loadError)}
       >
         <FaDownload />
       </button>

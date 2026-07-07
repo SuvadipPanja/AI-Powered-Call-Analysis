@@ -373,6 +373,69 @@ section h3[style*="#00adb5"] { color: var(--accent-bright) !important; }
   backdrop-filter: blur(8px);
 }
 
+/* Fixed top variant used in authenticated shell */
+.license-warning-banner--app {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 10px 16px;
+  text-align: center;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.license-grace-banner {
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface)) !important;
+  color: var(--danger) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 35%, transparent) !important;
+  font-weight: 600;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* Fixed top bar variant for the authenticated shell */
+.license-grace-banner--app {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  padding: 10px 16px;
+  text-align: center;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.license-grace-banner--inline {
+  margin-bottom: 0.8rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.license-grace-toast {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
 /* ---- React DatePicker theme ---- */
 .react-datepicker {
   background: var(--surface) !important;

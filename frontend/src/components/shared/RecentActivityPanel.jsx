@@ -9,8 +9,13 @@ import {
   FaSearch,
   FaTimes,
 } from "react-icons/fa";
-import config from "../../utils/envConfig";
-import { Button, Spinner, Badge, Input, Select } from "../ui";
+import {
+  listAgentsDropdown,
+  listAuditorsDropdown,
+  listTeamLeaders,
+} from "../../services/dropdownsService";
+import { getRecentActivity } from "../../services/reportsService";
+import { Button, Spinner, Badge, Input, Select, EmptyState, PageError } from "../ui";
 
 const DEFAULT_FILTERS = {
   fileName: "",
@@ -27,10 +32,10 @@ function getStatusIcon(status) {
     return <FaCheckCircle className="status-icon success" aria-hidden="true" />;
   }
   if (s === "transcribed") {
-    return <FaSpinner className="status-icon in-progress spin-icon" style={{ color: "#00D4FF" }} aria-hidden="true" />;
+    return <FaSpinner className="status-icon in-progress spin-icon" aria-hidden="true" />;
   }
   if (s === "uploaded" || s.includes("stub")) {
-    return <FaCloudUploadAlt className="status-icon" style={{ color: "#FFD54F" }} aria-hidden="true" />;
+    return <FaCloudUploadAlt className="status-icon" aria-hidden="true" />;
   }
   if (s === "failed" || s === "fail" || s.includes("error")) {
     return <FaTimesCircle className="status-icon fail" aria-hidden="true" />;
@@ -109,34 +114,15 @@ export default function RecentActivityPanel({
     (async () => {
       setDropdownsLoading(true);
       try {
-        const [agentsRes, supervisorsRes, auditorsRes] = await Promise.all([
-          fetch(`${config.apiBaseUrl}/api/agents`),
-          fetch(`${config.apiBaseUrl}/api/team-leaders`),
-          fetch(`${config.apiBaseUrl}/api/dropdown/auditors`),
+        const [names, supervisors, auditors] = await Promise.all([
+          listAgentsDropdown(),
+          listTeamLeaders(),
+          listAuditorsDropdown(),
         ]);
         if (cancelled) return;
-
-        if (agentsRes.ok) {
-          const agentsData = await agentsRes.json();
-          const names = Array.isArray(agentsData)
-            ? [...new Set(agentsData.map((a) => a.agent_name || a.Agent_Name).filter(Boolean))].sort()
-            : [];
-          setAgentList(names);
-        }
-
-        if (supervisorsRes.ok) {
-          const supervisorsData = await supervisorsRes.json();
-          setSupervisorList(supervisorsData.success ? supervisorsData.teamLeaders || [] : []);
-        }
-
-        if (auditorsRes.ok) {
-          const auditorsData = await auditorsRes.json();
-          const names = (auditorsData.auditors || [])
-            .map((a) => a.Username)
-            .filter(Boolean)
-            .sort();
-          setAuditorList(names);
-        }
+        setAgentList(names);
+        setSupervisorList(supervisors);
+        setAuditorList(auditors);
       } catch (error) {
         console.error("Failed to load recent activity filter options:", error);
       } finally {
@@ -152,15 +138,13 @@ export default function RecentActivityPanel({
     setError(null);
     try {
       const query = buildRecentActivityQuery(limit, activeQueryFilters);
-      const response = await fetch(`${config.apiBaseUrl}/api/recent-activity?${query}`, {
-        cache: "no-store",
-      });
-      const result = await response.json();
+      const result = await getRecentActivity(query);
+
       if (seq !== fetchSeqRef.current) return;
 
-      if (!response.ok || !result.success) {
+      if (!result?.success) {
         setRecentCalls([]);
-        setError(result.message || `Failed to load recent activity (${response.status})`);
+        setError(result?.message || "Failed to load recent activity");
         setCurrentPage(1);
         return;
       }
@@ -349,10 +333,13 @@ export default function RecentActivityPanel({
             )}
           </div>
 
-          {error && (
-            <div className="recent-activity-panel__error" role="alert">
-              {error}
-            </div>
+          {error && !loading && (
+            <PageError
+              className="recent-activity-panel__page-error"
+              message={error}
+              onRetry={fetchRecent}
+              retryLabel="Retry"
+            />
           )}
 
           {loading ? (
@@ -362,27 +349,28 @@ export default function RecentActivityPanel({
           </div>
         ) : (
           <>
-            <table className="ui-table">
+            <div className="ui-table-wrap ui-table-wrap--stack recent-activity-panel__table-wrap">
+            <table className="ui-table ui-table--stack-sm" aria-label="Recent call uploads">
               <thead>
                 <tr>
-                  <th>File name</th>
-                  <th>Upload date</th>
-                  <th>Status</th>
-                  <th>Manual audit</th>
-                  <th>Action</th>
+                  <th scope="col">File name</th>
+                  <th scope="col">Upload date</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="ui-table__col--hide-sm">Manual audit</th>
+                  <th scope="col" className="recent-activity-panel__action-head"><span className="ui-sr-only">Action</span></th>
                 </tr>
               </thead>
               <tbody>
                 {displayedCalls.length > 0 ? (
                   displayedCalls.map((call, idx) => (
                     <tr key={`${call.FileName}-${idx}`}>
-                      <td>
+                      <td data-label="File name">
                         <span className="ellipsis" title={call.FileName}>
                           {call.FileName}
                         </span>
                       </td>
-                      <td>{formatUploadDate(call.UploadDate)}</td>
-                      <td>
+                      <td data-label="Upload date">{formatUploadDate(call.UploadDate)}</td>
+                      <td data-label="Status">
                         <div className="recent-activity-panel__status">
                           <div className="recent-activity-panel__status-row">
                             {getStatusIcon(call.Status)}
@@ -395,7 +383,7 @@ export default function RecentActivityPanel({
                           )}
                         </div>
                       </td>
-                      <td>
+                      <td className="ui-table__col--hide-sm" data-label="Manual audit">
                         {call.HasManualAudit ? (
                           <Badge
                             variant="success"
@@ -409,10 +397,11 @@ export default function RecentActivityPanel({
                           <span className="recent-activity-panel__audit-pending">—</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="" className="ui-table__cell--actions">
                         <Button
                           variant="primary"
                           size="sm"
+                          className="recent-activity-panel__view-btn"
                           onClick={() => handleView(call.FileName)}
                           aria-label={`View details for ${call.FileName}`}
                         >
@@ -423,15 +412,22 @@ export default function RecentActivityPanel({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="recent-activity-panel__empty">
-                      {filtersActive
-                        ? "No calls match your filters. Try adjusting or clearing them."
-                        : "No uploads yet. Submit a call above to get started."}
+                    <td colSpan={5}>
+                      <EmptyState
+                        compact
+                        fill
+                        title={filtersActive ? "No matching calls" : "No uploads yet"}
+                      >
+                        {filtersActive
+                          ? "No calls match your filters. Try adjusting or clearing them."
+                          : "Submit a call above to see recent activity here."}
+                      </EmptyState>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            </div>
 
             {recentCalls.length > pageSize && (
               <div className="recent-activity-panel__pager">

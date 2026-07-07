@@ -25,10 +25,10 @@
 
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import config from "../utils/envConfig";
 import AuthLayout from "./layout/AuthLayout";
 import { getAppFooter } from "../utils/appMeta";
 import { useAppBranding } from "../utils/appBranding";
+import { getSecurityQuestionType, resetPassword } from "../services/authService";
 
 const ForgotPassword = () => {
   /***************************************
@@ -73,16 +73,8 @@ const ForgotPassword = () => {
         return;
       }
       try {
-        const response = await fetch(`${config.apiBaseUrl}/api/get-security-question-type`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ username }),
-        });
-
-        const data = await response.json();
-        console.log("Fetch Security Question Response:", data); // Debug log
+        const data = await getSecurityQuestionType({ username });
+        console.log("Fetch Security Question Response:", data);
         if (data.success) {
           setSecurityQuestion(data.securityQuestionType);
           setMessage(""); // clear any previous message
@@ -199,22 +191,14 @@ const ForgotPassword = () => {
     setMessage("");
 
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          email,
-          securityQuestion,
-          securityAnswer,
-          newPassword,
-        }),
+      const data = await resetPassword({
+        username,
+        email,
+        securityQuestion,
+        securityAnswer,
+        newPassword,
       });
-
-      const data = await response.json();
-      console.log("Reset Password API Response:", data); // Debug log
+      console.log("Reset Password API Response:", data);
 
       if (data.success) {
         setMessage("Password reset successfully. Redirecting to login...");

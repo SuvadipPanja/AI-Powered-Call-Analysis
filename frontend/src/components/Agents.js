@@ -7,7 +7,14 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LuUserPlus } from 'react-icons/lu';
 import './management-pages.css';
-import config from "../utils/envConfig";
+import {
+  listAgents,
+  searchAgents,
+  updateAgent,
+  deactivateAgent,
+  deleteAgent,
+} from '../services/agentsService';
+import { fetchAgentFormDropdowns } from '../services/dropdownsService';
 import { Card, Button, Input, Select, Label, Modal, UserAvatar } from './ui';
 
 const debounce = (func, delay) => {
@@ -51,9 +58,7 @@ const Agents = () => {
 
   const fetchAllAgents = useCallback(async () => {
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/agents`);
-      if (!res.ok) throw new Error('Failed to fetch agents');
-      const data = await res.json();
+      const data = await listAgents();
       setAgents(Array.isArray(data) ? data.map(normalizeAgent) : []);
       setError('');
     } catch (err) {
@@ -62,13 +67,9 @@ const Agents = () => {
     }
   }, []);
 
-  const searchAgents = async (query) => {
+  const searchAgentsQuery = async (query) => {
     try {
-      const res = await fetch(
-        `${config.apiBaseUrl}/api/agents/search?q=${encodeURIComponent(query)}`
-      );
-      if (!res.ok) throw new Error('Search request failed');
-      const data = await res.json();
+      const data = await searchAgents(query);
       setAgents(Array.isArray(data) ? data.map(normalizeAgent) : []);
       setError('');
     } catch (err) {
@@ -81,7 +82,7 @@ const Agents = () => {
     if (query.trim() === '') {
       fetchAllAgents();
     } else {
-      searchAgents(query.trim());
+      searchAgentsQuery(query.trim());
     }
   }, 300);
 
@@ -92,16 +93,11 @@ const Agents = () => {
   useEffect(() => {
     const loadDropdowns = async () => {
       try {
-        const [mgrRes, tlRes, audRes, locRes] = await Promise.all([
-          fetch(`${config.apiBaseUrl}/api/dropdown/managers`).then(r => r.json()),
-          fetch(`${config.apiBaseUrl}/api/dropdown/team-leaders`).then(r => r.json()),
-          fetch(`${config.apiBaseUrl}/api/dropdown/auditors`).then(r => r.json()),
-          fetch(`${config.apiBaseUrl}/api/dropdown/locations`).then(r => r.json()),
-        ]);
-        if (mgrRes.success) setDropdownManagers(mgrRes.managers || []);
-        if (tlRes.success) setDropdownTeamLeaders(tlRes.teamLeaders || []);
-        if (audRes.success) setDropdownAuditors(audRes.auditors || []);
-        if (locRes.success) setDropdownLocations(locRes.locations || []);
+        const { managers, teamLeaders, auditors, locations } = await fetchAgentFormDropdowns();
+        setDropdownManagers(managers);
+        setDropdownTeamLeaders(teamLeaders);
+        setDropdownAuditors(auditors);
+        setDropdownLocations(locations);
       } catch (err) {
         console.error('Error loading dropdowns:', err.message);
       }
@@ -135,28 +131,17 @@ const Agents = () => {
     setSaving(true);
     setSaveError('');
     try {
-      const res = await fetch(
-        `${config.apiBaseUrl}/api/agents/${encodeURIComponent(selectedAgent.agent_id)}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agent_name: selectedAgent.agent_name,
-            agent_mobile: selectedAgent.agent_mobile,
-            agent_email: selectedAgent.agent_email,
-            supervisor: selectedAgent.supervisor,
-            agent_type: selectedAgent.agent_type,
-            manager: selectedAgent.manager,
-            auditor: selectedAgent.auditor,
-            notes: selectedAgent.notes,
-            agent_location: selectedAgent.agent_location,
-          }),
-        }
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || data.message || 'Failed to update agent');
-      }
+      await updateAgent(selectedAgent.agent_id, {
+        agent_name: selectedAgent.agent_name,
+        agent_mobile: selectedAgent.agent_mobile,
+        agent_email: selectedAgent.agent_email,
+        supervisor: selectedAgent.supervisor,
+        agent_type: selectedAgent.agent_type,
+        manager: selectedAgent.manager,
+        auditor: selectedAgent.auditor,
+        notes: selectedAgent.notes,
+        agent_location: selectedAgent.agent_location,
+      });
       closeModal();
       if (searchQuery.trim() === '') {
         fetchAllAgents();
@@ -176,11 +161,7 @@ const Agents = () => {
     if (!window.confirm('Are you sure you want to deactivate this agent?')) return;
 
     try {
-      const res = await fetch(
-        `${config.apiBaseUrl}/api/agents/${encodeURIComponent(selectedAgent.agent_id)}/deactivate`,
-        { method: 'PUT' }
-      );
-      if (!res.ok) throw new Error('Failed to deactivate agent');
+      await deactivateAgent(selectedAgent.agent_id);
       closeModal();
       if (searchQuery.trim() === '') {
         fetchAllAgents();
@@ -196,10 +177,7 @@ const Agents = () => {
   const handleDelete = async (agentId) => {
     if (!agentId || !window.confirm('Are you sure you want to delete this agent?')) return;
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/agents/${encodeURIComponent(agentId)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error('Failed to delete agent');
+      await deleteAgent(agentId);
       setAgents((prev) => prev.filter((a) => a.agent_id !== agentId));
     } catch (err) {
       console.error('Error deleting agent:', err.message);
@@ -241,18 +219,18 @@ const Agents = () => {
       </div>
 
       <Card className="mgmt-table-card">
-        <div className="mgmt-table-wrap">
-          <table className="ui-table">
+        <div className="mgmt-table-wrap ui-table-wrap ui-table-wrap--stack">
+          <table className="ui-table ui-table--stack-sm" aria-label="Agents list">
             <thead>
               <tr>
-                <th>Agent ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Mobile</th>
-                <th>Supervisor</th>
-                <th>Role</th>
-                <th>Location</th>
-                <th>Actions</th>
+                <th scope="col">Agent ID</th>
+                <th scope="col">Name</th>
+                <th scope="col" className="ui-table__col--hide-sm">Email</th>
+                <th scope="col" className="ui-table__col--hide-sm">Mobile</th>
+                <th scope="col">Supervisor</th>
+                <th scope="col">Role</th>
+                <th scope="col" className="ui-table__col--hide-sm">Location</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -265,19 +243,19 @@ const Agents = () => {
               ) : (
                 agents.map((agent) => (
                   <tr key={agent.agent_id || agent.agent_name}>
-                    <td>{agent.agent_id}</td>
-                    <td>
+                    <td data-label="Agent ID">{agent.agent_id}</td>
+                    <td data-label="Name">
                       <span className="mgmt-user-cell">
                         <UserAvatar username={agent.agent_name} size="sm" alt="" />
                         <span>{agent.agent_name}</span>
                       </span>
                     </td>
-                    <td>{agent.agent_email}</td>
-                    <td>{agent.agent_mobile}</td>
-                    <td>{agent.supervisor}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{agent.agent_type || '—'}</td>
-                    <td>{agent.agent_location || '—'}</td>
-                    <td>
+                    <td className="ui-table__col--hide-sm" data-label="Email">{agent.agent_email}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Mobile">{agent.agent_mobile}</td>
+                    <td data-label="Supervisor">{agent.supervisor}</td>
+                    <td data-label="Role" style={{ textTransform: 'capitalize' }}>{agent.agent_type || '—'}</td>
+                    <td className="ui-table__col--hide-sm" data-label="Location">{agent.agent_location || '—'}</td>
+                    <td data-label="Actions" className="ui-table__cell--actions">
                       <Button variant="primary" size="sm" onClick={() => handleEdit(agent)} style={{ marginRight: '0.35rem' }}>
                         Edit
                       </Button>

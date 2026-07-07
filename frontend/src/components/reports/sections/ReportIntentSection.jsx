@@ -1,8 +1,9 @@
-import { LuLayers, LuPhoneForwarded, LuBanknote } from 'react-icons/lu';
+import { LuLayers, LuPhoneForwarded, LuBanknote, LuClock3 } from 'react-icons/lu';
 import ReportChartCard from '../ReportChartCard';
 import DonutInsightChart from '../DonutInsightChart';
 import LoanLeadsPanel from '../LoanLeadsPanel';
 import EscalationKpiBlock from '../EscalationKpiBlock';
+import HoldKpiBlock from '../HoldKpiBlock';
 
 export default function ReportIntentSection({
   loading,
@@ -13,6 +14,9 @@ export default function ReportIntentSection({
   escalationDonut,
   loanLeadData,
   loanTypeDonut,
+  holdData,
+  holdTableColumns,
+  holdTableRows,
   queryTypeChartRef,
   escalationChartRef,
   loanTypeChartRef,
@@ -84,6 +88,26 @@ export default function ReportIntentSection({
               )}
             </div>
           )}
+        </ReportChartCard>
+
+        <ReportChartCard
+          variant="insight"
+          icon={LuClock3}
+          title="Agent hold time"
+          subtitle="Hold episodes detected"
+          insight="How often agents put customers on hold and for how long."
+          loading={loading}
+          empty={!holdData}
+          tableColumns={holdTableColumns}
+          tableRows={holdTableRows}
+          exportSlug="hold_summary"
+          filters={filters}
+          apiBaseUrl={apiBaseUrl}
+          height={220}
+          stagger={0.12}
+          canvasWrapper={false}
+        >
+          {holdData && <HoldKpiBlock data={holdData} />}
         </ReportChartCard>
 
         <ReportChartCard

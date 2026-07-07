@@ -4,7 +4,12 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { LuLayers, LuPlus, LuPencil, LuTrash2, LuRefreshCw, LuCheck, LuX } from 'react-icons/lu';
-import apiClient from '../../utils/apiClient';
+import {
+  listQueryCategoriesAdmin,
+  createQueryCategory,
+  updateQueryCategory,
+  deleteQueryCategory,
+} from '../../services/adminService';
 import { Button, Input, Label, Badge, Modal, Spinner } from '../ui';
 
 function emptyDraft() {
@@ -22,10 +27,10 @@ export default function AdminQueryCategoryPanel({ showNotice }) {
   const fetchCategories = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get('/api/query-categories');
+      const data = await listQueryCategoriesAdmin();
       if (data.success) setCategories(data.categories || []);
     } catch (err) {
-      showNotice?.(err?.response?.data?.message || 'Failed to load query categories.', 'error');
+      showNotice?.(err?.message || 'Failed to load query categories.', 'error');
     } finally {
       setLoading(false);
     }
@@ -50,16 +55,16 @@ export default function AdminQueryCategoryPanel({ showNotice }) {
         sortOrder: Number.isFinite(+d.sortOrder) ? +d.sortOrder : 0,
       };
       if (d.id) {
-        await apiClient.put(`/api/query-categories/${d.id}`, payload);
+        await updateQueryCategory(d.id, payload);
         showNotice?.('Query category updated.', 'success');
       } else {
-        await apiClient.post('/api/query-categories', payload);
+        await createQueryCategory(payload);
         showNotice?.('Query category added.', 'success');
       }
       setEditor(null);
       fetchCategories();
     } catch (err) {
-      showNotice?.(err?.response?.data?.message || 'Failed to save category.', 'error');
+      showNotice?.(err?.message || 'Failed to save category.', 'error');
     } finally {
       setSaving(false);
     }
@@ -67,10 +72,10 @@ export default function AdminQueryCategoryPanel({ showNotice }) {
 
   const toggleActive = async (c) => {
     try {
-      await apiClient.put(`/api/query-categories/${c.id}`, { ...c, isActive: !c.isActive });
+      await updateQueryCategory(c.id, { ...c, isActive: !c.isActive });
       fetchCategories();
     } catch (err) {
-      showNotice?.(err?.response?.data?.message || 'Failed to update category.', 'error');
+      showNotice?.(err?.message || 'Failed to update category.', 'error');
     }
   };
 
@@ -78,12 +83,12 @@ export default function AdminQueryCategoryPanel({ showNotice }) {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await apiClient.delete(`/api/query-categories/${deleteTarget.id}`);
+      await deleteQueryCategory(deleteTarget.id);
       showNotice?.('Query category deleted.', 'success');
       setDeleteTarget(null);
       fetchCategories();
     } catch (err) {
-      showNotice?.(err?.response?.data?.message || 'Failed to delete category.', 'error');
+      showNotice?.(err?.message || 'Failed to delete category.', 'error');
     } finally {
       setDeleting(false);
     }
@@ -128,7 +133,20 @@ export default function AdminQueryCategoryPanel({ showNotice }) {
               {categories.map((c) => (
                 <tr key={c.id}>
                   <td>{c.sortOrder}</td>
-                  <td style={{ fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    {c.name}
+                    {c.autoAdded && (
+                      <Badge
+                        variant={c.pendingReview ? 'warning' : 'info'}
+                        style={{ marginLeft: 8, verticalAlign: 'middle' }}
+                        title={c.pendingReview
+                          ? 'Auto-discovered by the AI — review and confirm the name, keywords and colour.'
+                          : 'Originally auto-discovered by the AI (reviewed).'}
+                      >
+                        {c.pendingReview ? 'Auto · review' : 'Auto'}
+                      </Badge>
+                    )}
+                  </td>
                   <td style={{ color: 'var(--text-muted,#64748b)', maxWidth: 280 }}>{c.description}</td>
                   <td style={{ color: 'var(--text-muted,#64748b)', maxWidth: 240, fontSize: 12 }}>{c.keywords}</td>
                   <td>

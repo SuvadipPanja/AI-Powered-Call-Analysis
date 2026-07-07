@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import axios from 'axios';
+import { getSystemMonitor } from '../services/adminService';
 import {
   LuActivity,
   LuCpu,
@@ -11,10 +11,8 @@ import {
   LuX,
   LuTriangleAlert,
 } from 'react-icons/lu';
-import config from '../utils/envConfig';
 import KpiCard from './shared/KpiCard';
 import { Button, Badge, Spinner } from './ui';
-import './reports/reports-page.css';
 import './monitoring-page.css';
 
 const mockSystemData = {
@@ -201,15 +199,11 @@ const SystemMonitoring = () => {
       if (!isActive) return;
       if (withSpinner) setIsLoading(true);
       try {
-        const apiUrl = `${config.apiBaseUrl}/api/system-monitor?metrics=${metrics}&cache=false&timestamp=${Date.now()}`;
-        const response = await axios.get(apiUrl, {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000,
-        });
+        const response = await getSystemMonitor(metrics);
         if (!isActive) return;
 
-        if (response.data?.success && response.data.data) {
-          const data = response.data.data;
+        if (response?.success && response.data) {
+          const data = response.data;
           const processedData = {
             ...data,
             memory: data.memory

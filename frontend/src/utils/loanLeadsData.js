@@ -1,6 +1,6 @@
 import { buildColoredDoughnutData } from "../components/reports/reportsChartConfig";
 import { chartSeriesColors } from "../theme/chartTheme";
-import { apiGetQuery } from "./apiHelpers";
+import { getLoanLeads } from "../services/reportsService";
 
 /** Muted chart palette — aligned with dashboard theme (not neon). */
 export function loanTypeChartColors(count) {
@@ -27,7 +27,7 @@ export function parseLoanLeadsResponse(payload) {
 }
 
 export async function fetchLoanLeadsReport(queryString) {
-  const data = await apiGetQuery("/api/reports/loan-leads", queryString, { label: "loan-leads" });
+  const data = await getLoanLeads(queryString);
   return parseLoanLeadsResponse(data);
 }
 

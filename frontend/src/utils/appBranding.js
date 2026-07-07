@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import config from './envConfig';
+import { getPublicBranding } from "../services/brandingService";
 
 const CACHE_KEY = 'appBranding';
 export const DEFAULT_APP_NAME = 'AI-Powered Call Analysis';
@@ -49,8 +49,7 @@ export function notifyBrandingUpdated(branding) {
 
 export async function fetchPublicBranding() {
   try {
-    const res = await fetch(`${config.apiBaseUrl}/api/public/branding`);
-    const data = await res.json();
+    const data = await getPublicBranding();
     if (data.success) {
       const branding = {
         appName: data.appName || DEFAULT_NAME,

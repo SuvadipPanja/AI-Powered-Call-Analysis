@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  FaTimes, FaLock, FaEye, FaEyeSlash, FaCopy, FaKey, FaRandom, FaDownload, FaPlay, FaShieldAlt,
+  FaTimes, FaLock, FaEye, FaEyeSlash, FaCopy, FaKey, FaRandom, FaDownload,
 } from 'react-icons/fa';
-import { Button, Spinner, Badge, EmptyState } from '../ui';
-import { generateStrongPassword, formatTimeSec } from './resultUtils';
+import { Button, Spinner } from '../ui';
+import { generateStrongPassword } from './resultUtils';
+import { downloadSecureAudio } from '../../services/mediaService';
 
-export default function SecureDownloadModal({ isOpen, onClose, filename, apiBaseUrl }) {
+export default function SecureDownloadModal({ isOpen, onClose, filename }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -61,26 +62,11 @@ export default function SecureDownloadModal({ isOpen, onClose, filename, apiBase
     setError('');
     setDownloading(true);
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('sessionToken') || '';
-      const resp = await fetch(`${apiBaseUrl}/api/download-secure-audio`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ filename, password }),
-      });
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.message || `Download failed (${resp.status})`);
-      }
-      const blob = await resp.blob();
+      const blob = await downloadSecureAudio(filename, password);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const disposition = resp.headers.get('Content-Disposition') || '';
-      const match = disposition.match(/filename="?([^"]+)"?/);
-      a.download = match ? match[1] : `${filename.replace(/\.[^.]+$/, '')}_secure.zip`;
+      a.download = `${filename.replace(/\.[^.]+$/, '')}_secure.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -183,106 +169,5 @@ export default function SecureDownloadModal({ isOpen, onClose, filename, apiBase
       </div>
     </div>,
     document.body
-  );
-}
-
-/** Taboo / policy phrase hits panel — shared by scoring and compliance tabs. */
-export function TabooAnalysisPanel({ toneAnalysis, showEmptyHint = false, onSeek }) {
-  const taboo = toneAnalysis?.taboo_analysis;
-
-  if (!taboo) {
-    if (!showEmptyHint) return null;
-    return (
-      <EmptyState icon={<FaShieldAlt />} title="Policy analysis not available">
-        <p>
-          Taboo / prohibited phrase results appear here after AI processing with the latest version.
-          Re-upload or re-process this call to run policy checks against your Bank Config rules.
-        </p>
-      </EmptyState>
-    );
-  }
-
-  const hits = taboo.hits || [];
-  if (!hits.length) {
-    return (
-      <div className="rp-taboo-panel rp-taboo-panel--clean">
-        <div className="rp-taboo-panel__head">
-          <FaShieldAlt />
-          <div>
-            <h4>Prohibited Phrases</h4>
-            <p>{taboo.summary || 'No taboo or prohibited phrases detected.'}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const severityColor = (sev) => (
-    sev === 'high' ? 'var(--color-danger)' : sev === 'low' ? 'var(--color-warning)' : 'var(--color-accent)'
-  );
-
-  return (
-    <div className="rp-taboo-panel">
-      <div className="rp-taboo-panel__head">
-        <FaShieldAlt />
-        <div>
-          <h4>Prohibited Phrases Detected</h4>
-          <p>{taboo.summary}</p>
-          {taboo.total_penalty > 0 && (
-            <Badge variant="danger">Score impact: -{taboo.total_penalty} overall (agent)</Badge>
-          )}
-        </div>
-      </div>
-      <div className="rp-taboo-table-wrap">
-        <table className="rp-taboo-table">
-          <thead>
-            <tr>
-              <th>Word</th>
-              <th>Speaker</th>
-              <th>Audio time</th>
-              <th>Severity</th>
-              <th>Score impact</th>
-              <th>Context</th>
-            </tr>
-          </thead>
-          <tbody>
-            {hits.map((hit, idx) => (
-              <tr key={`taboo-${idx}`} className={hit.role === 'Agent' ? 'is-agent-violation' : ''}>
-                <td><strong>{hit.word}</strong></td>
-                <td>{hit.role}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="rp-taboo-seek"
-                    onClick={() => onSeek?.(hit.start)}
-                    title="Play from this moment"
-                  >
-                    <FaPlay size={10} />
-                    {formatTimeSec(hit.start)}
-                    {hit.end ? ` – ${formatTimeSec(hit.end)}` : ''}
-                  </button>
-                </td>
-                <td>
-                  <span className="rp-taboo-sev" style={{ color: severityColor(hit.severity) }}>
-                    {hit.severity}
-                  </span>
-                  <span className="rp-taboo-cat">{hit.category}</span>
-                </td>
-                <td>
-                  {hit.role === 'Agent' && hit.score_impact ? (
-                    <span>
-                      Overall {hit.score_impact.Overall_Scoring},
-                      {' '}Tone {hit.score_impact.Polite_Tone},
-                      {' '}Protocol {hit.score_impact.Adherence_to_Protocol}
-                    </span>
-                  ) : '—'}
-                </td>
-                <td className="rp-taboo-context">{hit.matched_in}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }

@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
+import { exportReportCsv } from "../services/reportsService";
 
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -97,14 +98,8 @@ export function downloadChartPdf(chartRef, filename, title = "Report chart") {
   pdf.save(filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
 }
 
-export async function downloadBackendCsv(apiBaseUrl, endpoint, body, filename) {
-  const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error("Export failed");
-  const blob = await response.blob();
+export async function downloadBackendCsv(endpoint, body, filename) {
+  const blob = await exportReportCsv(endpoint, body);
   triggerDownload(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }
 

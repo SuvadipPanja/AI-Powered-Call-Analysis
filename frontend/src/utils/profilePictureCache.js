@@ -1,4 +1,4 @@
-import apiClient from "./apiClient";
+import { fetchProfilePictureBlob } from "../services/usersService";
 
 /** @type {Map<string, { url: string, loading: boolean, promise: Promise<string> | null }>} */
 const entries = new Map();
@@ -51,17 +51,14 @@ export function loadProfilePicture(username) {
   const entry = existing || { url: "", loading: true, promise: null };
   entries.set(username, entry);
 
-  entry.promise = apiClient
-    .get(`/api/user/${encodeURIComponent(username)}/profile-picture`, {
-      responseType: "blob",
-    })
-    .then((res) => {
-      if (!res.data || res.data.size === 0) {
+  entry.promise = fetchProfilePictureBlob(username)
+    .then((blob) => {
+      if (!blob || blob.size === 0) {
         entry.url = "";
         return "";
       }
       if (entry.url) URL.revokeObjectURL(entry.url);
-      entry.url = URL.createObjectURL(res.data);
+      entry.url = URL.createObjectURL(blob);
       return entry.url;
     })
     .catch(() => {

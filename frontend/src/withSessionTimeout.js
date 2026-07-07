@@ -1,13 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { keyframes } from "@emotion/react";
-import config from "./utils/envConfig";
 import { useAuth } from "./context/AuthContext";
+import { checkSession, getSessionConfig, logoutTrack, updateSessionInactiveTime as postSessionInactiveTime } from "./services/authService";
 
 const globalState = {
   lastActivity: null,
   inactivityTimer: null,
 };
+
+// Idle timeout — admin-configurable (Admin Settings → Application), served by
+// GET /api/session-config and enforced server-side by the authGate. Fetched
+// once per app load and shared across every wrapped page (module scope).
+const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+let sharedTimeoutMs = DEFAULT_TIMEOUT_MS;
+let timeoutFetchPromise = null;
+
+function fetchSharedTimeoutMs() {
+  if (!timeoutFetchPromise) {
+    timeoutFetchPromise = getSessionConfig()
+      .then((data) => {
+        const hours = parseFloat(data?.timeoutHours);
+        if (data?.success && Number.isFinite(hours) && hours > 0) {
+          sharedTimeoutMs = hours * 60 * 60 * 1000;
+        }
+        return sharedTimeoutMs;
+      })
+      .catch(() => sharedTimeoutMs);
+  }
+  return timeoutFetchPromise;
+}
 
 const fadeIn = keyframes`
   from { opacity: 0; }
@@ -21,23 +43,31 @@ const slideUp = keyframes`
 
 const withSessionTimeout = (WrappedComponent) => {
   return (props) => {
-    const { logout } = useAuth();
+    const { logout, isInitializing, isValidatingSession, isLoggedIn, userId, token, logId } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [isSessionExpired, setIsSessionExpired] = useState(false);
     const isCheckingSessionRef = useRef(false);
     const retryCountRef = useRef(0);
 
-    const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000; // Match backend 45-minute timeout
+    // Matches the backend policy (AppSettings 'session_timeout_hours').
+    const [inactivityTimeoutMs, setInactivityTimeoutMs] = useState(sharedTimeoutMs);
+    const INACTIVITY_TIMEOUT_MS = inactivityTimeoutMs;
     const HEARTBEAT_INTERVAL_MS = 3 * 60 * 1000;
     const SESSION_CHECK_INTERVAL_MS = 10 * 60 * 1000;
     const MAX_RETRIES = 3;
     const lastHeartbeatRef = useRef(0);
 
-    const updateSessionInactiveTime = useCallback(async () => {
-      const userId = localStorage.getItem("userId");
-      const logId = localStorage.getItem("logId");
+    useEffect(() => {
+      if (!isLoggedIn) return;
+      let cancelled = false;
+      fetchSharedTimeoutMs().then((ms) => {
+        if (!cancelled) setInactivityTimeoutMs(ms);
+      });
+      return () => { cancelled = true; };
+    }, [isLoggedIn]);
 
+    const touchSessionActivity = useCallback(async () => {
       if (!userId || !logId) {
         console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Skipping SessionInactiveTime update: Missing credentials`);
         return false;
@@ -51,15 +81,11 @@ const withSessionTimeout = (WrappedComponent) => {
       try {
         isCheckingSessionRef.current = true;
         retryCountRef.current = 0;
-        const token = localStorage.getItem("token") || localStorage.getItem("sessionToken") || "";
-        const headers = { "Content-Type": "application/json" };
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const response = await fetch(`${config.apiBaseUrl}/api/update-session-inactive-time`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ userId, logId, inactiveTime: new Date().toISOString() }),
+        const data = await postSessionInactiveTime({
+          userId,
+          logId,
+          inactiveTime: new Date().toISOString(),
         });
-        const data = await response.json();
         console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] SessionInactiveTime update response:`, data);
         if (!data.success) {
           console.warn(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Failed to update SessionInactiveTime: ${data.message}`);
@@ -71,28 +97,19 @@ const withSessionTimeout = (WrappedComponent) => {
         if (retryCountRef.current < MAX_RETRIES) {
           retryCountRef.current += 1;
           console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Retrying update (${retryCountRef.current}/${MAX_RETRIES})`);
-          setTimeout(updateSessionInactiveTime, 1000 * retryCountRef.current);
+          setTimeout(touchSessionActivity, 1000 * retryCountRef.current);
         }
         return false;
       } finally {
         isCheckingSessionRef.current = false;
       }
-    }, []);
+    }, [userId, logId]);
 
     const handleSessionTimeout = useCallback(async () => {
-      const userId = localStorage.getItem("userId");
-      const logId = localStorage.getItem("logId");
-      const token = localStorage.getItem("token");
-
       if (userId && logId && token) {
         try {
           console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Tracking logout due to timeout for UserID: ${userId}, LogID: ${logId}`);
-          const response = await fetch(`${config.apiBaseUrl}/api/logout-track`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, logId, token }),
-          });
-          const data = await response.json();
+          const data = await logoutTrack({ userId, logId, token });
           if (!data.success) {
             console.warn(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Failed to track logout: ${data.message}`);
           } else {
@@ -106,7 +123,7 @@ const withSessionTimeout = (WrappedComponent) => {
       if (logout) logout();
       setIsSessionExpired(true);
       window.location.reload();
-    }, [logout]);
+    }, [logout, userId, logId, token]);
 
     const resetInactivityTimer = useCallback(() => {
       const now = Date.now();
@@ -116,41 +133,41 @@ const withSessionTimeout = (WrappedComponent) => {
       globalState.inactivityTimer = setTimeout(async () => {
         if (Date.now() - globalState.lastActivity >= INACTIVITY_TIMEOUT_MS) {
           console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Inactivity timeout reached, updating SessionInactiveTime and triggering session timeout`);
-          await updateSessionInactiveTime();
+          await touchSessionActivity();
           handleSessionTimeout();
         }
       }, INACTIVITY_TIMEOUT_MS);
 
       if (now - lastHeartbeatRef.current >= HEARTBEAT_INTERVAL_MS) {
         lastHeartbeatRef.current = now;
-        updateSessionInactiveTime();
+        touchSessionActivity();
       }
 
       console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Inactivity timer reset`);
-    }, [updateSessionInactiveTime, handleSessionTimeout, INACTIVITY_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS]);
+    }, [touchSessionActivity, handleSessionTimeout, INACTIVITY_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS]);
 
     const validateActiveSession = useCallback(async () => {
-      const userId = localStorage.getItem("userId");
-      const token = localStorage.getItem("token");
+      if (isInitializing || isValidatingSession) return;
       if (!userId || !token || isSessionExpired) {
         return;
       }
       try {
-        const response = await fetch(`${config.apiBaseUrl}/api/check-session`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, token }),
-        });
-        const data = await response.json();
-        if (!data.success) {
-          console.warn(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Session no longer valid: ${data.message}`);
+        const data = await checkSession(userId, token);
+        if (data._httpStatus >= 500) {
+          console.warn(`[SessionTimeout] Session check server error (${data._httpStatus}); keeping session`);
+          return;
+        }
+        if (data._httpStatus === 401 || (!data.success && (
+          String(data.message || "").includes("inactive")
+          || String(data.message || "").includes("timed out")
+        ))) {
+          console.warn(`[SessionTimeout] Session no longer valid: ${data.message}`);
           handleSessionTimeout();
         }
       } catch (err) {
-        console.error(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [SessionTimeout] Session validation error:`, err.message);
-        // Do not logout on transient network errors during background checks.
+        console.error(`[SessionTimeout] Session validation error:`, err.message);
       }
-    }, [handleSessionTimeout, isSessionExpired]);
+    }, [handleSessionTimeout, isSessionExpired, isInitializing, isValidatingSession, userId, token]);
 
     const handleUserActivity = useCallback(() => {
       if (isSessionExpired || location.pathname === "/login" || document.hidden) {
@@ -174,7 +191,8 @@ const withSessionTimeout = (WrappedComponent) => {
     }, [isSessionExpired, resetInactivityTimer, handleSessionTimeout, INACTIVITY_TIMEOUT_MS]);
 
     useEffect(() => {
-      const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+      if (isInitializing || isValidatingSession) return undefined;
+
       if (!isLoggedIn || location.pathname === "/login") {
         setIsSessionExpired(false);
         clearTimeout(globalState.inactivityTimer);
@@ -198,9 +216,10 @@ const withSessionTimeout = (WrappedComponent) => {
       window.addEventListener("popstate", handleNavigation);
 
       const sessionCheckInterval = setInterval(validateActiveSession, SESSION_CHECK_INTERVAL_MS);
-      validateActiveSession();
+      const initialCheckTimer = setTimeout(validateActiveSession, 4000);
 
       return () => {
+        clearTimeout(initialCheckTimer);
         clearInterval(sessionCheckInterval);
         window.removeEventListener("mousemove", handleUserActivity);
         window.removeEventListener("keydown", handleUserActivity);
@@ -208,19 +227,25 @@ const withSessionTimeout = (WrappedComponent) => {
         window.removeEventListener("visibilitychange", handleVisibilityChange);
         window.removeEventListener("popstate", handleNavigation);
       };
-    }, [handleUserActivity, handleVisibilityChange, resetInactivityTimer, validateActiveSession, isSessionExpired, location.pathname, SESSION_CHECK_INTERVAL_MS]);
+    }, [handleUserActivity, handleVisibilityChange, resetInactivityTimer, validateActiveSession, isSessionExpired, location.pathname, SESSION_CHECK_INTERVAL_MS, isInitializing, isValidatingSession, isLoggedIn]);
 
     return (
       <>
         <WrappedComponent {...props} />
         {isSessionExpired && location.pathname !== "/login" && (
-          <div className="ui-modal-overlay" style={{ animation: `${fadeIn} 0.3s ease-out` }}>
-            <div className="ui-modal session-timeout-modal" style={{ animation: `${slideUp} 0.4s cubic-bezier(0.22, 0.61, 0.36, 1)` }}>
+          <div className="ui-modal-overlay" style={{ animation: `${fadeIn} 0.3s ease-out` }} role="presentation">
+            <div
+              className="ui-modal session-timeout-modal"
+              style={{ animation: `${slideUp} 0.4s cubic-bezier(0.22, 0.61, 0.36, 1)` }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="session-timeout-title"
+            >
               <div style={styles.iconContainer}>
                 <span style={styles.clockIcon}>⏰</span>
                 <div style={styles.pulseEffect}></div>
               </div>
-              <h3 style={{ margin: "0 0 1rem", fontSize: "1.4rem", fontWeight: 700, color: "var(--text-strong)" }}>
+              <h3 id="session-timeout-title" style={{ margin: "0 0 1rem", fontSize: "1.4rem", fontWeight: 700, color: "var(--text-strong)" }}>
                 Session expired
               </h3>
               <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", lineHeight: 1.5, marginBottom: "1.5rem" }}>

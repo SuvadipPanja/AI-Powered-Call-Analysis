@@ -3,7 +3,10 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { LuBuilding2, LuPlus, LuTrash2, LuSave, LuRefreshCw, LuShieldAlert } from 'react-icons/lu';
-import apiClient from '../../utils/apiClient';
+import {
+  getBankSettings,
+  saveBankSettings,
+} from '../../services/adminService';
 import { Button, Input, Label, Spinner } from '../ui';
 
 const SUPPORTED_LANGUAGES = [
@@ -46,7 +49,7 @@ export default function AdminBankConfigPanel({ showNotice }) {
   const fetchConfig = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get('/api/admin/bank-settings');
+      const data = await getBankSettings();
       if (data.success && data.config) {
         const c = data.config;
         setBankName(c.bankName || '');
@@ -78,7 +81,7 @@ export default function AdminBankConfigPanel({ showNotice }) {
         setUpdatedBy(c.updatedBy || '');
       }
     } catch (err) {
-      showNotice(err?.response?.data?.message || 'Failed to load bank settings', 'error');
+      showNotice(err?.message || 'Failed to load bank settings', 'error');
     } finally {
       setLoading(false);
     }
@@ -138,7 +141,7 @@ export default function AdminBankConfigPanel({ showNotice }) {
           }))
           .filter((t) => t.word),
       };
-      const { data } = await apiClient.put('/api/admin/bank-settings', payload);
+      const data = await saveBankSettings(payload);
       if (data.success) {
         showNotice('Settings saved. New calls will use updated glossaries and taboo rules.');
         if (data.config) {
@@ -149,7 +152,7 @@ export default function AdminBankConfigPanel({ showNotice }) {
         showNotice(data.message || 'Save failed', 'error');
       }
     } catch (err) {
-      showNotice(err?.response?.data?.message || 'Error saving settings', 'error');
+      showNotice(err?.message || 'Error saving settings', 'error');
     } finally {
       setSaving(false);
     }

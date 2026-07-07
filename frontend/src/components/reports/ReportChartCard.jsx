@@ -12,7 +12,6 @@ import {
   buildExportFilename,
   tableToRows,
 } from "../../utils/reportExportUtils";
-import "./reports-page.css";
 import ReportChartCanvas from "./ReportChartCanvas";
 
 const VARIANT_ACCENTS = {
@@ -136,7 +135,7 @@ export default function ReportChartCard({
       } else if (action === "pdf-chart") {
         downloadChartPdf(chartRef, baseName, title);
       } else if (action === "bulk-csv" && bulkExport) {
-        await downloadBackendCsv(apiBaseUrl, bulkExport.endpoint, bulkExport.body, baseName);
+        await downloadBackendCsv(bulkExport.endpoint, bulkExport.body, baseName);
       }
       setMenuOpen(false);
     } catch (err) {

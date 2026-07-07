@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Line, Bar } from "react-chartjs-2";
-import axios from "axios";
 import dayjs from "dayjs";
 import {
   LuMessageSquare,
@@ -14,11 +14,23 @@ import {
   LuInbox,
   LuLayoutDashboard,
   LuSparkles,
+  LuEye,
 } from "../icons";
+import useDashboardMetrics from "../hooks/useDashboardMetrics";
+import DashboardKpiStrip from "./reports/DashboardKpiStrip";
+import DashboardStatistics from "./DashboardStatistics";
+import { DEFAULT_DASHBOARD_FILTERS } from "../utils/dashboardFilters";
 import { useChat } from "../context/ChatContext";
 import { useWebSocket } from "../context/WebSocketContext";
 import ChatBox from "./chat/ChatBox";
-import config from "../utils/envConfig";
+import {
+  getAgentDashboard,
+  getAgentProfile,
+  getBriefingTodayLatest,
+  getKnowledgeTestLatest,
+  getKnowledgeTestResultToday,
+  submitKnowledgeTest,
+} from "../services/agentPortalService";
 import {
   PageSection,
   Card,
@@ -35,7 +47,6 @@ import AgentKpiStrip from "./reports/AgentKpiStrip";
 import ReportChartCard from "./reports/ReportChartCard";
 import { baseChartOptions, lineDataset, barDataset } from "../theme/chartTheme";
 import "./layout/kuber-hero.css";
-import "./reports/reports-page.css";
 import "./agent-dashboard-page.css";
 import { useAuth } from "../context/AuthContext";
 
@@ -67,7 +78,11 @@ const displayScoreForCall = (call) => {
 };
 
 const AgentDashboardContent = () => {
-  const { username } = useAuth();
+  const { username, isLoggedIn, isValidatingSession, initializationComplete } = useAuth();
+  // Fetching before the session is restored 401s and leaves the dashboard
+  // empty until a manual refresh — wait for auth to be ready.
+  const authReady = isLoggedIn && initializationComplete && !isValidatingSession;
+  const navigate = useNavigate();
   const { chatSessions, sendMessage, closeChat, toggleMinimize } = useChat();
   const { chatMessages, supervisors } = useWebSocket();
   const [dashboardData, setDashboardData] = useState(null);
@@ -93,6 +108,22 @@ const AgentDashboardContent = () => {
   const [callSearch, setCallSearch] = useState("");
   const [scoreFilter, setScoreFilter] = useState("all");
 
+  const periodFilters = useMemo(
+    () => ({ ...DEFAULT_DASHBOARD_FILTERS, dateRange: "1 Week", agent: username }),
+    [username],
+  );
+  const {
+    fetchMetrics,
+    kpiStats: periodKpiStats,
+    kpiComparison,
+    formatDelta,
+    loading: periodMetricsLoading,
+  } = useDashboardMetrics();
+
+  useEffect(() => {
+    if (authReady && username) fetchMetrics(periodFilters);
+  }, [authReady, username, periodFilters, fetchMetrics]);
+
   const knowledgeTestRef = useRef(null);
   const scoringChartRef = useRef(null);
   const kpiChartRef = useRef(null);
@@ -102,10 +133,8 @@ const AgentDashboardContent = () => {
 
   const fetchAgentProfile = useCallback(async () => {
     try {
-      const res = await axios.get(`${config.apiBaseUrl}/api/agent-profile`, {
-        params: { username },
-      });
-      if (res.data?.success) setAgentProfile(res.data);
+      const res = await getAgentProfile(username);
+      if (res?.success) setAgentProfile(res);
     } catch (err) {
       console.error("Error fetching agent profile:", err.message);
     }
@@ -114,15 +143,13 @@ const AgentDashboardContent = () => {
   const fetchBriefing = useCallback(async () => {
     setBriefingState((s) => ({ ...s, loading: true, error: false }));
     try {
-      const res = await axios.get(`${config.apiBaseUrl}/api/briefing/today-latest`, {
-        params: { agentUsername: username },
-      });
-      if (res.data?.success) {
+      const res = await getBriefingTodayLatest(username);
+      if (res?.success) {
         setBriefingState({
-          text: res.data.briefing || "No briefing available.",
+          text: res.briefing || "No briefing available.",
           loading: false,
           error: false,
-          empty: Boolean(res.data.empty),
+          empty: Boolean(res.empty),
         });
       } else {
         setBriefingState({
@@ -146,20 +173,16 @@ const AgentDashboardContent = () => {
   const fetchKnowledgeData = useCallback(async () => {
     setKnowledgeLoading(true);
     try {
-      const questionsRes = await axios.get(`${config.apiBaseUrl}/api/knowledge-test-latest`, {
-        params: { agentUsername: username },
-      });
-      if (questionsRes.data?.success) {
-        setKnowledgeQuestions(questionsRes.data.questions || []);
+      const questionsRes = await getKnowledgeTestLatest(username);
+      if (questionsRes?.success) {
+        setKnowledgeQuestions(questionsRes.questions || []);
       } else {
         setKnowledgeQuestions([]);
       }
 
-      const resultRes = await axios.get(`${config.apiBaseUrl}/api/knowledge-test-result-today`, {
-        params: { username },
-      });
-      if (resultRes.data?.success) {
-        const { hasSubmitted, correctAnswers, wrongAnswers, totalScore, answers } = resultRes.data;
+      const resultRes = await getKnowledgeTestResultToday(username);
+      if (resultRes?.success) {
+        const { hasSubmitted, correctAnswers, wrongAnswers, totalScore, answers } = resultRes;
         setTestStatus({
           hasSubmitted,
           correctAnswers: correctAnswers || 0,
@@ -191,13 +214,11 @@ const AgentDashboardContent = () => {
     setDashboardLoading(true);
     setDashboardError("");
     try {
-      const res = await axios.get(`${config.apiBaseUrl}/api/agent/dashboard`, {
-        params: { username },
-      });
-      if (res.data?.success) {
-        setDashboardData(res.data);
+      const res = await getAgentDashboard(username);
+      if (res?.success) {
+        setDashboardData(res);
       } else {
-        setDashboardError(res.data?.message || "Could not load dashboard data.");
+        setDashboardError(res?.message || "Could not load dashboard data.");
       }
     } catch (err) {
       console.error("Error fetching agent dashboard data:", err.message);
@@ -208,11 +229,12 @@ const AgentDashboardContent = () => {
   }, [username]);
 
   useEffect(() => {
+    if (!authReady) return;
     fetchAgentProfile();
     fetchBriefing();
     fetchKnowledgeData();
     fetchDashboardData();
-  }, [fetchAgentProfile, fetchBriefing, fetchKnowledgeData, fetchDashboardData]);
+  }, [authReady, fetchAgentProfile, fetchBriefing, fetchKnowledgeData, fetchDashboardData]);
 
   useEffect(() => {
     const relevantMessages = chatMessages.filter(
@@ -261,18 +283,18 @@ const AgentDashboardContent = () => {
     if (!selectedAnswers[currentQuestionIndex]?.selectedAnswer) return;
 
     try {
-      const response = await axios.post(`${config.apiBaseUrl}/api/submit-knowledge-test`, {
+      const response = await submitKnowledgeTest({
         username,
         answers: selectedAnswers,
         createdAt: new Date().toISOString(),
       });
 
-      if (response.data?.success) {
+      if (response?.success) {
         setTestStatus({
           hasSubmitted: true,
-          correctAnswers: response.data.correctAnswers,
-          wrongAnswers: response.data.wrongAnswers,
-          totalScore: response.data.totalScore,
+          correctAnswers: response.correctAnswers,
+          wrongAnswers: response.wrongAnswers,
+          totalScore: response.totalScore,
           answers: selectedAnswers,
         });
         setCurrentQuestionIndex(0);
@@ -453,6 +475,28 @@ const AgentDashboardContent = () => {
 
       <section className="reports-section">
         <div className="reports-section__head">
+          <h2>This week</h2>
+          <p>Your call metrics for the last 7 days with period-over-period comparison.</p>
+        </div>
+        {periodMetricsLoading ? (
+          <div className="agent-dash__skeleton-grid" aria-busy="true">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="agent-dash__skeleton-card" />
+            ))}
+          </div>
+        ) : (
+          <DashboardKpiStrip
+            stats={periodKpiStats}
+            comparison={kpiComparison}
+            formatDelta={formatDelta}
+          />
+        )}
+      </section>
+
+      <DashboardStatistics filters={periodFilters} filterPeriodLabel="Last 7 days" />
+
+      <section className="reports-section">
+        <div className="reports-section__head">
           <h2>Performance charts</h2>
           <p>Scoring trend and rubric KPIs from your analyzed calls.</p>
         </div>
@@ -543,6 +587,7 @@ const AgentDashboardContent = () => {
                         <th scope="col">Score</th>
                         <th scope="col" className="ui-table__col--hide-sm">Auditor</th>
                         <th scope="col">Type</th>
+                        <th scope="col" className="ui-table__col--actions">View</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -579,6 +624,20 @@ const AgentDashboardContent = () => {
                               {audited ? (call.auditorName || "—") : "—"}
                             </td>
                             <td className="agent-dash__cell-type" data-label="Type">{call.callType || "—"}</td>
+                            <td className="ui-table__col--actions" data-label="View">
+                              {call.audioFileName ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => navigate(`/my-calls/${encodeURIComponent(call.audioFileName)}`)}
+                                  aria-label={`View call ${callIdLabel}`}
+                                >
+                                  <LuEye /> View
+                                </Button>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
                           </tr>
                         );
                       })}

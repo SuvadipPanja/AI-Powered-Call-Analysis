@@ -22,9 +22,15 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "../../context/ChatContext";
 import chatbotImg from "../../assets/myChatbotimage.jpg";
-import config from "../../utils/envConfig";
 import "./ChatBox.css";
-import axios from "axios";
+import {
+  chatWithAi,
+  closeAiChat,
+  getRevaKnowledgeOptions,
+  logBankingOption,
+  startAiChat,
+  updateAiChat,
+} from "../../services/revaService";
 
 const ChatBox = ({ username, onClose }) => {
   const { sendMessage } = useChat();
@@ -66,11 +72,11 @@ const ChatBox = ({ username, onClose }) => {
   useEffect(() => {
     const fetchKnowledgeEntries = async () => {
       try {
-        const response = await axios.get(`${config.apiBaseUrl}/api/reva-knowledge-options`);
-        if (response.data.success && response.data.categories) {
-          setCategories(response.data.categories);
+        const response = await getRevaKnowledgeOptions();
+        if (response.success && response.categories) {
+          setCategories(response.categories);
         } else {
-          console.error("[Frontend] Failed to fetch knowledge entries:", response.data.message);
+          console.error("[Frontend] Failed to fetch knowledge entries:", response.message);
           setCategories({});
         }
       } catch (error) {
@@ -84,15 +90,15 @@ const ChatBox = ({ username, onClose }) => {
   // AI Chat Logging Functions
   const startAIChatLog = async () => {
     try {
-      const response = await axios.post(`${config.apiBaseUrl}/api/start-ai-chat`, {
+      const response = await startAiChat({
         username: username,
         entireChat: "",
         startTime: new Date().toISOString(),
         isClosed: false,
       });
-      if (response.data.success) {
-        setAIChatLogId(response.data.logId);
-        console.log(`[Frontend] AI chat log started with LogID: ${response.data.logId}`);
+      if (response.success) {
+        setAIChatLogId(response.logId);
+        console.log(`[Frontend] AI chat log started with LogID: ${response.logId}`);
       }
     } catch (error) {
       console.error("[Frontend] Error starting AI chat log:", error);
@@ -102,7 +108,7 @@ const ChatBox = ({ username, onClose }) => {
   const updateAIChatLog = async (entireChat) => {
     if (!aiChatLogId) return;
     try {
-      await axios.post(`${config.apiBaseUrl}/api/update-ai-chat`, {
+      await updateAiChat({
         logId: aiChatLogId,
         entireChat: entireChat,
       });
@@ -115,7 +121,7 @@ const ChatBox = ({ username, onClose }) => {
   const closeAIChatLog = async () => {
     if (!aiChatLogId) return;
     try {
-      await axios.post(`${config.apiBaseUrl}/api/close-ai-chat`, {
+      await closeAiChat({
         logId: aiChatLogId,
         entireChat: aiChatContent,
         endTime: new Date().toISOString(),
@@ -132,7 +138,7 @@ const ChatBox = ({ username, onClose }) => {
   // Log knowledge option selection to the database
   const logKnowledgeOption = async (option) => {
     try {
-      await axios.post(`${config.apiBaseUrl}/api/log-banking-option`, {
+      await logBankingOption({
         username,
         option,
         timestamp: new Date().toISOString(),
@@ -187,21 +193,21 @@ const ChatBox = ({ username, onClose }) => {
     setUserMessage("");
 
     try {
-      const response = await axios.post(`${config.apiBaseUrl}/api/chat-with-ai`, {
+      const response = await chatWithAi({
         message: newUserMessage.text,
       });
       setIsAITyping(false);
-      if (response.data.success) {
+      if (response.success) {
         const aiResponse = {
           sender: "AI",
-          text: response.data.response,
+          text: response.response,
           timestamp: new Date().toISOString(),
         };
         setAIMessages((prev) => [...prev, aiResponse]);
         const updatedChatContentWithAI = `${aiChatContent}[${new Date(aiResponse.timestamp).toLocaleString()}] AI: ${aiResponse.text}\n`;
         setAIChatContent(updatedChatContentWithAI);
         await updateAIChatLog(updatedChatContentWithAI);
-        if (response.data.escalate) {
+        if (response.escalate) {
           setFailedAttempts((prev) => prev + 1);
           if (failedAttempts + 1 >= 3) {
             const escalationMessage = {

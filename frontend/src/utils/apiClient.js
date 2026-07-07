@@ -1,6 +1,7 @@
 import axios from "axios";
 import config from "./envConfig";
 import { clearAuthStorage } from "./uiPreferences";
+import { getAuthToken, readSession } from "./authSession";
 
 /**
  * Central API client + global auth wiring.
@@ -12,16 +13,14 @@ import { clearAuthStorage } from "./uiPreferences";
  * response clears the session and redirects to login.
  */
 
-const getToken = () =>
-  localStorage.getItem("token") || localStorage.getItem("sessionToken") || "";
+const getToken = () => getAuthToken();
 
-const apiClient = axios.create({ baseURL: config.apiBaseUrl });
+const apiClient = axios.create();
 
 // Session/bootstrap endpoints may return 401 without requiring a global logout sweep.
 const AUTH_401_EXEMPT_PATHS = [
   "/api/check-session",
   "/api/verify-session",
-  "/api/login",
   "/api/login-security",
   "/api/logout-track",
 ];
@@ -32,21 +31,79 @@ function shouldForceLogoutOn401(url = "") {
 }
 
 let handling401 = false;
-function handleUnauthorized(url = "") {
+let authInterceptorReady = false;
+
+/** Called by AuthProvider after session restore — avoids 401 storms logging out mid-bootstrap. */
+export function setAuthInterceptorReady(ready = true) {
+  authInterceptorReady = Boolean(ready);
+}
+
+export function isAuthInterceptorReady() {
+  return authInterceptorReady;
+}
+
+async function confirmSessionDead() {
+  const { userId, token, sessionToken } = readSession();
+  const authToken = token || sessionToken;
+  if (!userId || !authToken) return true;
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/api/check-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, token: authToken }),
+    });
+    if (response.status >= 500) return false;
+    const data = await response.json();
+    return !data.success;
+  } catch {
+    return false;
+  }
+}
+
+async function handleUnauthorized(url = "") {
+  if (!authInterceptorReady) return;
   if (!shouldForceLogoutOn401(url)) return;
   if (handling401) return;
   handling401 = true;
   try {
+    const dead = await confirmSessionDead();
+    if (!dead) {
+      handling401 = false;
+      return;
+    }
     clearAuthStorage();
-  } catch (_) {
-    /* ignore */
-  }
-  if (!window.location.pathname.startsWith("/login")) {
-    window.location.assign("/login");
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.assign("/login");
+    }
+  } catch {
+    handling401 = false;
   }
 }
 
+function notifyGraceReadOnly(responseBody, url = "") {
+  const code = responseBody?.code;
+  if (code !== "LICENSE_GRACE_READ_ONLY") return;
+  window.dispatchEvent(new CustomEvent("license-grace-blocked", {
+    detail: {
+      message: responseBody?.message || "License expired — the system is in read-only grace mode.",
+      url,
+    },
+  }));
+}
+
+async function handleGraceReadOnlyResponse(response, url = "") {
+  if (response?.status !== 423) return false;
+  try {
+    const body = await response.clone().json();
+    notifyGraceReadOnly(body, url);
+  } catch {
+    notifyGraceReadOnly({ code: "LICENSE_GRACE_READ_ONLY" }, url);
+  }
+  return true;
+}
+
 apiClient.interceptors.request.use((cfg) => {
+  cfg.baseURL = config.apiBaseUrl;
   const token = getToken();
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
@@ -56,6 +113,8 @@ apiClient.interceptors.response.use(
   (err) => {
     if (err?.response?.status === 401) {
       handleUnauthorized(err?.config?.url || "");
+    } else if (err?.response?.status === 423) {
+      notifyGraceReadOnly(err?.response?.data, err?.config?.url || "");
     }
     return Promise.reject(err);
   }
@@ -70,6 +129,7 @@ export function installAuthInterceptors() {
 
   // Global axios (used by most components directly).
   axios.interceptors.request.use((cfg) => {
+    if (!cfg.baseURL) cfg.baseURL = config.apiBaseUrl;
     const token = getToken();
     if (token && !cfg.headers?.Authorization) {
       cfg.headers = cfg.headers || {};
@@ -82,6 +142,8 @@ export function installAuthInterceptors() {
     (err) => {
       if (err?.response?.status === 401) {
         handleUnauthorized(err?.config?.url || "");
+      } else if (err?.response?.status === 423) {
+        notifyGraceReadOnly(err?.response?.data, err?.config?.url || "");
       }
       return Promise.reject(err);
     }
@@ -99,11 +161,10 @@ export function installAuthInterceptors() {
       init = { ...init, headers };
     }
     const resp = await nativeFetch(input, init);
-    if (resp.status === 401 && isApi) handleUnauthorized(url);
+    if (resp.status === 401 && isApi && authInterceptorReady) handleUnauthorized(url);
+    if (resp.status === 423 && isApi) await handleGraceReadOnlyResponse(resp, url);
     return resp;
   };
 }
 
 export default apiClient;
-
-export { apiUrl, apiGet, apiGetQuery, apiPost, parseApiJson, parseReportResponse } from "./apiHelpers";

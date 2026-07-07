@@ -9,6 +9,10 @@ function formatDate(d) {
 export function resolveDashboardDateRange(filters) {
   const now = new Date();
 
+  if (filters?.dateRange === "All Time") {
+    return { fromDate: "2020-01-01", toDate: formatDate(now) };
+  }
+
   if (filters?.dateRange === "Custom" && filters.customFromDate && filters.customToDate) {
     const start = new Date(filters.customFromDate);
     start.setHours(0, 0, 0, 0);
@@ -70,6 +74,14 @@ export function appendReportFilters(params, filters = {}) {
   return params;
 }
 
+/** Build URLSearchParams for report API calls from resolved filter state. */
+export function buildReportQueryParams(resolvedFilters = {}) {
+  const params = new URLSearchParams();
+  if (resolvedFilters.fromDate) params.set("fromDate", resolvedFilters.fromDate);
+  if (resolvedFilters.toDate) params.set("toDate", resolvedFilters.toDate);
+  return appendReportFilters(params, resolvedFilters);
+}
+
 export const DEFAULT_DASHBOARD_FILTERS = {
   location: "All",
   tl: "All",
@@ -82,7 +94,7 @@ export const DEFAULT_DASHBOARD_FILTERS = {
 
 /** Build API-ready filters from hero UI state (includes resolved dates + tl/supervisor aliases). */
 export function buildResolvedFilters({
-  dateRange = "1 Month",
+  dateRange = DEFAULT_DASHBOARD_FILTERS.dateRange,
   customFromDate = null,
   customToDate = null,
   location = "All",
@@ -118,7 +130,7 @@ export function isDefaultDashboardFilters(filters) {
     && (f.tl || "All") === "All"
     && (f.callType || "All") === "All"
     && (f.agent || "All") === "All"
-    && (f.dateRange || "1 Month") === "1 Month"
+    && (f.dateRange || DEFAULT_DASHBOARD_FILTERS.dateRange) === DEFAULT_DASHBOARD_FILTERS.dateRange
     && !f.customFromDate
     && !f.customToDate
   );
@@ -143,7 +155,7 @@ export function validateFilterDateRange({
     customFromDate,
     customToDate,
   });
-  if (maxRangeDays != null) {
+  if (maxRangeDays != null && dateRange !== "All Time") {
     const from = new Date(fromDate);
     const to = new Date(toDate);
     const days = Math.ceil(Math.abs(to - from) / (1000 * 60 * 60 * 24));

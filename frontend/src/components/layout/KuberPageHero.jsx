@@ -11,7 +11,10 @@ function timeGreeting() {
 
 function periodLabel(dateRange, customFrom, customTo) {
   const now = new Date();
+  if (dateRange === "All Time") return "All time";
   if (dateRange === "Today") return now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  if (dateRange === "1 Week") return "Last 1 week";
+  if (dateRange === "1 Month") return "Last 1 month";
   if (dateRange === "Custom" && customFrom && customTo) {
     return `${customFrom.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${customTo.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
   }
@@ -137,6 +140,7 @@ export default function KuberPageHero({
               onChange={(e) => onDateRangeChange(e.target.value)}
               aria-label="Date range"
             >
+              <option value="All Time">All time</option>
               <option value="Today">Today</option>
               <option value="1 Week">1 week</option>
               <option value="1 Month">1 month</option>

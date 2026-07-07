@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LuCircleX,
@@ -9,29 +9,26 @@ import {
   LuLayers,
   LuPhoneForwarded,
   LuBanknote,
+  LuClock,
   LuInbox,
 } from "../icons";
 import DashboardStatistics from "./DashboardStatistics";
 import DashboardKpiStrip from "./reports/DashboardKpiStrip";
 import { Bar } from "react-chartjs-2";
 import "react-datepicker/dist/react-datepicker.css";
-import "./reports/reports-page.css";
 import { useWebSocket } from "../context/WebSocketContext";
-import { buildDashboardQueryParams, DEFAULT_DASHBOARD_FILTERS, resolveDashboardDateRange } from "../utils/dashboardFilters";
-import { apiGetQuery } from "../utils/apiHelpers";
-import useReportFilters from "../hooks/useReportFilters";
-import useDashboardMetrics from "../hooks/useDashboardMetrics";
+import useDashboard from "../hooks/useDashboard";
+import { resolveDashboardDateRange } from "../utils/dashboardFilters";
 import { Badge, EmptyState, PageError, PageLoading } from "./ui/index";
 import KuberPageHero from "./layout/KuberPageHero";
 import "./layout/kuber-hero.css";
 import { baseChartOptions } from "../theme/chartTheme";
 import ReportChartCard from "./reports/ReportChartCard";
 import DonutInsightChart from "./reports/DonutInsightChart";
-import { buildToneAnalysisChart, buildColoredDoughnutData, modernDoughnutOptions } from "./reports/reportsChartConfig";
-import { chartSeriesColors } from "../theme/chartTheme";
+import { buildColoredDoughnutData, modernDoughnutOptions } from "./reports/reportsChartConfig";
 import LoanLeadsPanel from "./reports/LoanLeadsPanel";
 import EscalationKpiBlock from "./reports/EscalationKpiBlock";
-import { fetchLoanLeadsReport } from "../utils/loanLeadsData";
+import HoldKpiBlock from "./reports/HoldKpiBlock";
 import { useAuth } from "../context/AuthContext";
 
 const CSAT_DONUT_COLORS = ["#6b9080", "#94a3b8"];
@@ -44,11 +41,13 @@ const AfterLogin = () => {
   const {
     appliedFilters,
     isFilterApplied,
-    applyFilters,
-    resetFilters,
+    applyAndRefresh,
+    resetAndRefresh,
     kuberHeroProps,
     selectedLocation,
-  } = useReportFilters({ mode: "manual" });
+    metrics,
+    charts,
+  } = useDashboard();
 
   const {
     loading: metricsLoading,
@@ -58,114 +57,20 @@ const AfterLogin = () => {
     kpiComparison: dashboardKpiComparison,
     formatDelta: formatDashboardDelta,
     isNoData,
-  } = useDashboardMetrics();
+  } = metrics;
+
+  const {
+    toneData,
+    agentWiseData,
+    queryTypeData,
+    escalationTotals,
+    loanLeadData,
+    loanTypeData,
+    holdTotals,
+  } = charts;
 
   const [chatPopupVisible, setChatPopupVisible] = useState(false);
   const [currentChatMessages, setCurrentChatMessages] = useState([]);
-
-  const [toneData, setToneData] = useState(null);
-  const [agentWiseData, setAgentWiseData] = useState(null);
-  const [queryTypeData, setQueryTypeData] = useState(null);
-  const [escalationTotals, setEscalationTotals] = useState(null);
-  const [loanLeadData, setLoanLeadData] = useState(null);
-  const [loanTypeData, setLoanTypeData] = useState(null);
-
-  /************************************************
-   * (3) Chart & dashboard data fetchers
-   ************************************************/
-  const fetchToneAnalysis7days = useCallback(async (filters) => {
-    try {
-      const qs = buildDashboardQueryParams(filters);
-      const data = await apiGetQuery("/api/tone-analysis-7days", qs, { label: "tone-analysis-7days" });
-      if (data.success && data.labels && data.values) {
-        const [pos, neu, neg] = data.values;
-        if (pos === 0 && neg === 0 && neu > 0) {
-          data.values[0] = 5;
-          data.values[2] = 2;
-          data.values[1] = neu - 7 > 0 ? neu - 7 : neu;
-        }
-        setToneData(buildToneAnalysisChart(data.labels, data.values));
-      }
-    } catch (err) {
-      console.error("Failed to fetch tone analysis:", err);
-    }
-  }, []);
-
-  const fetchAgentWiseData = useCallback(async (filters) => {
-    try {
-      const qs = buildDashboardQueryParams(filters);
-      const data = await apiGetQuery("/api/agent-wise-ai-scoring", qs, { label: "agent-wise-ai-scoring" });
-      if (data.success && data.agentLabels && data.agentScores) {
-        setAgentWiseData({
-          labels: data.agentLabels,
-          datasets: [{
-            label: "Agent-Wise AI Scoring",
-            data: data.agentScores,
-            backgroundColor: data.agentScores.map((_, i) => chartSeriesColors()[i % chartSeriesColors().length]),
-            borderSkipped: false,
-            borderRadius: 10,
-            maxBarThickness: 40,
-          }],
-        });
-      }
-    } catch (err) {
-      console.error("Failed to fetch agent-wise data:", err);
-    }
-  }, []);
-
-  const fetchQueryTypeData = useCallback(async (filters) => {
-    try {
-      const qs = buildDashboardQueryParams(filters);
-      const data = await apiGetQuery("/api/reports/query-type-distribution", qs, { label: "query-type-distribution" });
-      if (data.success && Array.isArray(data.data) && data.data.length) {
-        setQueryTypeData(buildColoredDoughnutData(
-          data.data.map((d) => d.label || "Unclassified"),
-          data.data.map((d) => d.count),
-          data.data.map((d) => d.color),
-        ));
-      } else {
-        setQueryTypeData(null);
-      }
-    } catch (err) {
-      console.error("Failed to fetch query-type distribution:", err);
-    }
-  }, []);
-
-  const fetchEscalationData = useCallback(async (filters) => {
-    try {
-      const qs = buildDashboardQueryParams(filters);
-      const data = await apiGetQuery("/api/reports/escalation-summary", qs, { label: "escalation-summary" });
-      if (data.success && data.data && data.data.totals) {
-        setEscalationTotals(data.data.totals);
-      } else {
-        setEscalationTotals(null);
-      }
-    } catch (err) {
-      console.error("Failed to fetch escalation summary:", err);
-    }
-  }, []);
-
-  const fetchLoanLeads = useCallback(async (filters) => {
-    try {
-      const qs = buildDashboardQueryParams(filters);
-      const { totals, donutData } = await fetchLoanLeadsReport(qs);
-      setLoanLeadData(totals);
-      setLoanTypeData(donutData);
-    } catch (err) {
-      console.error("Failed to fetch loan leads:", err);
-      setLoanLeadData(null);
-      setLoanTypeData(null);
-    }
-  }, []);
-
-  const refreshDashboardData = useCallback((filters) => {
-    fetchMetrics(filters);
-    fetchToneAnalysis7days(filters);
-    fetchAgentWiseData(filters);
-    fetchQueryTypeData(filters);
-    fetchEscalationData(filters);
-    fetchLoanLeads(filters);
-  }, [fetchMetrics, fetchToneAnalysis7days, fetchAgentWiseData, fetchQueryTypeData, fetchEscalationData, fetchLoanLeads]);
 
   /************************************************
    * (7) Handle Incoming Chat Messages
@@ -198,17 +103,11 @@ const AfterLogin = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  useEffect(() => {
-    refreshDashboardData(DEFAULT_DASHBOARD_FILTERS);
-  }, [refreshDashboardData]);
-
   const handleFilterSubmit = () => {
-    const result = applyFilters();
+    const result = applyAndRefresh();
     if (!result.ok) {
       alert(result.error);
-      return;
     }
-    refreshDashboardData(result.filters);
   };
 
   const handleRetryFetchMetrics = () => {
@@ -216,8 +115,7 @@ const AfterLogin = () => {
   };
 
   const handleResetFilters = () => {
-    const result = resetFilters();
-    refreshDashboardData(result.filters);
+    resetAndRefresh();
   };
 
   const toneChartRef = useRef(null);
@@ -233,6 +131,18 @@ const AfterLogin = () => {
   }), []);
 
   const filterPeriodLabel = useMemo(() => {
+    if (!appliedFilters || appliedFilters.dateRange === "All Time") {
+      return "All time";
+    }
+    if (appliedFilters.dateRange === "1 Month") {
+      return "Last 1 month";
+    }
+    if (appliedFilters.dateRange === "1 Week") {
+      return "Last 1 week";
+    }
+    if (appliedFilters.dateRange === "Today") {
+      return "Today";
+    }
     const { fromDate, toDate } = resolveDashboardDateRange(appliedFilters);
     return `${fromDate} → ${toDate}`;
   }, [appliedFilters]);
@@ -398,6 +308,21 @@ const AfterLogin = () => {
             >
               {escalationTotals && (
                 <EscalationKpiBlock data={escalationTotals} />
+              )}
+            </ReportChartCard>
+          </div>
+          <div className="clickable-chart" onClick={() => navigate("/reports/details")}>
+            <ReportChartCard
+              variant="agent"
+              icon={LuClock}
+              title="Agent hold time"
+              subtitle={filterPeriodLabel}
+              empty={!holdTotals}
+              height={300}
+              stagger={0.22}
+            >
+              {holdTotals && (
+                <HoldKpiBlock data={holdTotals} />
               )}
             </ReportChartCard>
           </div>

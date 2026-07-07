@@ -13,11 +13,15 @@ import {
   FaExclamationCircle,
 } from "react-icons/fa";
 import { useWebSocket } from "../context/WebSocketContext";
-import config from "../utils/envConfig";
 import AuthLayout from "./layout/AuthLayout";
 import { getAppFooter } from "../utils/appMeta";
 import { clearAuthStorage } from "../utils/uiPreferences";
+import { readSession } from "../utils/authSession";
 import { useAppBranding, useDocumentTitle } from "../utils/appBranding";
+import LicenseGraceBanner from "./LicenseGraceBanner";
+import { parseLicenseStatusResponse, isExpiringSoon, isFullyExpired, isGraceMode } from "../utils/licenseStatus";
+import { checkLoginAvailability } from "../services/authService";
+import { getLicenseStatus } from "../services/licenseService";
 
 // Password input with leading lock icon + eye toggle
 function PasswordInput({ value, onChange, ...rest }) {
@@ -89,8 +93,6 @@ const ComplexCaptcha = ({ onChange }) => {
 };
 
 export default function Login({ onLogin }) {
-  const signature = "$Panja";
-  if (signature !== "$Panja") throw new Error("Signature mismatch – code integrity compromised.");
   const navigate = useNavigate();
   const { connectWebSocket } = useWebSocket();
   const { appName } = useAppBranding();
@@ -121,7 +123,7 @@ export default function Login({ onLogin }) {
     }, SESSION_TIMEOUT_MS);
   }, [navigate, SESSION_TIMEOUT_MS]);
   useEffect(() => {
-    const hadSession = localStorage.getItem("isLoggedIn") === "true";
+    const hadSession = readSession().isLoggedIn;
     if (!hadSession) {
       clearAuthStorage();
     }
@@ -145,45 +147,36 @@ export default function Login({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const fetchLicenseStatus = async () => {
+    const loadLicenseStatus = async () => {
       try {
-        const response = await fetch(`${config.apiBaseUrl}/api/license-status`);
-        const result = await response.json();
+        const result = await getLicenseStatus();
         if (result.success) {
-          setLicenseStatus({
-            isExpired: result.isExpired,
-            daysUntilExpiration: result.daysUntilExpiration,
-            endDate: result.endDate,
-          });
+          setLicenseStatus(parseLicenseStatusResponse(result));
         } else {
-          setLicenseStatus({ isExpired: true, daysUntilExpiration: 0 });
+          setLicenseStatus({ isExpired: true, daysUntilExpiration: 0, licenseState: "expired", graceRemaining: 0 });
         }
-      } catch (err) {
-        setLicenseStatus({ isExpired: true, daysUntilExpiration: 0 });
+      } catch {
+        setLicenseStatus({ isExpired: true, daysUntilExpiration: 0, licenseState: "expired", graceRemaining: 0 });
       }
     };
-    fetchLicenseStatus();
+    loadLicenseStatus();
   }, []);
 
   const logAttempt = useCallback((msg) => {
     const ts = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-    console.log(`[${ts}] Author: $Panja – ${msg}`);
+    console.log(`[${ts}] ${msg}`);
   }, []);
 
-  const checkLoginAvailability = async () => {
+  const checkLoginAvailabilityHandler = async () => {
     try {
-      const response = await fetch(`${config.apiBaseUrl}/api/check-login-availability`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const result = await response.json();
+      const result = await checkLoginAvailability();
       if (!result.success) {
         setError(result.message);
         logAttempt(`Login blocked: ${result.message}`);
         return false;
       }
       return true;
-    } catch (err) {
+    } catch {
       setError("Failed to check login availability. Please try again.");
       logAttempt("Failed to check login availability");
       return false;
@@ -196,7 +189,7 @@ export default function Login({ onLogin }) {
     setIsLoading(true);
 
     // Check login availability first
-    const isLoginAllowed = await checkLoginAvailability();
+    const isLoginAllowed = await checkLoginAvailabilityHandler();
     if (!isLoginAllowed) {
       setIsLoading(false);
       return;
@@ -242,22 +235,21 @@ export default function Login({ onLogin }) {
     try {
       logAttempt("Login attempt initiated");
       const res = await onLogin(userId, password, questionType, questionAnswer);
-      const { username, userType, logId, token } = res;
+      const { username, userType, logId, token, userId: sessionUserId } = res;
       if (!username || !userType || !logId || !token) throw new Error("Incomplete login response – missing fields");
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userId", userId);
-      localStorage.setItem("logId", String(logId));
-      localStorage.setItem("token", token);
+      const resolvedUserId = sessionUserId || userId;
 
       try {
-        await connectWebSocket(userId, userType, String(logId));
+        await connectWebSocket(resolvedUserId, username, userType, String(logId));
         console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [Login] WebSocket connected`);
       } catch (wsError) {
         console.error(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [Login] WebSocket connection failed:`, wsError.message);
       }
       logAttempt("Login successful");
       setError("");
-      navigate("/");
+      // AuthContext.login() already navigates to "/" (replace) once state is
+      // committed — a second navigate here raced it and could land on a
+      // dashboard whose fetches ran before auth was ready.
     } catch (err) {
       setError(err.message || "Failed to connect to the server");
       logAttempt(`Failed: ${err.message || "Server error"}`);
@@ -273,10 +265,11 @@ export default function Login({ onLogin }) {
       footer={footerText}
       showTopBar={false}
     >
-      {licenseStatus &&
-        (licenseStatus.isExpired || licenseStatus.daysUntilExpiration <= 7) && (
+      <LicenseGraceBanner licenseStatus={licenseStatus} variant="inline" />
+      {licenseStatus && !isGraceMode(licenseStatus) &&
+        (isFullyExpired(licenseStatus) || isExpiringSoon(licenseStatus)) && (
           <div className="license-warning-banner" role="alert">
-            {licenseStatus.isExpired
+            {isFullyExpired(licenseStatus)
               ? "License expired — contact your administrator."
               : `License expires in ${licenseStatus.daysUntilExpiration} day(s).`}
           </div>

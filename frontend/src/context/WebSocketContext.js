@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
 import config from "../utils/envConfig";
+import { getAuthToken } from "../utils/authSession";
 
 const WebSocketContext = createContext(null);
 
@@ -10,6 +11,7 @@ export const WebSocketProvider = ({ children }) => {
   const [supervisors, setSupervisors] = useState([]);
   const [username, setUsername] = useState("");
   const [userType, setUserType] = useState("");
+  const [licenseEvent, setLicenseEvent] = useState(null);
 
   const connectWebSocket = (userId, username, userType, logId) => {
     if (ws && isConnected) {
@@ -27,8 +29,7 @@ export const WebSocketProvider = ({ children }) => {
     websocket.onopen = () => {
       console.log(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [WS] WebSocket connection established`);
       setIsConnected(true);
-      const sessionToken =
-        localStorage.getItem("token") || localStorage.getItem("sessionToken") || "";
+      const sessionToken = getAuthToken();
       const registerMessage = {
         type: "register",
         userId,
@@ -62,6 +63,9 @@ export const WebSocketProvider = ({ children }) => {
               logId: message.logId,
             },
           ]);
+        } else if (message.type === "license") {
+          setLicenseEvent(message);
+          window.dispatchEvent(new CustomEvent("license-state-changed", { detail: message }));
         } else if (message.type === "error") {
           console.error(`[${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] [WS] Server error:`, message.message);
         }
@@ -116,6 +120,7 @@ export const WebSocketProvider = ({ children }) => {
         chatMessages,
         supervisors,
         isConnected,
+        licenseEvent,
       }}
     >
       {children}

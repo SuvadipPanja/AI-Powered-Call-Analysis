@@ -35,6 +35,8 @@ import AuthenticatedLayout from "./components/layout/AuthenticatedLayout";
 import { SidebarStateProvider } from "./context/SidebarStateContext";
 import { fetchPublicBranding } from "./utils/appBranding";
 import BrandedLoader from "./components/ui/BrandedLoader";
+import LicenseGraceBanner from "./components/LicenseGraceBanner";
+import { isExpiringSoon, isFullyExpired, isGraceMode } from "./utils/licenseStatus";
 
 installAuthInterceptors();
 
@@ -47,6 +49,7 @@ const AppContent = () => {
     licenseValid,
     licenseStatus,
     showWarningBanner,
+    graceBlockNotice,
     isInitializing,
     isValidatingSession,
     login,
@@ -66,7 +69,7 @@ const AppContent = () => {
     return <BrandedLoader message="Initializing application…" />;
   }
 
-  if (licenseValid === false || (licenseStatus && licenseStatus.isExpired)) {
+  if (licenseValid === false || (licenseStatus && isFullyExpired(licenseStatus))) {
     return (
       <Routes>
         <Route path="/login" element={<Login onLogin={login} />} />
@@ -83,24 +86,37 @@ const AppContent = () => {
     );
   }
 
+  const graceActive = isGraceMode(licenseStatus);
+  const bannerOffset = graceActive ? "48px" : "0px";
+
   return (
     <>
-      {licenseStatus && showWarningBanner && licenseStatus.daysUntilExpiration <= 7 && !licenseStatus.isExpired && (
+      <LicenseGraceBanner licenseStatus={licenseStatus} variant="app" />
+      {licenseStatus && showWarningBanner && isExpiringSoon(licenseStatus) && (
         <div
-          className="license-warning-banner"
+          className="license-warning-banner license-warning-banner--app"
           role="alert"
           aria-live="polite"
-          style={{
-          padding: "10px",
-          textAlign: "center",
-          fontSize: "0.9rem",
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 1000,
-        }}>
+          style={{ top: bannerOffset }}
+        >
           License will expire in {licenseStatus.daysUntilExpiration} day(s) on {new Date(licenseStatus.endDate).toLocaleDateString()}! Please contact an administrator to renew.
+        </div>
+      )}
+      {graceBlockNotice && (
+        <div
+          className="license-grace-toast"
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1200,
+            maxWidth: "min(520px, 92vw)",
+          }}
+        >
+          {graceBlockNotice}
         </div>
       )}
       {isLoggedIn && !isTempLogin && <ChatPopup username={username} />}
@@ -117,6 +133,7 @@ const AppContent = () => {
               <>
                 <Route path="/" element={<AgentDashboard />} />
                 <Route path="/agent-settings" element={<AgentSettings />} />
+                <Route path="/my-calls/:filename" element={<ResultPage />} />
                 <Route path="*" element={<AgentDashboard />} />
               </>
             ) : (

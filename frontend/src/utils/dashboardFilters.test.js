@@ -64,6 +64,13 @@ describe('dashboardFilters', () => {
     expect(isDefaultDashboardFilters({ ...DEFAULT_DASHBOARD_FILTERS, agent: 'X' })).toBe(false);
   });
 
+  it('defaults dashboard filters to last one month', () => {
+    expect(DEFAULT_DASHBOARD_FILTERS.dateRange).toBe('1 Month');
+    const { fromDate, toDate } = resolveDashboardDateRange(DEFAULT_DASHBOARD_FILTERS);
+    expect(fromDate).toBe('2026-05-15');
+    expect(toDate).toBe('2026-06-15');
+  });
+
   it('validateFilterDateRange rejects incomplete custom range', () => {
     const result = validateFilterDateRange({
       dateRange: 'Custom',
@@ -82,5 +89,15 @@ describe('dashboardFilters', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/after From Date/i);
+  });
+
+  it('validateFilterDateRange allows All Time even when maxRangeDays is set', () => {
+    const result = validateFilterDateRange({
+      dateRange: 'All Time',
+      maxRangeDays: 365,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.fromDate).toBe('2020-01-01');
+    expect(result.toDate).toBe('2026-06-15');
   });
 });

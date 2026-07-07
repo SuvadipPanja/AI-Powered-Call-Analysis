@@ -7,7 +7,15 @@ import {
   LuFolderOpen, LuPlay, LuSave, LuRefreshCw, LuClock, LuTriangleAlert,
   LuCheck, LuUpload, LuSquare, LuPause,
 } from 'react-icons/lu';
-import config from '../../utils/envConfig';
+import {
+  getAutoUploadHistory,
+  getAutoUploadSettings,
+  getAutoUploadStatus,
+  resumeAutoUpload,
+  runAutoUpload,
+  saveAutoUploadSettings,
+  stopAutoUpload,
+} from '../../services/uploadService';
 import { Button, Input, Label, Badge, Spinner, EmptyState } from '../ui';
 
 const CRON_PRESETS = [
@@ -28,31 +36,6 @@ const DEFAULT_SETTINGS = {
   enabled: false,
   cronSchedule: '0 1 * * *',
 };
-
-function friendlyHttpError(text, status, fallbackMessage) {
-  const trimmed = (text || '').trim();
-  if (!trimmed) return `${fallbackMessage} (HTTP ${status})`;
-  if (/^Cannot (GET|POST|PUT|DELETE|PATCH) /i.test(trimmed)) {
-    return `${fallbackMessage}: API endpoint not found (HTTP ${status}). Restart the backend server if Stop/Resume was recently added.`;
-  }
-  if (/^<!DOCTYPE/i.test(trimmed) || /^<html/i.test(trimmed)) {
-    return `${fallbackMessage} (HTTP ${status}). The server returned an HTML error page instead of JSON.`;
-  }
-  return trimmed.length > 180 ? `${fallbackMessage} (HTTP ${status})` : trimmed;
-}
-
-async function readApiResponse(res, fallbackMessage) {
-  const text = await res.text();
-  if (!text) {
-    if (!res.ok) throw new Error(`${fallbackMessage} (HTTP ${res.status})`);
-    return { data: {}, res };
-  }
-  try {
-    return { data: JSON.parse(text), res };
-  } catch {
-    throw new Error(friendlyHttpError(text, res.status, fallbackMessage));
-  }
-}
 
 function isTerminalRunStatus(status) {
   return ['completed', 'completed_with_errors', 'failed', 'stopped', 'idle'].includes(status);
@@ -105,8 +88,7 @@ export default function AdminAutoUploadPanel({ onNotice }) {
 
   const fetchRunStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/status`);
-      const data = await res.json();
+      const data = await getAutoUploadStatus();
       if (data.success) {
         setLiveStatus(data.status || null);
         setStoppedRuns(data.stoppedRuns || data.status?.stoppedRuns || []);
@@ -124,8 +106,7 @@ export default function AdminAutoUploadPanel({ onNotice }) {
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/settings`);
-      const data = await res.json();
+      const data = await getAutoUploadSettings();
       if (data.success) {
         const s = { ...DEFAULT_SETTINGS, ...data.settings };
         setSettings(s);
@@ -146,8 +127,7 @@ export default function AdminAutoUploadPanel({ onNotice }) {
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/history`);
-      const data = await res.json();
+      const data = await getAutoUploadHistory();
       if (data.success) {
         setHistory(data.runs || []);
         setLastRun((data.runs || [])[0] || null);
@@ -203,12 +183,7 @@ export default function AdminAutoUploadPanel({ onNotice }) {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-      const data = await res.json();
+      const data = await saveAutoUploadSettings(settings);
       if (data.success) {
         const s = { ...DEFAULT_SETTINGS, ...data.settings };
         setSettings(s);
@@ -260,17 +235,13 @@ export default function AdminAutoUploadPanel({ onNotice }) {
     setRunning(true);
     setRunInProgress(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const { data } = await readApiResponse(res, 'Run failed');
-      if (!res.ok || !data.success) {
-        onNotice?.(data.message || `Run failed (HTTP ${res.status})`, 'error');
+      const data = await runAutoUpload();
+      if (!data.success) {
+        onNotice?.(data.message || `Run failed (HTTP ${data._httpStatus})`, 'error');
         setRunInProgress(false);
         return;
       }
-      if (res.status === 202 || !data.result) {
+      if (data._httpStatus === 202 || !data.result) {
         onNotice?.(data.message || 'Auto-upload run started');
         return;
       }
@@ -299,14 +270,10 @@ export default function AdminAutoUploadPanel({ onNotice }) {
     }
     setStopping(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const { data } = await readApiResponse(res, 'Failed to stop run');
-      if (!res.ok || !data.success) {
-        onNotice?.(data.message || `Could not stop run (HTTP ${res.status})`, 'error');
-        if (res.status === 409) setRunInProgress(false);
+      const data = await stopAutoUpload();
+      if (!data.success) {
+        onNotice?.(data.message || `Could not stop run (HTTP ${data._httpStatus})`, 'error');
+        if (data._httpStatus === 409) setRunInProgress(false);
         return;
       }
       onNotice?.(data.message || 'Stop requested — waiting for run to halt…');
@@ -323,18 +290,13 @@ export default function AdminAutoUploadPanel({ onNotice }) {
     setResuming(true);
     setRunInProgress(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/auto-upload/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetFolder: folder }),
-      });
-      const { data } = await readApiResponse(res, 'Resume failed');
-      if (!res.ok || !data.success) {
-        onNotice?.(data.message || `Resume failed (HTTP ${res.status})`, 'error');
+      const data = await resumeAutoUpload(folder);
+      if (!data.success) {
+        onNotice?.(data.message || `Resume failed (HTTP ${data._httpStatus})`, 'error');
         setRunInProgress(false);
         return;
       }
-      if (res.status === 202 || !data.result) {
+      if (data._httpStatus === 202 || !data.result) {
         onNotice?.(data.message || `Resume started for folder ${folder}`);
         return;
       }

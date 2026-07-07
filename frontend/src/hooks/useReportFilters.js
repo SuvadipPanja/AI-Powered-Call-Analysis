@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { apiGet } from "../utils/apiHelpers";
+import { listTeamLeaders, listAgentsDropdown } from "../services/dropdownsService";
 import useLocations from "./useLocations";
 import {
   DEFAULT_DASHBOARD_FILTERS,
   buildResolvedFilters,
+  buildDashboardQueryParams,
   isDefaultDashboardFilters,
   validateFilterDateRange,
 } from "../utils/dashboardFilters";
@@ -16,14 +17,14 @@ import {
  * - auto — debounced commit when UI filters change (reports page)
  */
 export default function useReportFilters({
-  defaultDateRange = "1 Month",
+  defaultDateRange = DEFAULT_DASHBOARD_FILTERS.dateRange,
   mode = "manual",
   maxRangeDays = null,
   autoDebounceMs = 80,
   autoDebounceCustomMs = 350,
   onAutoApply,
 } = {}) {
-  const { locations: locationListRaw } = useLocations();
+  const { locations: locationListRaw, loading: locationsLoading } = useLocations();
   const locationList = useMemo(
     () => locationListRaw.filter((loc) => loc && loc !== "All"),
     [locationListRaw],
@@ -82,9 +83,10 @@ export default function useReportFilters({
   const fetchTlList = useCallback(async (location) => {
     setTlLoading(true);
     try {
-      const params = location && location !== "All" ? { location } : undefined;
-      const data = await apiGet("/api/team-leaders", { params, label: "team-leaders" });
-      setTlList(data.success ? (data.teamLeaders || []) : []);
+      const teamLeaders = await listTeamLeaders(
+        location && location !== "All" ? { location } : {},
+      );
+      setTlList(teamLeaders);
     } catch (err) {
       console.error("[useReportFilters] team leaders:", err);
       setTlList([]);
@@ -96,10 +98,7 @@ export default function useReportFilters({
   const fetchAgentList = useCallback(async () => {
     setAgentsLoading(true);
     try {
-      const data = await apiGet("/api/agents", { label: "agents" });
-      const names = Array.isArray(data)
-        ? [...new Set(data.map((a) => a.agent_name || a.Agent_Name).filter(Boolean))].sort()
-        : [];
+      const names = await listAgentsDropdown();
       setAgentList(names);
     } catch (err) {
       console.error("[useReportFilters] agents:", err);
@@ -222,7 +221,7 @@ export default function useReportFilters({
     onAutoApply,
   ]);
 
-  const kuberHeroProps = {
+  const kuberHeroProps = useMemo(() => ({
     dateRange,
     customFromDate,
     customToDate,
@@ -235,6 +234,7 @@ export default function useReportFilters({
     selectedAgent,
     tlLoading,
     agentsLoading,
+    locationsLoading,
     onLocationChange: setSelectedLocation,
     onTlChange: setSelectedTL,
     onCallTypeChange: setSelectedCallType,
@@ -242,10 +242,30 @@ export default function useReportFilters({
     onDateRangeChange: setDateRange,
     onCustomFromChange: setCustomFromDate,
     onCustomToChange: setCustomToDate,
-  };
+  }), [
+    dateRange,
+    customFromDate,
+    customToDate,
+    locationList,
+    tlList,
+    agentList,
+    selectedLocation,
+    selectedTL,
+    selectedCallType,
+    selectedAgent,
+    tlLoading,
+    agentsLoading,
+    locationsLoading,
+  ]);
+
+  const toQueryString = useCallback(
+    (filters) => buildDashboardQueryParams(filters ?? buildDashboardPayload()),
+    [buildDashboardPayload],
+  );
 
   return {
     locationList,
+    locationsLoading,
     tlList,
     agentList,
     tlLoading,
@@ -275,5 +295,6 @@ export default function useReportFilters({
     applyFilters,
     resetFilters,
     kuberHeroProps,
+    toQueryString,
   };
 }

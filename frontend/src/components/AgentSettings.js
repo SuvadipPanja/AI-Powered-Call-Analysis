@@ -3,7 +3,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
   LuUser,
@@ -20,8 +19,13 @@ import {
   LuEyeOff,
   LuIdCard,
 } from "../icons";
-import config from "../utils/envConfig";
 import { useAuth } from "../context/AuthContext";
+import {
+  changeOwnPassword,
+  getUser,
+  updateUserSecurityQuestion,
+  uploadProfilePicture,
+} from "../services/usersService";
 import {
   Button,
   Input,
@@ -99,25 +103,22 @@ const AgentSettings = () => {
   }, []);
 
   const fetchUserData = useCallback(
-    (username) => {
+    async (username) => {
       setIsLoading(true);
-      axios
-        .get(`${config.apiBaseUrl}/api/user/${username}`)
-        .then((response) => {
-          if (response.data.success && response.data.user) {
-            const u = response.data.user;
-            setSecurityQuestion(u.SecurityQuestionType || "Not Set");
-          } else {
-            showMessage("Error fetching user data.", "error");
-          }
-        })
-        .catch((error) => {
-          console.error("Error fetching user data:", error);
+      try {
+        const response = await getUser(username);
+        if (response.success && response.user) {
+          const u = response.user;
+          setSecurityQuestion(u.SecurityQuestionType || "Not Set");
+        } else {
           showMessage("Error fetching user data.", "error");
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        showMessage("Error fetching user data.", "error");
+      } finally {
+        setIsLoading(false);
+      }
     },
     [showMessage]
   );
@@ -143,19 +144,18 @@ const AgentSettings = () => {
       return;
     }
 
-    axios
-      .put(`${config.apiBaseUrl}/api/user/${currentUser}/security-question`, {
-        question: newSecurityQuestion,
-        answer: newSecurityAnswer,
-      })
+    updateUserSecurityQuestion(currentUser, {
+      question: newSecurityQuestion,
+      answer: newSecurityAnswer,
+    })
       .then((response) => {
-        if (response.data.success) {
+        if (response.success) {
           setSecurityQuestion(newSecurityQuestion);
           showMessage("Security question updated successfully!", "success");
           setNewSecurityQuestion("");
           setNewSecurityAnswer("");
         } else {
-          showMessage(response.data.message || "Failed to update security question.", "error");
+          showMessage(response.message || "Failed to update security question.", "error");
         }
       })
       .catch(() => {
@@ -190,21 +190,20 @@ const AgentSettings = () => {
       return;
     }
 
-    axios
-      .put(`${config.apiBaseUrl}/api/user/${currentUser}/password`, { oldPassword, newPassword })
+    changeOwnPassword(currentUser, oldPassword, newPassword)
       .then((response) => {
-        if (response.data.success) {
+        if (response.success) {
           setOldPassword("");
           setNewPassword("");
           setConfirmPassword("");
           setPasswordHint("");
           showMessage("Password updated successfully!", "success");
         } else {
-          showMessage(response.data.message || "Failed to update password.", "error");
+          showMessage(response.message || "Failed to update password.", "error");
         }
       })
       .catch((err) => {
-        const msg = err.response?.data?.message || "Failed to update password.";
+        const msg = err.message || "Failed to update password.";
         showMessage(msg, "error");
       });
   };
@@ -245,12 +244,9 @@ const AgentSettings = () => {
     const formData = new FormData();
     formData.append("profilePic", selectedFile);
 
-    axios
-      .post(`${config.apiBaseUrl}/api/user/${currentUser}/profile-picture`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
+    uploadProfilePicture(currentUser, formData)
       .then((response) => {
-        if (response.data.success) {
+        if (response.success) {
           showMessage("Profile picture updated!", "success");
           setSelectedFile(null);
           if (previewUrl) URL.revokeObjectURL(previewUrl);

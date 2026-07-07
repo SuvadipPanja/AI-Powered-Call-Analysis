@@ -6,7 +6,7 @@ import {
   LuClipboardCheck,
   LuClock,
   LuPercent,
-} from "react-icons/lu";
+} from "../../icons";
 import KpiStrip from "./KpiStrip";
 
 const DASHBOARD_KPI_CONFIG = [

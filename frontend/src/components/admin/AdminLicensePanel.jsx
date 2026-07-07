@@ -11,8 +11,12 @@ import {
   LuFileKey, LuClipboardCheck, LuEye, LuTimer,
   LuUsers, LuCpu, LuLayers, LuServer, LuBadgeCheck, LuSparkles,
 } from 'react-icons/lu';
-import config from '../../utils/envConfig';
-import apiClient from '../../utils/apiClient';
+import {
+  getLicenseDetails,
+  getLicenseHistory,
+  getLicenseStatus,
+  uploadLicense,
+} from '../../services/licenseService';
 import { parseLicenseStatusResponse } from '../../utils/licenseStatus';
 import { Button, Badge, Modal, Spinner, Label, Textarea } from '../ui';
 
@@ -96,8 +100,8 @@ export default function AdminLicensePanel({ username, onNotice }) {
       return;
     }
     try {
-      const res = await apiClient.post('/api/license-details', { username, licenseKey: activeKey });
-      if (res.data?.success) setActiveDetails(res.data.license);
+      const data = await getLicenseDetails(username, activeKey);
+      if (data.success) setActiveDetails(data.license);
     } catch {
       /* non-fatal — the hero/KPIs fall back to license-status data */
     }
@@ -107,31 +111,23 @@ export default function AdminLicensePanel({ username, onNotice }) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const [historyRes, statusRes] = await Promise.all([
-        apiClient.get(`/api/license-history?username=${encodeURIComponent(username || '')}`),
-        fetch(`${config.apiBaseUrl}/api/license-status`),
+      const [historyData, statusData] = await Promise.all([
+        getLicenseHistory(username),
+        getLicenseStatus(),
       ]);
-
-      const historyData = historyRes.data;
-      const statusData = await statusRes.json();
 
       if (historyData.success) {
         const licenses = historyData.licenses || [];
         setLicenseHistory(licenses);
         const active = licenses.find((l) => l.IsActive);
         fetchActiveDetails(active?.LicenseKey);
-      } else if (historyRes.status === 403) {
+      } else {
         setLicenseHistory([]);
         setError(historyData.message || 'Access denied.');
-      } else if (historyRes.status === 401) {
-        setLicenseHistory([]);
-        setError('Session expired. Please log in again.');
       }
 
-      if (statusData.success) {
+      if (statusData?.success) {
         setLicenseStatus(parseLicenseStatusResponse(statusData));
-      } else if (statusRes.status === 404) {
-        setLicenseStatus(null);
       } else {
         setLicenseStatus({ isExpired: true, daysUntilExpiration: 0, licenseState: 'expired', graceRemaining: 0 });
       }
@@ -163,11 +159,7 @@ export default function AdminLicensePanel({ username, onNotice }) {
     }
     setUploading(true);
     try {
-      const res = await apiClient.post('/api/upload-license', {
-        username,
-        licenseKey: licenseKey.trim(),
-      });
-      const data = res.data;
+      const data = await uploadLicense(username, licenseKey.trim());
       if (data.success) {
         setLicenseKey('');
         notify(data.message || 'License activated successfully');
@@ -184,11 +176,7 @@ export default function AdminLicensePanel({ username, onNotice }) {
 
   const handleViewDetails = async (key) => {
     try {
-      const res = await apiClient.post('/api/license-details', {
-        username,
-        licenseKey: key,
-      });
-      const data = res.data;
+      const data = await getLicenseDetails(username, key);
       if (data.success) setSelectedLicense(data.license);
       else notify(data.message || 'Could not load details', 'error');
     } catch {
@@ -503,8 +491,8 @@ export default function AdminLicensePanel({ username, onNotice }) {
             <p>Upload a license key above to get started.</p>
           </div>
         ) : (
-          <div className="mgmt-table-wrap">
-            <table className="ui-table admin-license__table">
+          <div className="mgmt-table-wrap ui-table-wrap--stack">
+            <table className="ui-table ui-table--stack-sm admin-license__table">
               <thead>
                 <tr>
                   <th>License Key</th>

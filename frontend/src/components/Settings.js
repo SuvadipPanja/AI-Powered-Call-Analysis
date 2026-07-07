@@ -8,7 +8,6 @@ import React, {
   useCallback,
   useRef
 } from "react";
-import axios from "axios";
 import {
   LuMail,
   LuKey,
@@ -22,7 +21,13 @@ import {
   LuIdCard,
   LuUserPlus,
 } from "../icons";
-import config from "../utils/envConfig";
+import {
+  changeOwnPassword,
+  getUser,
+  updateUserEmail,
+  updateUserSecurityQuestion,
+  uploadProfilePicture,
+} from "../services/usersService";
 import { useAuth } from "../context/AuthContext";
 import { Button, Input, Select, Label, Badge, Spinner, UserAvatar } from './ui';
 import PageSection from './ui/PageSection';
@@ -42,7 +47,7 @@ function MetaItem({ icon, label, value }) {
 }
 
 const Settings = () => {
-  const { username: currentUser } = useAuth();
+  const { username: currentUser, patchSession } = useAuth();
   const [email, setEmail] = useState("");
   const [accountType, setAccountType] = useState("");
   const [securityQuestion, setSecurityQuestion] = useState("");
@@ -84,34 +89,31 @@ const Settings = () => {
    * Compliance: IS Policy (Security: Secure API calls), ISO 27001.
    ************************************************/
   const fetchUserData = useCallback(
-    (username) => {
+    async (username) => {
       setIsLoading(true);
-      axios
-        .get(`${config.apiBaseUrl}/api/user/${username}`)
-        .then((response) => {
-          if (response.data.success && response.data.user) {
-            const u = response.data.user;
-            setEmail(u.Email || "Not Provided");
-            setAccountType(u.AccountType || "Standard");
-            setSecurityQuestion(u.SecurityQuestionType || "Not Set");
-            setCreatedBy(u.CreatedBy || "N/A");
-            setCreationDate(u.CreationDate || null);
-            setLastLoginTime(u.LastLoginTime || null);
-            localStorage.setItem("email", u.Email);
-            console.log("Fetched AccountType from API:", u.AccountType);
-          } else {
-            showMessage("Error fetching user data.", "error");
-          }
-        })
-        .catch((error) => {
-          console.error("Error fetching user data:", error);
+      try {
+        const response = await getUser(username);
+        if (response.success && response.user) {
+          const u = response.user;
+          setEmail(u.Email || "Not Provided");
+          setAccountType(u.AccountType || "Standard");
+          setSecurityQuestion(u.SecurityQuestionType || "Not Set");
+          setCreatedBy(u.CreatedBy || "N/A");
+          setCreationDate(u.CreationDate || null);
+          setLastLoginTime(u.LastLoginTime || null);
+          patchSession({ email: u.Email });
+          console.log("Fetched AccountType from API:", u.AccountType);
+        } else {
           showMessage("Error fetching user data.", "error");
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        showMessage("Error fetching user data.", "error");
+      } finally {
+        setIsLoading(false);
+      }
     },
-    [showMessage]
+    [showMessage, patchSession]
   );
 
   /************************************************
@@ -139,12 +141,11 @@ const Settings = () => {
       return;
     }
 
-    axios
-      .put(`${config.apiBaseUrl}/api/user/${currentUser}/email`, { email: newEmail })
+    updateUserEmail(currentUser, newEmail)
       .then((response) => {
-        if (response.data.success) {
+        if (response.success) {
           setEmail(newEmail);
-          localStorage.setItem("email", newEmail);
+          patchSession({ email: newEmail });
           setNewEmail("");
           showMessage("Email updated successfully!", "success");
         } else {
@@ -189,17 +190,16 @@ const Settings = () => {
       return;
     }
 
-    axios
-      .put(`${config.apiBaseUrl}/api/user/${currentUser}/password`, { oldPassword, newPassword })
+    changeOwnPassword(currentUser, oldPassword, newPassword)
       .then((response) => {
-        if (response.data.success) {
+        if (response.success) {
           setOldPassword("");
           setNewPassword("");
           setConfirmPassword("");
           setPasswordHint("");
           showMessage("Password updated successfully!", "success");
         } else {
-          showMessage(response.data.message || "Failed to update password.", "error");
+          showMessage(response.message || "Failed to update password.", "error");
         }
       })
       .catch(() => {
@@ -218,19 +218,18 @@ const Settings = () => {
       return;
     }
 
-    axios
-      .put(`${config.apiBaseUrl}/api/user/${currentUser}/security-question`, {
-        question: newSecurityQuestion,
-        answer: newSecurityAnswer,
-      })
+    updateUserSecurityQuestion(currentUser, {
+      question: newSecurityQuestion,
+      answer: newSecurityAnswer,
+    })
       .then((response) => {
-        if (response.data.success) {
+        if (response.success) {
           setSecurityQuestion(newSecurityQuestion);
           showMessage("Security question updated successfully!", "success");
           setNewSecurityQuestion("");
           setNewSecurityAnswer("");
         } else {
-          showMessage(response.data.message || "Failed to update security question.", "error");
+          showMessage(response.message || "Failed to update security question.", "error");
         }
       })
       .catch(() => {
@@ -278,16 +277,12 @@ const Settings = () => {
     const formData = new FormData();
     formData.append("profilePic", selectedFile);
 
-    axios
-      // Let the browser/axios set the multipart boundary automatically.
-      .post(`${config.apiBaseUrl}/api/user/${currentUser}/profile-picture`, formData)
+    uploadProfilePicture(currentUser, formData)
       .then((response) => {
-        if (response.data && response.data.success) {
+        if (response && response.success) {
           showMessage("Profile picture updated!", "success");
           setSelectedFile(null);
           if (fileInputRef.current) fileInputRef.current.value = "";
-          // Notify the navbar and every other view (incl. this page's own
-          // useProfilePicture hook) to re-fetch the freshly uploaded image.
           window.dispatchEvent(new CustomEvent("profile-pic-updated", { detail: { username: currentUser } }));
         } else {
           showMessage("Failed to upload profile picture.", "error");

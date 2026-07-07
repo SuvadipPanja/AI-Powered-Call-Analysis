@@ -9,9 +9,18 @@ import {
   LuPencil, LuX, LuCheck, LuRefreshCw, LuShieldCheck,
   LuClock, LuTriangleAlert, LuUpload, LuImage,
 } from 'react-icons/lu';
-import config from '../utils/envConfig';
-import apiClient from '../utils/apiClient';
-import { notifyBrandingUpdated, fetchPublicBranding, getCachedBranding } from '../utils/appBranding';
+import {
+  createAdminLocation,
+  deleteAdminLocation,
+  getAdminSettings,
+  getBackupHistory,
+  listAdminLocations,
+  saveAdminSettings,
+  triggerBackup as runBackupApi,
+  updateAdminLocation,
+  uploadLogo as postLogoApi,
+} from '../services/adminService';
+import { fetchPublicBranding, getCachedBranding, notifyBrandingUpdated } from '../utils/appBranding';
 import './management-pages.css';
 import './admin-settings-page.css';
 import AdminLicensePanel from './admin/AdminLicensePanel';
@@ -87,7 +96,7 @@ export default function AdminSettings({ licenseOnly = false }) {
   const [deleteModal, setDeleteModal] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  const [settings, setSettings] = useState({ app_name: '', backup_path: '' });
+  const [settings, setSettings] = useState({ app_name: '', backup_path: '', session_timeout_hours: '2' });
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -120,7 +129,7 @@ export default function AdminSettings({ licenseOnly = false }) {
   const fetchLocations = useCallback(async () => {
     setLocationsLoading(true);
     try {
-      const { data } = await apiClient.get('/api/admin/locations');
+      const data = await listAdminLocations();
       if (data.success) {
         setLocations((data.locations || []).map(normalizeLocation).filter(Boolean));
       } else {
@@ -136,13 +145,12 @@ export default function AdminSettings({ licenseOnly = false }) {
   const fetchSettings = useCallback(async () => {
     setSettingsLoading(true);
     try {
-      const [settingsRes, branding] = await Promise.all([
-        fetch(`${config.apiBaseUrl}/api/admin/settings`),
+      const [settingsData, branding] = await Promise.all([
+        getAdminSettings(),
         fetchPublicBranding(),
       ]);
-      const data = await settingsRes.json();
-      if (data.success) {
-        const s = { app_name: '', backup_path: '', ...data.settings };
+      if (settingsData.success) {
+        const s = { app_name: '', backup_path: '', session_timeout_hours: '2', ...settingsData.settings };
         setSettings(s);
         originalSettings.current = { ...s };
         setSettingsDirty(false);
@@ -158,8 +166,7 @@ export default function AdminSettings({ licenseOnly = false }) {
   const fetchBackupHistory = useCallback(async () => {
     setBackupHistoryLoading(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/backup-history`);
-      const data = await res.json();
+      const data = await getBackupHistory();
       if (data.success) setBackupHistory(data.backups || []);
     } catch {
       setBackupHistory([]);
@@ -184,7 +191,8 @@ export default function AdminSettings({ licenseOnly = false }) {
       const next = { ...prev, [key]: value };
       setSettingsDirty(
         next.app_name !== originalSettings.current.app_name
-        || next.backup_path !== originalSettings.current.backup_path,
+        || next.backup_path !== originalSettings.current.backup_path
+        || String(next.session_timeout_hours) !== String(originalSettings.current.session_timeout_hours),
       );
       return next;
     });
@@ -198,7 +206,7 @@ export default function AdminSettings({ licenseOnly = false }) {
     }
     setAddingLocation(true);
     try {
-      const { data } = await apiClient.post('/api/admin/locations', { locationName: name });
+      const data = await createAdminLocation(name);
       if (data.success) {
         setNewLocation('');
         fetchLocations();
@@ -221,7 +229,7 @@ export default function AdminSettings({ licenseOnly = false }) {
       return;
     }
     try {
-      const { data } = await apiClient.put(`/api/admin/locations/${loc.LocationID}`, { locationName: name });
+      const data = await updateAdminLocation(loc.LocationID, { locationName: name });
       if (data.success) {
         fetchLocations();
         showNotice('Location renamed');
@@ -238,7 +246,7 @@ export default function AdminSettings({ licenseOnly = false }) {
 
   const toggleLocationActive = async (loc) => {
     try {
-      const { data } = await apiClient.put(`/api/admin/locations/${loc.LocationID}`, { isActive: !isLocationActive(loc) });
+      const data = await updateAdminLocation(loc.LocationID, { isActive: !isLocationActive(loc) });
       if (data.success) {
         fetchLocations();
         showNotice(`Location ${isLocationActive(loc) ? 'disabled' : 'enabled'}`);
@@ -254,7 +262,7 @@ export default function AdminSettings({ licenseOnly = false }) {
     if (!deleteModal) return;
     setDeletingId(deleteModal.LocationID);
     try {
-      const { data } = await apiClient.delete(`/api/admin/locations/${deleteModal.LocationID}`);
+      const data = await deleteAdminLocation(deleteModal.LocationID);
       if (data.success) {
         fetchLocations();
         showNotice('Location deleted');
@@ -275,13 +283,8 @@ export default function AdminSettings({ licenseOnly = false }) {
       const payload = keys
         ? Object.fromEntries(keys.map((k) => [k, settings[k] ?? '']))
         : settings;
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: payload }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await saveAdminSettings(payload);
+      if (data.success) {
         originalSettings.current = { ...settings };
         setSettingsDirty(false);
         if (payload.app_name) {
@@ -304,12 +307,8 @@ export default function AdminSettings({ licenseOnly = false }) {
     try {
       const formData = new FormData();
       formData.append('logo', file);
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/logo`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await postLogoApi(formData);
+      if (data.success) {
         setLogoPreview(data.logoUrl);
         const currentName = settings.app_name || getCachedBranding()?.appName || 'Call Analysis';
         notifyBrandingUpdated({ appName: currentName, logoUrl: data.logoUrl });
@@ -328,11 +327,7 @@ export default function AdminSettings({ licenseOnly = false }) {
   const triggerBackup = async () => {
     setBackupRunning(true);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/admin/backup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await res.json();
+      const data = await runBackupApi();
       if (data.success) {
         showNotice(data.message || 'Backup completed');
         fetchBackupHistory();
@@ -570,6 +565,24 @@ export default function AdminSettings({ licenseOnly = false }) {
                 </div>
               </div>
 
+              <div className="mgmt-field--full">
+                <Label>Session timeout (hours)</Label>
+                <Input
+                  type="number"
+                  min="0.25"
+                  max="24"
+                  step="0.25"
+                  value={settings.session_timeout_hours ?? '2'}
+                  onChange={(e) => updateSetting('session_timeout_hours', e.target.value)}
+                  placeholder="2"
+                  style={{ maxWidth: '160px' }}
+                />
+                <p className="admin-settings__field-hint">
+                  Users idle for longer than this are logged out automatically (0.25–24 hours, default 2).
+                  Applies to every role on their next request — no restart needed.
+                </p>
+              </div>
+
               <BrandingLoginPreview
                 appName={settings.app_name || getCachedBranding()?.appName}
                 logoUrl={logoPreview}
@@ -582,9 +595,9 @@ export default function AdminSettings({ licenseOnly = false }) {
                 <Button variant="secondary" onClick={() => { setSettings({ ...originalSettings.current }); setSettingsDirty(false); }} disabled={!settingsDirty || saving}>
                   <LuRefreshCw size={14} /> Reset
                 </Button>
-                <Button variant="primary" onClick={() => saveSettings(['app_name'])} disabled={saving || !settingsDirty}>
+                <Button variant="primary" onClick={() => saveSettings(['app_name', 'session_timeout_hours'])} disabled={saving || !settingsDirty}>
                   {saving ? <LuRefreshCw className="spin-icon" size={14} /> : <LuSave size={14} />}
-                  Save name
+                  Save changes
                 </Button>
               </div>
             </div>

@@ -1,4 +1,5 @@
-import { apiUrl, parseApiJson, parseReportResponse } from './apiHelpers';
+import { apiUrl } from './apiUrl';
+import { parseApiJson, parseReportResponse } from './apiHelpers';
 
 jest.mock('./envConfig', () => ({
   __esModule: true,

@@ -6,9 +6,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import config from '../utils/envConfig';
-import { Card, Button, Input, Select, Badge, Modal, Spinner } from './ui';
+import {
+  getAuditByFileName,
+  getTeamAuditList,
+  getTeamAuditSummary,
+} from '../services/auditService';
+import { listLocationsDropdown } from '../services/dropdownsService';
+import { exportTeamAudits } from '../services/uploadService';
+import { Card, Button, Input, Select, Badge, Modal, Spinner, EmptyState, PageError } from './ui';
 import {
   FaClipboardCheck, FaDownload, FaSearch, FaChartLine,
   FaEye, FaArrowUp, FaArrowDown, FaMinus,
@@ -24,6 +29,8 @@ export default function TeamAuditDashboard() {
   const { userType } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState(null);
+  const [auditsError, setAuditsError] = useState(null);
   const [summary, setSummary] = useState({});
   const [, setPerAgent] = useState([]);
   const [paramAverages, setParamAverages] = useState([]);
@@ -41,15 +48,19 @@ export default function TeamAuditDashboard() {
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
+    setSummaryError(null);
     try {
-      const resp = await axios.get(`${config.apiBaseUrl}/api/audits/team/summary`);
-      if (resp.data.success) {
-        setSummary(resp.data.summary || {});
-        setPerAgent(resp.data.perAgent || []);
-        setParamAverages(resp.data.parameterAverages || []);
+      const resp = await getTeamAuditSummary();
+      if (resp.success) {
+        setSummary(resp.summary || {});
+        setPerAgent(resp.perAgent || []);
+        setParamAverages(resp.parameterAverages || []);
+      } else {
+        setSummaryError(resp.message || 'Failed to load audit summary.');
       }
     } catch (err) {
       console.error('Failed to load audit summary', err);
+      setSummaryError(err.message || 'Failed to load audit summary.');
     } finally {
       setLoading(false);
     }
@@ -57,18 +68,24 @@ export default function TeamAuditDashboard() {
 
   const fetchAudits = useCallback(async () => {
     setAuditsLoading(true);
+    setAuditsError(null);
     try {
       const params = new URLSearchParams();
       if (filterAgent) params.set('agent', filterAgent);
       if (filterFrom) params.set('from', filterFrom);
       if (filterTo) params.set('to', filterTo);
       if (filterLocation) params.set('location', filterLocation);
-      const resp = await axios.get(`${config.apiBaseUrl}/api/audits/team/list?${params.toString()}`);
-      if (resp.data.success) {
-        setAudits(resp.data.audits || []);
+      const resp = await getTeamAuditList(params.toString());
+      if (resp.success) {
+        setAudits(resp.audits || []);
+      } else {
+        setAudits([]);
+        setAuditsError(resp.message || 'Failed to load audits.');
       }
     } catch (err) {
       console.error('Failed to load audits', err);
+      setAudits([]);
+      setAuditsError(err.message || 'Failed to load audits.');
     } finally {
       setAuditsLoading(false);
     }
@@ -76,8 +93,8 @@ export default function TeamAuditDashboard() {
 
   const fetchLocations = useCallback(async () => {
     try {
-      const resp = await axios.get(`${config.apiBaseUrl}/api/dropdown/locations`);
-      if (resp.data.success) setLocations(resp.data.locations || []);
+      const locations = await listLocationsDropdown();
+      setLocations(locations);
     } catch { /* ignore */ }
   }, []);
 
@@ -95,10 +112,8 @@ export default function TeamAuditDashboard() {
       if (filterAgent) params.set('agent', filterAgent);
       if (filterFrom) params.set('from', filterFrom);
       if (filterTo) params.set('to', filterTo);
-      const resp = await axios.get(`${config.apiBaseUrl}/api/audits/team/export?${params.toString()}`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([resp.data]));
+      const blob = await exportTeamAudits(params.toString());
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `audit_report_${new Date().toISOString().split('T')[0]}.csv`);
@@ -116,9 +131,9 @@ export default function TeamAuditDashboard() {
     setDetailLoading(true);
     setDetailAudit(null);
     try {
-      const resp = await axios.get(`${config.apiBaseUrl}/api/audits/${encodeURIComponent(audit.AudioFileName)}`);
-      if (resp.data.success && resp.data.audit) {
-        setDetailAudit(resp.data.audit);
+      const resp = await getAuditByFileName(audit.AudioFileName);
+      if (resp.success && resp.audit) {
+        setDetailAudit(resp.audit);
       } else {
         toast.warn('Audit details not found.');
       }
@@ -169,6 +184,8 @@ export default function TeamAuditDashboard() {
       {/* Summary Stats */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40 }}><Spinner /> Loading summary...</div>
+      ) : summaryError ? (
+        <PageError message={summaryError} onRetry={fetchSummary} retryLabel="Retry" />
       ) : (
         <div className="team-audit-dash__stats">
           <div className="team-audit-dash__stat-card">
@@ -284,6 +301,9 @@ export default function TeamAuditDashboard() {
       </div>
 
       {/* Audits Table */}
+      {auditsError && !auditsLoading && (
+        <PageError message={auditsError} onRetry={fetchAudits} retryLabel="Retry" />
+      )}
       <Card className="team-audit-dash__table-card">
         <div className="team-audit-dash__table-wrap ui-table-wrap ui-table-wrap--stack">
           <table className="ui-table ui-table--stack-sm">
@@ -308,8 +328,10 @@ export default function TeamAuditDashboard() {
                 </tr>
               ) : audits.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>
-                    No audits found matching your criteria.
+                  <td colSpan={8}>
+                    <EmptyState compact fill title="No audits found">
+                      No manual audits match your filters yet. Complete an audit from a call result page to see it here.
+                    </EmptyState>
                   </td>
                 </tr>
               ) : (

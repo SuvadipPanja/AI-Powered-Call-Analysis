@@ -1,5 +1,11 @@
 /* Upload — production polish with motion */
 
+/* ── Recent activity status icons ── */
+.status-icon { color: var(--text-muted); }
+.status-icon.success { color: var(--success); }
+.status-icon.fail { color: var(--danger); }
+.status-icon.in-progress { color: var(--accent); }
+
 @keyframes upload-panel-in {
   0% { opacity: 0; transform: translateY(30px) scale(0.98); filter: blur(8px); }
   100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
@@ -166,8 +172,54 @@
 
 .recent-activity-panel__card .ui-table th:nth-child(5),
 .recent-activity-panel__card .ui-table td:nth-child(5) {
-  width: 10%;
+  width: 12%;
+  min-width: 5.75rem;
   text-align: right;
+  white-space: nowrap;
+}
+
+.recent-activity-panel__view-btn {
+  min-width: 4.75rem;
+  padding-inline: 0.85rem !important;
+  border-radius: var(--radius-md) !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 2rem;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  letter-spacing: normal;
+  color: var(--on-accent) !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.recent-activity-panel__action-head {
+  width: 14%;
+  min-width: 5.75rem;
+  text-align: right;
+}
+
+.recent-activity-panel__card .ui-table td.ui-table__cell--actions {
+  overflow: visible;
+}
+
+.recent-activity-panel__card .ui-table td.ui-table__cell--actions .ui-btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .recent-activity-panel__table-wrap.ui-table-wrap--stack .ui-table {
+    table-layout: auto;
+  }
+
+  .recent-activity-panel__table-wrap.ui-table-wrap--stack .ui-table th:nth-child(n),
+  .recent-activity-panel__table-wrap.ui-table-wrap--stack .ui-table td:nth-child(n) {
+    width: auto;
+    text-align: inherit;
+  }
 }
 
 .recent-activity-panel__audit-badge {
@@ -202,7 +254,7 @@
 
 .recent-activity-panel__toolbar-row {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-height: 34px;
@@ -332,7 +384,6 @@
 
 @media (max-width: 900px) {
   .recent-activity-panel__toolbar-row {
-    flex-wrap: wrap;
     row-gap: 6px;
   }
 

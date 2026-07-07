@@ -456,6 +456,18 @@
   text-align: right;
 }
 
+.rp-player__error {
+  flex: 1 1 auto;
+  font-size: 0.78rem;
+  color: var(--danger);
+  margin: 0;
+}
+
+.rp-player__play:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .rp-player__download {
   display: inline-flex;
   align-items: center;
@@ -1658,6 +1670,105 @@
   }
 }
 
+/* ─── Intelligence tab ─── */
+.rp-intel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rp-intel__card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.rp-intel__label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rp-intel__val {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rp-intel__val--positive { color: var(--success); }
+.rp-intel__val--negative { color: var(--danger); }
+.rp-intel__val--muted    { color: var(--text-muted); }
+
+.rp-intel__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin-top: var(--space-3);
+}
+
+.rp-intel__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 3px 6px 3px 0;
+}
+
+.rp-intel__warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.rp-intel__csat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.rp-intel__loan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.rp-intel__loan-ring {
+  text-align: center;
+}
+
+.rp-intel__note {
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.rp-intel__hold-list {
+  margin: var(--space-3) 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.rp-intel__summary {
+  margin-top: var(--space-3);
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
 /* ─── Taboo / prohibited phrases ─── */
 .rp-taboo-panel {
   padding: var(--space-3);
@@ -1690,13 +1801,25 @@
 }
 
 .rp-taboo-table-wrap {
-  overflow-x: auto;
+  /* ResponsiveTableWrap provides ui-table-wrap--stack */
 }
 
 .rp-taboo-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
+  min-width: var(--ui-table-min-width, 42rem);
+}
+
+@media (max-width: 640px) {
+  .rp-taboo-table-wrap .rp-taboo-table.ui-table--stack-sm td[data-label="Context"] {
+    white-space: normal;
+    max-width: none;
+  }
+
+  .rp-taboo-table-wrap .rp-taboo-table.ui-table--stack-sm tr.is-agent-violation {
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  }
 }
 
 .rp-taboo-table th,

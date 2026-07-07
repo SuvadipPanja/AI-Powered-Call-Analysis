@@ -1,4 +1,4 @@
-import { TabooAnalysisPanel } from '../SecureDownloadModal';
+import TabooAnalysisPanel from '../TabooAnalysisPanel';
 
 export default function ResultPolicyTab({ toneAnalysis, onSeek }) {
   return (

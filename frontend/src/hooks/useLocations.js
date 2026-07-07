@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { apiGet } from "../utils/apiHelpers";
+import { listActiveLocations } from "../services/dropdownsService";
 
 /**
  * Shared hook to fetch active locations from the managed Locations table (Admin Settings).
@@ -15,13 +15,8 @@ export default function useLocations() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiGet("/api/locations", { label: "locations" });
-      if (data.success) {
-        setLocations(data.locations || []);
-      } else {
-        setError(data.message || "Failed to fetch locations");
-        setLocations([]);
-      }
+      const list = await listActiveLocations();
+      setLocations(list);
     } catch (err) {
       console.error("useLocations: failed to fetch:", err);
       setError(err.message);

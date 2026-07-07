@@ -1,4 +1,4 @@
-import { LuTrendingDown, LuTrendingUp } from "react-icons/lu";
+import { LuTrendingDown, LuTrendingUp } from "../../icons";
 
 /**
  * Shared KPI strip — same visual system as Reports (gradient glow + icon + value).

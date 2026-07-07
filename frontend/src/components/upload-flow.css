@@ -325,12 +325,49 @@
   z-index: 1;
 }
 
-/* Live processing modal */
+/* Live processing modal — glass shell with depth */
 .upload-process-modal-shell {
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.55);
+  backdrop-filter: blur(24px) saturate(1.55);
   box-shadow:
-    var(--shadow-lg),
-    0 0 80px color-mix(in srgb, var(--accent) 18%, transparent);
+    0 32px 90px color-mix(in srgb, #0f172a 35%, transparent),
+    0 16px 40px color-mix(in srgb, var(--accent) 18%, transparent),
+    inset 0 2px 4px color-mix(in srgb, #fff 25%, transparent),
+    inset 0 -2px 6px color-mix(in srgb, #000 15%, transparent);
+  transform: perspective(1000px) rotateX(3deg) rotateY(-2deg) translateZ(20px);
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  overflow: visible;
+  position: relative;
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.upload-process-modal-shell:hover {
+  transform: perspective(1000px) rotateX(1deg) rotateY(-1deg) translateZ(30px);
+}
+
+.upload-process-modal-shell::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent-bright) 65%, transparent),
+    color-mix(in srgb, var(--success) 45%, transparent) 40%,
+    transparent 70%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.9;
+  transform: translateZ(-1px);
 }
 
 .upload-process-live {
@@ -733,13 +770,54 @@
 }
 
 /* =====================================================================
-   INDUSTRIAL PROCESSING CONSOLE  (.proc-console)
-   Accurate, real-time view of an audio job: identity · clock · ring ·
-   metrics · per-stage pipeline · run context.
+   LIVE PROCESSING CONSOLE  (.proc-console)
+   Premium glassmorphism card: identity · clock · ring ·
+   metrics · pipeline bar · run context.
    ===================================================================== */
 .proc-console {
-  padding: var(--space-5);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 45%, var(--surface)), var(--surface));
+  padding: clamp(24px, 3vw, 34px);
+  background:
+    radial-gradient(circle at 14% 8%, color-mix(in srgb, var(--success) 15%, transparent), transparent 34%),
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 36%),
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--surface) 88%, #fff) 0%,
+      color-mix(in srgb, var(--surface-2) 70%, transparent) 100%);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 45%, transparent);
+  border-radius: 18px;
+  box-shadow:
+    0 24px 54px color-mix(in srgb, var(--shadow-color, #0f172a) 25%, transparent),
+    0 8px 16px color-mix(in srgb, var(--accent) 12%, transparent),
+    inset 0 2px 4px color-mix(in srgb, #fff 25%, transparent),
+    inset 0 -2px 6px color-mix(in srgb, var(--border) 60%, transparent);
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(10px);
+  transform-style: preserve-3d;
+  min-height: 430px;
+}
+.proc-console::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 6%, transparent) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+.proc-console::after {
+  content: "";
+  position: absolute;
+  inset: auto 8% -18px 8%;
+  height: 36px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  filter: blur(26px);
+  pointer-events: none;
+  transform: translateZ(-20px);
 }
 
 /* ---- Header: status dot + file identity + elapsed clock ---- */
@@ -814,14 +892,18 @@
 .proc-console__hero {
   display: flex;
   align-items: stretch;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  gap: clamp(20px, 3vw, 32px);
+  margin-bottom: var(--space-5);
+  position: relative;
+  z-index: 1;
 }
 .proc-console .upload-progress-ring {
-  width: 124px;
-  height: 124px;
+  width: 152px;
+  height: 152px;
   flex-shrink: 0;
   align-self: center;
+  filter: drop-shadow(0 8px 12px color-mix(in srgb, var(--accent) 25%, transparent));
+  transform: translateZ(10px);
 }
 .proc-console__pct {
   font-size: 1.45rem;
@@ -844,8 +926,8 @@
 .proc-console__metrics {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
   min-width: 0;
   align-content: center;
 }
@@ -853,22 +935,35 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  padding: 14px 16px;
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--surface) 92%, #fff),
+      color-mix(in srgb, var(--surface-2) 76%, transparent));
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   min-width: 0;
-  box-shadow: none;
+  box-shadow:
+    0 14px 28px color-mix(in srgb, var(--shadow-color, #0f172a) 12%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--border) 55%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  transition: border-color 0.2s;
+  transform: translateZ(14px);
 }
 .proc-metric__icon {
   display: grid;
   place-items: center;
-  width: 28px; height: 28px;
-  border-radius: var(--radius-xs);
+  width: 34px; height: 34px;
+  border-radius: 13px;
   background: var(--accent-soft);
   color: var(--accent-bright);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   flex-shrink: 0;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent),
+    0 8px 16px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .proc-metric__text { min-width: 0; display: flex; flex-direction: column; }
 .proc-metric__label {
@@ -879,7 +974,7 @@
   color: var(--text-faint-solid);
 }
 .proc-metric__value {
-  font-size: 0.86rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-strong);
   line-height: 1.3;
@@ -898,14 +993,17 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 0 0 var(--space-4);
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
-  font-size: 0.84rem;
+  margin: 0 0 var(--space-5);
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  font-size: 0.95rem;
   color: var(--text);
   line-height: 1.4;
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
 }
 .proc-console__message--fail {
   background: var(--danger-soft);
@@ -914,80 +1012,151 @@
 }
 .proc-console__spin { flex-shrink: 0; color: var(--accent-bright); animation: spin 0.9s linear infinite; }
 
-/* ---- Single overall bar (represents the whole pipeline) ---- */
-.proc-console__progress { margin-bottom: var(--space-4); }
-.proc-console__progress-head {
-  display: flex;
-  align-items: baseline;
+/* ---- Pipeline stepper (replaces duplicate progress bar) ---- */
+.proc-pipeline {
+  list-style: none;
+  margin: 0 0 var(--space-5);
+  padding: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 14px;
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--surface) 78%, transparent),
+      color-mix(in srgb, var(--surface-2) 62%, transparent));
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  box-shadow:
+    0 18px 38px color-mix(in srgb, var(--shadow-color, #0f172a) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--border) 50%, transparent);
+  position: relative;
+  z-index: 1;
+  transform: translateZ(18px);
 }
-.proc-console__progress-head span {
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+
+.proc-pipeline__step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  position: relative;
+  min-height: 74px;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--surface) 88%, transparent),
+      color-mix(in srgb, var(--surface-2) 72%, transparent));
+  box-shadow:
+    0 12px 24px color-mix(in srgb, var(--shadow-color, #0f172a) 9%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--border) 45%, transparent);
+  transform: translateZ(8px);
+}
+
+.proc-pipeline__step:not(:last-child)::after {
+  display: none;
+}
+
+.proc-pipeline__step--done {
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--success) 10%, var(--surface)), var(--surface));
+}
+
+.proc-pipeline__step--active {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background:
+    radial-gradient(circle at 16% 20%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 46%),
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface));
+  box-shadow:
+    0 18px 32px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent);
+  transform: translateY(-4px) translateZ(24px);
+}
+
+.proc-pipeline__node {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  border: 2px solid color-mix(in srgb, var(--border) 90%, transparent);
+  background: var(--surface);
+  color: var(--text-faint-solid);
+  position: relative;
+  z-index: 1;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  box-shadow: 
+    inset 0 2px 4px color-mix(in srgb, #fff 10%, transparent),
+    inset 0 -2px 4px color-mix(in srgb, #000 10%, transparent),
+    0 4px 8px color-mix(in srgb, #000 10%, transparent);
+}
+
+.proc-pipeline__step--active .proc-pipeline__node {
+  border-color: var(--accent);
+  background: linear-gradient(145deg, var(--accent-soft), color-mix(in srgb, var(--accent) 18%, var(--surface)));
+  color: var(--accent);
+  box-shadow: 
+    inset 0 2px 4px color-mix(in srgb, #fff 20%, transparent),
+    inset 0 -2px 4px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 8px 16px color-mix(in srgb, var(--accent) 25%, transparent);
+  transform: translateY(-7px) scale(1.12) translateZ(22px);
+}
+
+.proc-pipeline__step--done .proc-pipeline__node {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+  box-shadow: 
+    inset 0 2px 4px color-mix(in srgb, #fff 20%, transparent),
+    inset 0 -2px 4px color-mix(in srgb, var(--success) 30%, transparent),
+    0 4px 8px color-mix(in srgb, var(--success) 15%, transparent);
+}
+
+.proc-pipeline__step--fail .proc-pipeline__node {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.proc-pipeline__label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--text-faint-solid);
+  line-height: 1.2;
 }
-.proc-console__progress-head strong {
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  color: var(--text-strong);
+
+.proc-pipeline__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
-.proc-console__progress-bar {
-  position: relative;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  overflow: hidden;
+
+.proc-pipeline__status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1.15;
 }
-.proc-console__progress-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  height: 100%;
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--gradient-accent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent);
-  /* Smooth, springy catch-up as progress updates. */
-  transition: width 0.7s cubic-bezier(0.33, 1, 0.68, 1);
-}
-/* Modern "working" shimmer that glides across the filled portion. */
-.proc-console__progress-fill::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.5) 50%,
-    transparent 80%
-  );
-  transform: translateX(-100%);
-  animation: proc-bar-sheen 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-@keyframes proc-bar-sheen {
-  0% { transform: translateX(-100%); }
-  55%, 100% { transform: translateX(100%); }
-}
-.proc-console__progress-tick {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--surface);
-  opacity: 0.6;
-  transform: translateX(-1px);
-  z-index: 1;
-}
-.proc-console--done .proc-console__progress-fill { background: var(--success); box-shadow: 0 0 12px color-mix(in srgb, var(--success) 30%, transparent); }
-.proc-console--fail .proc-console__progress-fill { background: var(--danger); box-shadow: none; }
-/* No "working" shimmer once the job has settled. */
-.proc-console--done .proc-console__progress-fill::after,
-.proc-console--fail .proc-console__progress-fill::after { display: none; }
+
+.proc-pipeline__step--active .proc-pipeline__label { color: var(--accent); }
+.proc-pipeline__step--done .proc-pipeline__label { color: var(--success); }
+.proc-pipeline__step--fail .proc-pipeline__label { color: var(--danger); }
+.proc-pipeline__step--active .proc-pipeline__status { color: var(--accent-bright); }
+.proc-pipeline__step--done .proc-pipeline__status { color: var(--success); }
+.proc-pipeline__step--fail .proc-pipeline__status { color: var(--danger); }
 
 /* ---- Footer: run context + updated ---- */
 .proc-console__foot {
@@ -1010,9 +1179,678 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* phase accents on the modal shell */
-.proc-console--fail { background: linear-gradient(180deg, var(--danger-soft), var(--surface)); }
-.proc-console--done { background: linear-gradient(180deg, var(--success-soft), var(--surface)); }
+/* phase accents on the glass shell */
+.proc-console--fail {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+}
+.proc-console--fail::before {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 8%, transparent) 0%, transparent 60%);
+}
+.proc-console--done {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+}
+.proc-console--done::before {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--success) 6%, transparent) 0%, transparent 60%);
+}
+
+/* =====================================================================
+   OPTION C — Compact Cinematic Timeline Vault (.proc-console--vault)
+   ===================================================================== */
+.proc-console--vault {
+  padding: clamp(16px, 2.5vw, 22px);
+  min-height: 0;
+  max-height: min(85vh, 680px);
+  overflow-y: auto;
+}
+
+/* =====================================================================
+   DESIGN 2 — Orbital Radial (.proc-console--orbit)
+   ===================================================================== */
+.proc-console--orbit {
+  padding: clamp(14px, 2vw, 20px);
+  min-height: 0;
+}
+
+.proc-orbit {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  margin: 4px auto 2px;
+  aspect-ratio: 1 / 0.86;
+}
+
+.proc-orbit::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 84%;
+  height: 84%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--border) 62%, transparent);
+  pointer-events: none;
+}
+
+.proc-orbit__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 38%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow:
+    0 10px 26px color-mix(in srgb, var(--shadow-color, #0f172a) 16%, transparent),
+    inset 0 1px 2px color-mix(in srgb, #fff 30%, transparent);
+}
+
+.proc-orbit__ring-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.proc-orbit__ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--border) 65%, transparent);
+  stroke-width: 7;
+}
+
+.proc-orbit__ring-value {
+  fill: none;
+  stroke: url(#procOrbitGrad);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 45%, transparent));
+}
+
+.proc-orbit__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  text-align: center;
+}
+
+.proc-orbit__pct {
+  font-size: clamp(1.4rem, 3.4vw, 1.9rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text-strong);
+}
+
+.proc-orbit__center-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+/* orbiting stage nodes */
+.proc-orbit__node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 3;
+}
+
+.proc-orbit__node--left {
+  flex-direction: row-reverse;
+}
+
+.proc-orbit__dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.74rem;
+  flex-shrink: 0;
+  border: 1.5px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--surface);
+  color: var(--text-faint-solid);
+  box-shadow:
+    0 5px 12px color-mix(in srgb, #000 12%, transparent),
+    inset 0 1px 2px color-mix(in srgb, #fff 14%, transparent);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.proc-orbit__dot svg { width: 0.74rem; height: 0.74rem; }
+
+.proc-orbit__node-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.proc-orbit__node--left .proc-orbit__node-text {
+  text-align: right;
+}
+
+.proc-orbit__node-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-faint-solid);
+}
+
+.proc-orbit__node-status {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* node states */
+.proc-orbit__node--done .proc-orbit__dot {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}
+.proc-orbit__node--done .proc-orbit__node-label { color: var(--success); }
+.proc-orbit__node--done .proc-orbit__node-status { color: var(--success); }
+
+.proc-orbit__node--active .proc-orbit__dot,
+.proc-orbit__node--confirming .proc-orbit__dot {
+  transform: scale(1.18);
+}
+
+.proc-orbit__node--active .proc-orbit__dot {
+  border-color: var(--accent);
+  background: linear-gradient(145deg, var(--accent-soft), color-mix(in srgb, var(--accent) 22%, var(--surface)));
+  color: var(--accent-bright);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 8px 18px color-mix(in srgb, var(--accent) 30%, transparent);
+  animation: proc-orbit-pulse 1.6s ease-in-out infinite;
+}
+.proc-orbit__node--active .proc-orbit__node-label { color: var(--accent-bright); }
+.proc-orbit__node--active .proc-orbit__node-status { color: var(--accent); }
+
+.proc-orbit__node--confirming .proc-orbit__dot {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warning) 16%, transparent);
+}
+.proc-orbit__node--confirming .proc-orbit__node-label { color: var(--warning); }
+.proc-orbit__node--confirming .proc-orbit__node-status { color: var(--warning); }
+
+.proc-orbit__node--fail .proc-orbit__dot {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+}
+
+@keyframes proc-orbit-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent), 0 8px 18px color-mix(in srgb, var(--accent) 30%, transparent); }
+  50% { box-shadow: 0 0 0 9px transparent, 0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent); }
+}
+
+/* single status line under orbit */
+.proc-console__statusline {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: var(--space-3) 0 var(--space-4);
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  font-size: 0.86rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+.proc-console__statusline--fail {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  color: var(--danger);
+}
+.proc-console__statusline-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent-bright);
+}
+.proc-console__statusline-dot--live { background: var(--success); animation: proc-pulse 1.4s ease-out infinite; }
+.proc-console__statusline-dot--done { background: var(--success); }
+.proc-console__statusline-dot--fail { background: var(--danger); }
+
+@media (max-width: 600px) {
+  .proc-orbit { max-width: 340px; aspect-ratio: 1 / 0.95; }
+  .proc-orbit__node-label { font-size: 0.6rem; }
+  .proc-orbit__node-status { font-size: 0.56rem; }
+  .proc-orbit__dot { width: 28px; height: 28px; font-size: 0.72rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proc-orbit__node--active .proc-orbit__dot { animation: none; }
+}
+
+/* Single unified timeline graph */
+.proc-vault-shell {
+  position: relative;
+  margin-bottom: var(--space-3);
+  padding-left: 10px;
+}
+
+.proc-vault-shell__track {
+  position: absolute;
+  left: 25px;
+  top: 8px;
+  bottom: 12px;
+  width: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+  overflow: hidden;
+  z-index: 0;
+  box-shadow: inset 0 1px 3px color-mix(in srgb, #000 18%, transparent);
+}
+
+.proc-vault-shell__track-fill {
+  width: 100%;
+  height: var(--vault-fill, 0%);
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--success), var(--accent-bright));
+  transition: height 0.45s ease;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.proc-vault-shell__track-glow {
+  position: absolute;
+  left: -6px;
+  top: calc(var(--vault-fill, 0%) - 8px);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent-bright) 70%, transparent);
+  transition: top 0.45s ease;
+  pointer-events: none;
+}
+
+.proc-vault-shell__summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 10px 12px 10px 44px;
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--surface) 88%, transparent),
+      color-mix(in srgb, var(--surface-2) 72%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  box-shadow:
+    0 12px 28px color-mix(in srgb, var(--shadow-color, #0f172a) 12%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+  position: relative;
+  z-index: 1;
+}
+
+.proc-vault-shell__ring {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+.proc-vault-shell__ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.proc-vault-shell__ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--border) 80%, transparent);
+  stroke-width: 5;
+}
+
+.proc-vault-shell__ring-value {
+  fill: none;
+  stroke: var(--accent-bright);
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.45s ease;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+
+.proc-vault-shell__ring-pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.proc-vault-shell__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.proc-vault-shell__meta strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  line-height: 1.25;
+}
+
+.proc-vault-shell__meta span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.proc-console__hero--compact {
+  gap: 14px;
+  margin-bottom: var(--space-3);
+}
+
+.proc-console--vault .upload-progress-ring {
+  width: 96px;
+  height: 96px;
+}
+
+.proc-console--vault .proc-console__pct {
+  font-size: 1.15rem;
+}
+
+.proc-console--vault .proc-console__pct-label {
+  font-size: 0.58rem;
+  max-width: 72px;
+}
+
+.proc-console__stats {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  justify-content: center;
+}
+
+.proc-stat {
+  display: grid;
+  grid-template-columns: 18px 52px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent),
+    0 6px 14px color-mix(in srgb, var(--shadow-color, #0f172a) 8%, transparent);
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.proc-stat svg {
+  color: var(--text-faint-solid);
+  font-size: 0.82rem;
+}
+
+.proc-stat__label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint-solid);
+}
+
+.proc-stat__value {
+  font-weight: 700;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proc-stat--live .proc-stat__value { color: var(--accent-bright); }
+.proc-stat--ok .proc-stat__value { color: var(--success); }
+.proc-stat--fail .proc-stat__value { color: var(--danger); }
+
+.proc-console__message--compact {
+  margin-bottom: var(--space-3);
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  border-radius: 12px;
+}
+
+/* Vertical timeline vault */
+.proc-vault {
+  list-style: none;
+  margin: 0;
+  padding: 4px 12px 8px 44px;
+  border-radius: 16px;
+  background:
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--surface) 82%, #0a1628 18%),
+      color-mix(in srgb, var(--surface-2) 68%, transparent));
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  box-shadow:
+    0 14px 32px color-mix(in srgb, var(--shadow-color, #0f172a) 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent),
+    inset 0 -8px 24px color-mix(in srgb, #000 8%, transparent);
+  position: relative;
+  z-index: 1;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.proc-vault__item {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 10px;
+  position: relative;
+}
+
+.proc-vault__item:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+.proc-vault__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.proc-vault__node {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  border: 1.5px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--surface);
+  color: var(--text-faint-solid);
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, #fff 12%, transparent),
+    0 4px 8px color-mix(in srgb, #000 12%, transparent);
+  flex-shrink: 0;
+  z-index: 1;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.proc-vault__line {
+  flex: 1;
+  width: 2px;
+  min-height: 8px;
+  margin: 3px 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--border) 80%, transparent),
+    color-mix(in srgb, var(--border) 40%, transparent));
+}
+
+.proc-vault__item--done .proc-vault__line {
+  background: linear-gradient(180deg, var(--success), color-mix(in srgb, var(--success) 35%, transparent));
+}
+
+.proc-vault__body {
+  min-width: 0;
+  padding: 4px 0 6px;
+}
+
+.proc-vault__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.proc-vault__label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint-solid);
+}
+
+.proc-vault__status {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.proc-vault__item--active .proc-vault__label { color: var(--accent-bright); }
+.proc-vault__item--active .proc-vault__status { color: var(--accent); }
+.proc-vault__item--done .proc-vault__label { color: var(--success); }
+.proc-vault__item--done .proc-vault__status { color: var(--success); }
+.proc-vault__item--confirming .proc-vault__label { color: var(--warning); }
+.proc-vault__item--confirming .proc-vault__status { color: var(--warning); }
+.proc-vault__item--fail .proc-vault__label,
+.proc-vault__item--fail .proc-vault__status { color: var(--danger); }
+
+.proc-vault__node--done {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.proc-vault__node--active {
+  border-color: var(--accent);
+  background: linear-gradient(145deg, var(--accent-soft), color-mix(in srgb, var(--accent) 20%, var(--surface)));
+  color: var(--accent-bright);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 8px 16px color-mix(in srgb, var(--accent) 22%, transparent);
+  transform: scale(1.08) translateZ(8px);
+}
+
+.proc-vault__node--confirming {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+  animation: proc-vault-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes proc-vault-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 35%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+
+.proc-vault__item--expanded .proc-vault__body {
+  padding: 6px 10px 10px;
+  margin-bottom: 4px;
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--surface) 90%, transparent),
+      color-mix(in srgb, var(--surface-2) 75%, transparent));
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow:
+    0 10px 22px color-mix(in srgb, var(--shadow-color, #0f172a) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
+  transform: translateZ(12px);
+}
+
+.proc-vault__item--active.proc-vault__item--expanded .proc-vault__body {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background:
+    radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 8%, var(--surface)), var(--surface));
+}
+
+.proc-vault__item--confirming.proc-vault__item--expanded .proc-vault__body {
+  border-color: color-mix(in srgb, var(--warning) 42%, transparent);
+  background:
+    radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--warning) 14%, transparent), transparent 55%),
+    linear-gradient(145deg, color-mix(in srgb, var(--warning) 8%, var(--surface)), var(--surface));
+}
+
+.proc-vault__detail-text {
+  margin: 6px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.proc-vault__progress {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  overflow: hidden;
+}
+
+.proc-vault__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+  transition: width 0.4s ease;
+}
+
+.proc-console--vault .proc-console__file span {
+  max-width: min(260px, 58vw);
+}
+
+.upload-process-modal-shell {
+  transform: perspective(900px) rotateX(2deg) translateZ(12px);
+}
+
+.upload-process-modal-shell:hover {
+  transform: perspective(900px) rotateX(1deg) translateZ(18px);
+}
+
+@media (max-width: 560px) {
+  .proc-console__hero--compact {
+    flex-direction: row;
+    align-items: center;
+  }
+  .proc-vault { max-height: 240px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proc-vault__node--confirming { animation: none !important; }
+  .proc-vault__node--active { transform: none; }
+}
 
 /* ---- Selected-file card meta tags ---- */
 .upload-file-tag {
@@ -1040,11 +1878,18 @@
 @media (prefers-reduced-motion: reduce) {
   .proc-console__dot--live,
   .proc-console__spin { animation: none !important; }
-  .proc-console__progress-fill::after { animation: none !important; opacity: 0; }
+  .proc-pipeline__step--active .proc-pipeline__node { transform: none; }
 }
 
 @media (max-width: 560px) {
   .proc-console__hero { flex-direction: column; align-items: center; gap: var(--space-4); }
   .proc-console__metrics { width: 100%; grid-template-columns: 1fr; }
+  .proc-pipeline {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    row-gap: var(--space-4);
+  }
+  .proc-pipeline__step:nth-child(4)::after {
+    display: none;
+  }
   .proc-console__file span { max-width: min(280px, 70vw); }
 }
