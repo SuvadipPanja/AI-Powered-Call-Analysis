@@ -13,5 +13,10 @@ model-bundles/*.tar
 hub-cache-seed.tar.gz
 volumes/
 backup/
+backup-*/
 secrets/*
 !secrets/README.md
+
+# Real customer call audio — never commit (PII)
+Sample Calls/
+sample-calls/
