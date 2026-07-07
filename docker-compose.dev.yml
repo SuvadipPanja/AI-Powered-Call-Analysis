@@ -6,7 +6,7 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: ai_call_redis_dev
+    container_name: sp_redis_dev
     ports:
       - "6379:6379"
     networks:
@@ -17,7 +17,7 @@ services:
     build:
       context: ./ai-mvp
       dockerfile: Dockerfile
-    container_name: ai_call_mvp_dev
+    container_name: sp_mvp_dev
     ports:
       - "8000:8000"
     environment:

@@ -16,10 +16,15 @@ mkdir -p \
   volumes/chat \
   volumes/logs \
   volumes/logs/ai \
+  volumes/logs/ai-controller \
+  volumes/logs/ai-whisper-lang \
+  volumes/logs/ai-nemo \
+  volumes/logs/ai-seamless \
   volumes/logs/llm \
   volumes/profile_pictures \
   volumes/branding \
   volumes/models \
+  volumes/hub-cache \
   volumes/work
 mkdir -p license
 

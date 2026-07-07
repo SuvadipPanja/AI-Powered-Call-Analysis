@@ -145,12 +145,23 @@ preflight() {
     [[ -n "${SA_PASSWORD:-}" ]]     || warn "SA_PASSWORD empty in .env"
     [[ -n "${PUBLIC_HOST:-}" ]]     || warn "PUBLIC_HOST empty in .env"
     [[ -n "${HOST_MAC:-}" ]]        || warn "HOST_MAC empty in .env"
+    [[ -n "${CORS_ORIGIN:-}" ]]     || die "CORS_ORIGIN empty in .env — backend will exit on startup (Sprint 1)"
     [[ -n "${LICENSE_SECRET_KEY:-}" ]] || warn "LICENSE_SECRET_KEY empty in .env"
     if     [[ -n "${LICENSE_SECRET_KEY:-}" && ${#LICENSE_SECRET_KEY} -ne 32 ]]; then
       warn "LICENSE_SECRET_KEY should be exactly 32 characters"
     fi
+    if [[ "${API_AUTH_ENFORCE:-true}" == "false" ]]; then
+      warn "API_AUTH_ENFORCE=false — API authentication is DISABLED"
+    fi
+    [[ -n "${ORCHESTRATOR_SECRET:-}" ]] || warn "ORCHESTRATOR_SECRET empty in .env"
+    [[ -n "${CALLBACK_SECRET:-}" ]]     || warn "CALLBACK_SECRET empty in .env"
+    [[ -n "${SERVICE_TOKEN:-}" ]]       || warn "SERVICE_TOKEN empty in .env"
     [[ -n "${PROFILE_PICS_DIR:-}" ]] || warn "PROFILE_PICS_DIR empty in .env"
     [[ -n "${BRANDING_DIR:-}" ]]     || warn "BRANDING_DIR empty in .env"
+    frontend_port="${FRONTEND_HTTP_PORT:-8081}"
+    if [[ -n "${PUBLIC_HOST:-}" && -n "${CORS_ORIGIN:-}" && "$CORS_ORIGIN" != *"http://${PUBLIC_HOST}:${frontend_port}"* ]]; then
+      warn "CORS_ORIGIN may not match UI URL http://${PUBLIC_HOST}:${frontend_port}"
+    fi
   fi
 
   if [[ ! -f "$PROD_DIR/license/license.lic" ]]; then
@@ -194,6 +205,11 @@ main() {
 
   step "Create folders and .env"
   bash "$HERE/01-create-folders.sh"
+
+  if [[ -f "$PROD_DIR/.env" ]]; then
+    step "Sync Docker secret files from .env"
+    bash "$HERE/bootstrap-prod-secrets.sh"
+  fi
 
   step "Validate layout (volumes, compose mounts, .env paths)"
   bash "$HERE/validate-prod-layout.sh"

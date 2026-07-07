@@ -1,0 +1,14 @@
+# License directory
+
+Place the MAC-locked `license.lic` file here on each server. **Do not commit the `.lic` file.**
+
+Generate on a build machine:
+
+```bash
+cd backend
+LICENSE_SECRET_KEY=your-32-char-secret HOST_MAC=aa:bb:cc:dd:ee:ff node generate-prod-license.js ../production/license/license.lic
+```
+
+Copy `license.lic` to the prod server at `production/license/license.lic` (Docker mount).
+
+See `docs/LICENSE-DEPLOY.md`.

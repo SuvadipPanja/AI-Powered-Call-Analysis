@@ -9,11 +9,13 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROD="$(cd "$HERE/.." && pwd)"
 cd "$PROD"
+# shellcheck source=lib/common.sh
+source "$PROD/scripts/lib/common.sh"
 # shellcheck disable=SC1091
 set -a; . ./.env; set +a
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
-CONTAINER="ai_call_db"
+CONTAINER="${DB_CONTAINER:-$SP_CONTAINER_DB}"
 OUT_DIR="$PROD/backup"
 mkdir -p "$OUT_DIR"
 

@@ -1,9 +1,10 @@
 # Patch frontend static bundle only — no npm/node/nginx pull needed.
-# Requires: existing ai-powered-call-analysis-frontend:prod loaded from 03-frontend.tar
+# Requires: sp-frontend:prod loaded once from sp-frontend.tar (or legacy 03-frontend.tar)
 # Build locally first: cd frontend && npm run build
 # Then from project root:
-#   docker build -t ai-powered-call-analysis-frontend:prod -f production-build/docker/Dockerfile.frontend-static.patch frontend
-#   docker save ai-powered-call-analysis-frontend:prod -o production/images/03-frontend.tar
+#   docker build -t sp-frontend:prod -f production-build/docker/Dockerfile.frontend-static.patch frontend
+#   docker save -o production/docker-images/sp-frontend.tar sp-frontend:prod
 
-FROM ai-powered-call-analysis-frontend:prod
+FROM sp-frontend:prod
 COPY build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf

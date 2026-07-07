@@ -29,8 +29,8 @@ source "$PROD_ROOT/scripts/lib/common.sh"
 fix_script_line_endings
 load_compose_env
 
-DB_CONTAINER="${DB_CONTAINER:-ai_call_db}"
-BACKEND_CONTAINER="${BACKEND_CONTAINER:-ai_call_backend}"
+DB_CONTAINER="${DB_CONTAINER:-$SP_CONTAINER_DB}"
+BACKEND_CONTAINER="${BACKEND_CONTAINER:-$SP_CONTAINER_BACKEND}"
 DB_NAME="${DB_NAME:-call_analysis_db}"
 SA_PASSWORD="${SA_PASSWORD:-${MSSQL_SA_PASSWORD:-}}"
 LICENSE_FILE="${LICENSE_FILE:-$PROD_ROOT/license/license.lic}"

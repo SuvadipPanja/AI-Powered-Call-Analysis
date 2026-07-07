@@ -42,7 +42,7 @@ tag_if_missing() {
 
 tag_if_missing sp-db:prod       call-analysis-db:prod ai-call-db:prod || true
 tag_if_missing sp-backend:prod  ai-call-backend:prod || true
-tag_if_missing sp-frontend:prod ai-powered-call-analysis-frontend:prod ai-call-frontend:prod || true
+tag_if_missing sp-frontend:prod ai-powered-call-analysis-frontend:prod ai-call-frontend:prod sp-frontend:latest || true
 tag_if_missing sp-aimvp:prod    ai-call-orchestrator:prod || true
 
 if ! docker image inspect sp-llm:prod >/dev/null 2>&1; then
@@ -53,8 +53,27 @@ if ! docker image inspect sp-llm:prod >/dev/null 2>&1; then
   fi
 fi
 
+# --- Distributed AI stack (2026-07-02) --------------------------------------
+# sp-ai-stack.tar carries sp-ai-controller + sp-ai-whisper-lang + sp-ai-nemo +
+# sp-ai-seamless-m4t (loaded by the glob above when present in docker-images/).
+AI_STACK_IMAGES=(sp-ai-controller:prod sp-ai-whisper-lang:prod sp-ai-nemo:prod sp-ai-seamless-m4t:prod)
+AI_STACK_MISSING=0
+for img in "${AI_STACK_IMAGES[@]}"; do
+  docker image inspect "$img" >/dev/null 2>&1 || AI_STACK_MISSING=1
+done
+if [[ $AI_STACK_MISSING -eq 1 ]]; then
+  echo ""
+  echo "!! WARN: distributed AI stack images incomplete (need: ${AI_STACK_IMAGES[*]})."
+  echo "   Copy docker-images/sp-ai-stack.tar from dev (production-build/build-ai-stack.ps1)."
+  if docker image inspect sp-aimvp:prod >/dev/null 2>&1; then
+    echo "   Only legacy sp-aimvp:prod present — current docker-compose.yml will NOT"
+    echo "   start without sp-ai-stack.tar. To run the old monolith instead, restore"
+    echo "   backup-2026-07-02/docker-compose.yml (see docs/AI-STACK-RUNBOOK.md rollback)."
+  fi
+fi
+
 echo ""
 echo "Loaded images (SP tags):"
-docker images | grep -E "sp-db|sp-backend|sp-frontend|sp-aimvp|sp-llm|redis" || true
+docker images | grep -E "sp-db|sp-backend|sp-frontend|sp-ai-controller|sp-ai-whisper-lang|sp-ai-nemo|sp-ai-seamless|sp-aimvp|sp-llm|redis" || true
 echo ""
 echo "Next: ./scripts/validate-prod-layout.sh  then  docker compose up -d"

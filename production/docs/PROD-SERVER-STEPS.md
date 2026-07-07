@@ -124,6 +124,8 @@ docker compose down
 
 (Data in Docker volumes is kept. Add `-v` only if you want to wipe DB.)
 
+**Legacy names:** If you still have old `ai_call_*` containers, `./scripts/03-up.sh` and `deploy-prod.sh` call `remove_legacy_containers` automatically before `docker compose up`.
+
 ---
 
 ## STEP 8 — Start stack
@@ -147,22 +149,22 @@ docker compose ps
 
 | Container | Expected |
 |-----------|----------|
-| ai_call_db | Up (healthy) |
-| ai_call_redis | Up |
-| ai_call_backend | Up |
-| ai_call_frontend | Up |
-| ai_call_llm | Up (healthy) |
-| ai_call_ai | Up |
+| sp_db | Up (healthy) |
+| sp_redis | Up |
+| sp_backend | Up |
+| sp_frontend | Up |
+| sp_llm | Up (healthy) |
+| sp_ai | Up |
 
 ---
 
 ## STEP 10 — Check logs (if anything Restarting)
 
 ```bash
-docker logs ai_call_backend --tail 30
-docker logs ai_call_ai --tail 30
-docker logs ai_call_llm --tail 50
-docker logs ai_call_db --tail 20
+docker logs sp_backend --tail 30
+docker logs sp_ai --tail 30
+docker logs sp_llm --tail 50
+docker logs sp_db --tail 20
 ```
 
 Backend startup should log writable storage for profile pictures and branding.

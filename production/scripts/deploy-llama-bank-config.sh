@@ -10,7 +10,8 @@ set -euo pipefail
 
 PROD_ROOT="${PROD_ROOT:-/home/suvadip/Call-Analysis/Project/production}"
 cd "$PROD_ROOT"
-
+source "$PROD_ROOT/scripts/lib/common.sh"
+fix_script_line_endings
 echo "=============================================="
 echo " Llama AWQ + Bank Config — prod deploy"
 echo " Root: $PROD_ROOT"
@@ -47,13 +48,13 @@ docker compose up -d --force-recreate llm
 
 echo "==> Waiting for vLLM health (up to ~10 min on first AWQ load) ..."
 TRIES=0
-until docker inspect ai_call_llm --format='{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; do
+until docker inspect "$SP_CONTAINER_LLM" --format='{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; do
   TRIES=$((TRIES + 1))
   if [[ $TRIES -gt 40 ]]; then
-    echo "!! vLLM not healthy after 10 min. Check: docker logs ai_call_llm --tail 80"
+    echo "!! vLLM not healthy after 10 min. Check: docker logs $SP_CONTAINER_LLM --tail 80"
     exit 1
   fi
-  STATUS=$(docker inspect ai_call_llm --format='{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+  STATUS=$(docker inspect "$SP_CONTAINER_LLM" --format='{{.State.Health.Status}}' 2>/dev/null || echo "starting")
   echo "    ... $STATUS ($TRIES/40)"
   sleep 15
 done
@@ -75,4 +76,4 @@ echo "  2. Set bank name + glossary, Save"
 echo "  3. Re-upload test calls to verify translation/scoring"
 echo ""
 echo "Verify vLLM model:"
-echo "  docker exec ai_call_llm curl -s http://127.0.0.1:8001/v1/models | head -c 500"
+echo "  docker exec $SP_CONTAINER_LLM curl -s http://127.0.0.1:8001/v1/models | head -c 500"

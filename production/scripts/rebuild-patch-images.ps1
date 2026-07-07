@@ -48,16 +48,22 @@ Write-Host "==> [0/5] Normalizing shell scripts to LF (Linux prod) ..."
 & "$Root\production\scripts\normalize-line-endings.ps1"
 Write-Host ""
 
-# --- Backend patch ---------------------------------------------------------
-Write-Host "==> [1/5] Backend patch (call processing logs) ..."
-Require-Image "ai-call-backend:prod"
-docker build -t ai-call-backend:prod -f "$Root\production-build\docker\Dockerfile.backend.patch" $Root
-if ($LASTEXITCODE -ne 0) { throw "backend patch failed" }
-Save-Image "ai-call-backend:prod" "sp-backend" "02-backend.tar"
+# --- Backend patch (repatch = flat image, avoids overlayfs mount limit) -----
+Write-Host "==> [1/5] Backend patch (Sprint 6-9 + bull queue) ..."
+$hasBackend = $false
+docker image inspect sp-backend:prod 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) { $hasBackend = $true }
+if (-not $hasBackend) {
+    Require-Image "ai-call-backend:prod"
+    docker tag ai-call-backend:prod sp-backend:prod
+}
+docker build -t sp-backend:prod -f "$Root\production-build\docker\Dockerfile.backend.repatch" $Root
+if ($LASTEXITCODE -ne 0) { throw "backend repatch failed" }
+Save-Image "sp-backend:prod" "sp-backend" "02-backend.tar"
 
 # --- Frontend: npm build + static patch ------------------------------------
 Write-Host "==> [2/5] Frontend npm run build ..."
-Require-Image "ai-powered-call-analysis-frontend:prod"
+Require-Image "sp-frontend:prod"
 Push-Location $Frontend
 if (-not (Test-Path "node_modules")) {
     Write-Host "    Installing npm dependencies (first time) ..."
@@ -69,9 +75,9 @@ if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
 Pop-Location
 
 Write-Host "==> [3/5] Frontend static patch ..."
-docker build -t ai-powered-call-analysis-frontend:prod -f "$Root\production-build\docker\Dockerfile.frontend-static.patch" $Frontend
+docker build -t sp-frontend:prod -f "$Root\production-build\docker\Dockerfile.frontend-static.patch" $Frontend
 if ($LASTEXITCODE -ne 0) { throw "frontend patch failed" }
-Save-Image "ai-powered-call-analysis-frontend:prod" "sp-frontend" "03-frontend.tar"
+Save-Image "sp-frontend:prod" "sp-frontend" "03-frontend.tar"
 
 # --- AI orchestrator patch -------------------------------------------------
 Write-Host "==> [4/5] AI orchestrator patch (prod logging + Llama backend) ..."

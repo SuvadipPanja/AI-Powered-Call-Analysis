@@ -6,18 +6,30 @@
 # Build:
 #   docker build -t sp-backend:prod -f production-build/docker/Dockerfile.backend.repatch .
 FROM sp-backend:prod AS patched
+COPY backend/package.json /app/package.json
+RUN npm install --omit=dev --no-audit --no-fund
 COPY backend/server.js /app/server.js
 COPY backend/middleware/licenseGuard.js /app/middleware/licenseGuard.js
 COPY backend/middleware/logSafety.js /app/middleware/logSafety.js
 COPY backend/middleware/rateLimit.js /app/middleware/rateLimit.js
+COPY backend/routes/reportRoutes.register.js /app/routes/reportRoutes.register.js
 COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
+COPY backend/services/reportHelpers.js /app/services/reportHelpers.js
 COPY backend/uploadHandler.js /app/uploadHandler.js
+COPY backend/pythonScriptHandler.js /app/pythonScriptHandler.js
+COPY backend/services/autoUploadService.js /app/services/autoUploadService.js
 COPY backend/config/secrets.js /app/config/secrets.js
 COPY backend/db.js /app/db.js
 COPY backend/dbConnection.js /app/dbConnection.js
 COPY backend/services/timeGuard.js /app/services/timeGuard.js
 COPY backend/services/aiEntitlement.js /app/services/aiEntitlement.js
+COPY backend/services/seatCounter.js /app/services/seatCounter.js
+COPY backend/services/aiWorkToken.js /app/services/aiWorkToken.js
+COPY backend/services/aiJobSlots.js /app/services/aiJobSlots.js
+COPY backend/services/licenseRevocation.js /app/services/licenseRevocation.js
+COPY backend/services/licenseRevalidator.js /app/services/licenseRevalidator.js
 COPY backend/services/dbMigrate.js /app/services/dbMigrate.js
+COPY backend/services/queryCategoryService.js /app/services/queryCategoryService.js
 COPY backend/services/uploadQueue.js /app/services/uploadQueue.js
 COPY backend/tools/build-integrity-manifest.js /app/tools/build-integrity-manifest.js
 COPY backend/websocket/wsHub.js /app/websocket/wsHub.js

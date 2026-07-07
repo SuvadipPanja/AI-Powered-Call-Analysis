@@ -210,7 +210,7 @@ This stack is isolated from other teams' Docker applications:
 |---------|-------|---------|
 | `COMPOSE_PROJECT_NAME` | `call-analysis-prod` | Unique Compose project prefix |
 | `DOCKER_NETWORK_NAME` | `call-analysis-prod-net` | Dedicated bridge — **not** shared with other compose files |
-| Container names | `ai_call_*` | Fixed names, no generic `redis`/`backend` collisions |
+| Container names | `sp_*` (`sp_db`, `sp_backend`, `sp_llm`, …) | Fixed names; `remove_legacy_containers` drops old `ai_call_*` |
 | Volumes | `call-analysis-prod-dbdata`, `call-analysis-prod-redisdata` | Named volumes — won't attach to other projects |
 | Host ports | `8081`, `5000`, `8080` (override via `.env` if clash) | Only this stack publishes these ports |
 

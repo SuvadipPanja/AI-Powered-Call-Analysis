@@ -10,7 +10,7 @@ cd "$PROD_ROOT"
 source "$PROD_ROOT/scripts/lib/common.sh"
 fix_script_line_endings
 
-DB_CONTAINER="${DB_CONTAINER:-ai_call_db}"
+DB_CONTAINER="${DB_CONTAINER:-sp_db}"
 DB_NAME="${DB_NAME:-call_analysis_db}"
 SA_PASSWORD="${SA_PASSWORD:-${MSSQL_SA_PASSWORD:-}}"
 

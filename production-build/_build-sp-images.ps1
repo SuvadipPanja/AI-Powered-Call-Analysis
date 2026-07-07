@@ -33,9 +33,8 @@ cmd /c "npm run build"
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "frontend npm build failed" }
 Pop-Location
 Step "FRONTEND docker build"
-docker build -t ai-powered-call-analysis-frontend:prod -f "production-build\docker\Dockerfile.frontend-static.patch" frontend
+docker build -t sp-frontend:prod -f "production-build\docker\Dockerfile.frontend-static.patch" frontend
 if ($LASTEXITCODE -ne 0) { throw "frontend docker build failed" }
-docker tag ai-powered-call-analysis-frontend:prod sp-frontend:prod
 docker save -o "$out\sp-frontend.tar" sp-frontend:prod
 if ($LASTEXITCODE -ne 0) { throw "frontend save failed" }
 Step ("FRONTEND done {0} MB" -f [math]::Round((Get-Item "$out\sp-frontend.tar").Length/1MB,1))

@@ -19,6 +19,7 @@ COPY ai-mvp/bank_config.py \
      ai-mvp/indiclid_worker.py \
      ai-mvp/sp_nemo_client.py \
      ai-mvp/transcript_cleanup_worker.py \
+     ai-mvp/transcript_normalize.py \
      ai-mvp/diarization_worker.py \
      ai-mvp/config.py \
      ai-mvp/transcribe.py \
@@ -28,6 +29,9 @@ COPY ai-mvp/bank_config.py \
      ai-mvp/intelligence_worker.py \
      ai-mvp/query_categories.py \
      ai-mvp/orchestrator.py \
+     ai-mvp/secrets_hydrate.py \
+     ai-mvp/work_token.py \
+     ai-mvp/entitlement.py \
      ai-mvp/db.py \
      ai-mvp/db_schema.py \
      ai-mvp/prod_logging.py \

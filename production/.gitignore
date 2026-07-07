@@ -1,7 +1,17 @@
 # Secrets & runtime data — never commit these
 .env
+.env.container
+.env.secrets
+.env.backend
+.env.bak.*
 license/*.lic
+docker-images/*.tar
+docker-images/*.tar.gz
 images/*.tar
 images/*.tar.gz
+model-bundles/*.tar
+hub-cache-seed.tar.gz
 volumes/
 backup/
+secrets/*
+!secrets/README.md

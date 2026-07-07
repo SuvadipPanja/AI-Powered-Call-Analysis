@@ -1,0 +1,64 @@
+# =============================================================================
+#  DEV VERIFICATION override — CPU-only, no GPU, no model weights required.
+#  Boots the AI services so they reach HTTP and serve /health (ready:false is
+#  expected without models — they must NOT crash-loop). Spec §9.
+#
+#  Usage (dev box, from production/):
+#    docker compose -f docker-compose.yml -f docker-compose.verify.yml up -d \
+#        ai-whisper-lang ai-nemo ai-seamless ai-controller
+#    docker exec sp_ai_whisper_lang curl -s http://localhost:8010/health
+#    (no host ports are published — check /health via docker exec, all 4 services)
+#    docker compose -f docker-compose.yml -f docker-compose.verify.yml down
+#
+#  Notes:
+#  - `deploy: !reset {}` is required (a plain empty map would MERGE and keep
+#    the GPU reservation; !reset removes it — same pattern as scale.yml ports).
+#  - ai-controller depends_on is reset so verification does not pull up
+#    db/llm and block on their healthchecks.
+#  - db/redis/backend/frontend are untouched — start them normally if needed.
+# =============================================================================
+
+services:
+
+  llm:
+    # No model weights on dev — do not gate anything on llm health, and do not
+    # crash-loop if someone starts it by accident.
+    deploy: !reset {}
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  ai-whisper-lang:
+    deploy: !reset {}
+    environment:
+      WHISPER_LANG_DEVICE: cpu
+    healthcheck:
+      disable: true
+
+  ai-nemo:
+    deploy: !reset {}
+    environment:
+      NEMO_DEVICE: cpu
+    healthcheck:
+      disable: true
+
+  ai-seamless:
+    deploy: !reset {}
+    environment:
+      SEAMLESS_M4T_DEVICE: cpu
+    healthcheck:
+      disable: true
+
+  ai-controller:
+    deploy: !reset {}
+    depends_on: !reset []
+    environment:
+      WHISPER_LANG_DEVICE: cpu
+      NEMO_DEVICE: cpu
+      SEAMLESS_M4T_DEVICE: cpu
+      FASTER_WHISPER_DEVICE: cpu
+      FASTER_WHISPER_COMPUTE_TYPE: int8
+      # No DB / LLM on the dev verification box
+      DB_ENABLED: "false"
+    healthcheck:
+      disable: true

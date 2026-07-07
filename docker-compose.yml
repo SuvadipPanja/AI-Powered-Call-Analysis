@@ -5,7 +5,7 @@ services:
 
   db:
     image: call-analysis-db
-    container_name: ai_call_db
+    container_name: sp_db
     ports:
       - "1443:1433"
     volumes:
@@ -16,7 +16,7 @@ services:
 
   backend:
     image: ai-call-backend
-    container_name: ai_call_backend
+    container_name: sp_backend
     ports:
       - "5000:5000"
       - "8080:8080"
@@ -36,7 +36,7 @@ services:
 
   frontend:
     image: ai-powered-call-analysis-frontend
-    container_name: ai_call_frontend
+    container_name: sp_frontend
     ports:
       - "8081:80"
     depends_on:

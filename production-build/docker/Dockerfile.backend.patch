@@ -7,6 +7,7 @@ FROM ai-call-backend:prod
 COPY backend/package.json /app/package.json
 RUN npm install bull@4.16.5 --omit=dev --no-audit --no-fund || true
 COPY backend/server.js /app/server.js
+COPY backend/sessionPolicy.js /app/sessionPolicy.js
 COPY backend/uploadHandler.js /app/uploadHandler.js
 COPY backend/middleware/auth.js /app/middleware/auth.js
 COPY backend/middleware/rbac.js /app/middleware/rbac.js
@@ -39,6 +40,12 @@ COPY backend/services/queryCategoryDefaults.js /app/services/queryCategoryDefaul
 COPY backend/services/dbMigrate.js /app/services/dbMigrate.js
 COPY backend/services/callProcessingLog.js /app/services/callProcessingLog.js
 COPY backend/pythonScriptHandler.js /app/pythonScriptHandler.js
+COPY backend/services/autoUploadService.js /app/services/autoUploadService.js
+COPY backend/config/secrets.js /app/config/secrets.js
+COPY backend/services/timeGuard.js /app/services/timeGuard.js
+COPY backend/services/aiEntitlement.js /app/services/aiEntitlement.js
+COPY backend/services/seatCounter.js /app/services/seatCounter.js
+COPY backend/services/aiWorkToken.js /app/services/aiWorkToken.js
 # Sprint 4 — license tamper-resistance modules + offline/vendor tools
 COPY backend/services/licenseCodec.js /app/services/licenseCodec.js
 COPY backend/services/licenseSecurity.js /app/services/licenseSecurity.js

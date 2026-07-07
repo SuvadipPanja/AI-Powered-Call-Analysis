@@ -86,3 +86,36 @@ load_compose_env() {
   export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-call-analysis-prod}"
   export COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 }
+
+# Standard production container names (sp_* — matches docker-compose.yml).
+# 2026-07-02 AI restructure: sp_ai → sp_ai_controller, sp_llm → sp_ai_llama,
+# plus the new model services (docs/AI-STACK-SPEC.md).
+export SP_CONTAINER_DB="${SP_CONTAINER_DB:-sp_db}"
+export SP_CONTAINER_REDIS="${SP_CONTAINER_REDIS:-sp_redis}"
+export SP_CONTAINER_BACKEND="${SP_CONTAINER_BACKEND:-sp_backend}"
+export SP_CONTAINER_FRONTEND="${SP_CONTAINER_FRONTEND:-sp_frontend}"
+export SP_CONTAINER_LLM="${SP_CONTAINER_LLM:-sp_ai_llama}"
+export SP_CONTAINER_AI="${SP_CONTAINER_AI:-sp_ai_controller}"
+export SP_CONTAINER_AI_LANG="${SP_CONTAINER_AI_LANG:-sp_ai_whisper_lang}"
+export SP_CONTAINER_AI_NEMO="${SP_CONTAINER_AI_NEMO:-sp_ai_nemo}"
+export SP_CONTAINER_AI_SEAMLESS="${SP_CONTAINER_AI_SEAMLESS:-sp_ai_seamless_m4t}"
+export SP_CONTAINER_API_GATEWAY="${SP_CONTAINER_API_GATEWAY:-sp_api_gateway}"
+
+# Stop and remove containers from older layouts so compose can recreate with
+# the new names (ai_call_* era, plus pre-restructure sp_ai / sp_llm).
+remove_legacy_containers() {
+  local legacy=(
+    ai_call_qwen
+    ai_call_db ai_call_redis ai_call_backend ai_call_frontend
+    ai_call_llm ai_call_ai ai_call_api_gateway
+    sp_ai sp_llm
+  )
+  local name
+  for name in "${legacy[@]}"; do
+    if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
+      log "Removing legacy container $name"
+      docker stop "$name" 2>/dev/null || true
+      docker rm "$name" 2>/dev/null || true
+    fi
+  done
+}

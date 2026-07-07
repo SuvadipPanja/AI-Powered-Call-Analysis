@@ -1,5 +1,7 @@
 # Sheet 1 — Copy from DEV to PROD server
 
+**Primary reference:** [`PROD-FILES-AND-DEPLOY.md`](PROD-FILES-AND-DEPLOY.md) (copy lists + prod commands, single `.env`).
+
 **Print this sheet. Use when transferring files from your Windows dev machine to Linux prod (`10.64.194.130`).**
 
 Prod path on server: `/home/suvadip/Call-Analysis/Project/production`

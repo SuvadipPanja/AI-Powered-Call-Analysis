@@ -3,6 +3,7 @@
 Offline bundle for **10.64.194.130** (no internet on prod).
 
 **Layout reference:** [`STRUCTURE.md`](STRUCTURE.md)  
+**Copy list + prod commands:** [`PROD-FILES-AND-DEPLOY.md`](PROD-FILES-AND-DEPLOY.md)  
 **Full build & debug:** [`PRODUCTION-RUNBOOK.md`](PRODUCTION-RUNBOOK.md)  
 **License generation (v3):** [`LICENSE-GENERATION.md`](LICENSE-GENERATION.md)
 
@@ -11,7 +12,7 @@ Offline bundle for **10.64.194.130** (no internet on prod).
 ```
 production/
 ├── docker-compose.yml        ← stack definition (service: ai, llm, backend, …)
-├── .env / .env.example       ← PROFILE_PICS_DIR, BRANDING_DIR, secrets
+├── .env / .env.example       ← single file: compose + backend + bootstrap source
 ├── docker-images/            ← sp-*.tar image archives
 ├── model-bundles/            ← ASR/LLM weight tars → volumes/models/
 ├── license/license.lic
@@ -43,8 +44,9 @@ Requires **NVIDIA GPU** (host index **1** on dual-GPU servers).
 
 **Print these:**
 
-1. **`COPY-TO-PROD.md`** — what to copy from dev  
-2. **`PROD-SERVER-STEPS.md`** — step-by-step on prod  
+1. **`PROD-FILES-AND-DEPLOY.md`** — copy lists, single `.env`, prod commands  
+2. **`COPY-TO-PROD.md`** — quick copy checklist  
+3. **`PROD-SERVER-STEPS.md`** — step-by-step on prod
 
 **Recommended:**
 

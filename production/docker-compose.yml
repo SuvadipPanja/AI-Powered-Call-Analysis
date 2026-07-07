@@ -1,7 +1,19 @@
 # =============================================================================
-#  AI-Powered Call Analysis stack
-#  Services: db · redis · backend · frontend · llm (vLLM) · ai
-#  Run from this directory: docker compose up -d
+#  AI-Powered Call Analysis stack — distributed AI architecture (2026-07-02)
+#  Spec: docs/AI-STACK-SPEC.md · Ops: docs/AI-STACK-RUNBOOK.md
+#  Previous monolith compose: backup-2026-07-02/docker-compose.yml
+#
+#      backend ──► ai-controller (sp_ai_controller :8000, alias "ai")
+#                     │ language?              │ per-chunk ASR (parallel)
+#                     ▼                        ▼
+#          ai-whisper-lang (:8010)   ai-nemo (:8020)  /  ai-seamless (:8030)
+#                     │
+#                     ▼ LLM tasks (cleanup · translate · scoring · intelligence)
+#                  llm (sp_ai_llama :8001, alias "llm", vLLM — unchanged image)
+#
+#  All model services load eagerly at startup and stay resident (first up is
+#  slow — see healthcheck start_period). Run from this directory:
+#    docker compose up -d
 # =============================================================================
 
 name: ${COMPOSE_PROJECT_NAME:-call-analysis-prod}
@@ -21,11 +33,37 @@ x-logging: &json-logging
     max-size: "50m"
     max-file: "5"
 
+# Rotating in-container file logs (log_setup.init_service_logging) —
+# every AI service writes /app/logs/<service>.log (mounted volumes/logs/<service>/).
+x-ai-logging-env: &ai-logging-env
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_MAX_MB: ${LOG_MAX_MB:-20}
+  LOG_BACKUP_COUNT: ${LOG_BACKUP_COUNT:-10}
+
+# Sprint 6 — file-backed secrets (not visible via docker inspect / proc environ).
+# Run ./scripts/bootstrap-prod-secrets.sh after editing .env to populate ./secrets/
+# and generate .env.container (backend env_file — secrets stripped; never edit manually).
+secrets:
+  license_secret_key:
+    file: ./secrets/license_secret_key
+  orchestrator_secret:
+    file: ./secrets/orchestrator_secret
+  callback_secret:
+    file: ./secrets/callback_secret
+  service_token:
+    file: ./secrets/service_token
+  db_password:
+    file: ./secrets/db_password
+
 services:
+
+  # ===========================================================================
+  #  Core app services (unchanged from the pre-restructure stack)
+  # ===========================================================================
 
   db:
     image: sp-db:prod
-    container_name: ai_call_db
+    container_name: sp_db
     logging: *json-logging
     environment:
       ACCEPT_EULA: "Y"
@@ -44,7 +82,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: ai_call_redis
+    container_name: sp_redis
     logging: *json-logging
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes:
@@ -54,26 +92,21 @@ services:
 
   backend:
     image: sp-backend:prod
-    container_name: ai_call_backend
+    container_name: sp_backend
     logging: *json-logging
     env_file:
-      - .env
+      - .env.container
     environment:
       NODE_ENV: production
       PORT: "5000"
       WS_PORT: "8080"
-      # Sprint 1 security — must be set in production/.env (also loaded via env_file)
+      # Sprint 1 security — must be set in production/.env (bootstrap copies to .env.container)
       CORS_ORIGIN: ${CORS_ORIGIN}
       API_AUTH_ENFORCE: ${API_AUTH_ENFORCE:-true}
-      LICENSE_SECRET_KEY: ${LICENSE_SECRET_KEY}
       HOST_MAC: ${HOST_MAC}
-      ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET}
-      CALLBACK_SECRET: ${CALLBACK_SECRET}
-      SERVICE_TOKEN: ${SERVICE_TOKEN}
       DB_SERVER: db
       DB_PORT: "1433"
       DB_USER: sa
-      DB_PASSWORD: ${SA_PASSWORD}
       DB_DATABASE: call_analysis_db
       DB_USE_WINDOWS_AUTH: "false"
       DB_ENCRYPT: "false"
@@ -93,6 +126,15 @@ services:
       BRANDING_DIR: /app/uploads/branding
       ACTION_LOG_DIR: /app/logs
       ACTION_LOG_FILE: action.log
+      # Shared-GPU prod: cap concurrent AI dispatches (0 = license only)
+      UPLOAD_QUEUE_CONCURRENCY: ${UPLOAD_QUEUE_CONCURRENCY:-1}
+      AI_MAX_CONCURRENT_JOBS: ${AI_MAX_CONCURRENT_JOBS:-1}
+    secrets:
+      - license_secret_key
+      - orchestrator_secret
+      - callback_secret
+      - service_token
+      - db_password
     ports:
       - "${BACKEND_HTTP_PORT:-5000}:5000"
       - "${BACKEND_WS_PORT:-8080}:8080"
@@ -121,7 +163,7 @@ services:
 
   frontend:
     image: sp-frontend:prod
-    container_name: ai_call_frontend
+    container_name: sp_frontend
     logging: *json-logging
     ports:
       - "${FRONTEND_HTTP_PORT:-8081}:80"
@@ -130,20 +172,22 @@ services:
     networks: [app-net]
     restart: unless-stopped
 
-  # --- Llama-3.1-8B-Instruct AWQ via vLLM (OpenAI-compatible) ---
-  # OFFLINE: load images/06-vllm.tar (legacy name 06-qwen-vllm.tar OK)
+  # ===========================================================================
+  #  LLM — Qwen3-14B-AWQ via vLLM (48 GB safe default util 0.42; Qwen3-8B in .env)
+  #  Alias "llm" keeps OPENAI_BASE_URL=http://llm:8001/v1.
+  # ===========================================================================
   llm:
     image: sp-llm:prod
-    container_name: ai_call_llm
+    container_name: sp_ai_llama
     logging: *json-logging
     environment:
       <<: *gpu-environment
       VLLM_USE_V1: "0"
     command:
       - --model
-      - ${LLM_MODEL_PATH:-/models/Meta-Llama-3.1-8B-Instruct-AWQ}
+      - ${LLM_MODEL_PATH:-/models/Qwen3-14B-AWQ}
       - --served-model-name
-      - ${LLM_SERVED_NAME:-Meta-Llama-3.1-8B-Instruct}
+      - ${LLM_SERVED_NAME:-Qwen3-14B-AWQ}
       - --host
       - "0.0.0.0"
       - --port
@@ -174,122 +218,491 @@ services:
         reservations:
           devices:
             - <<: *gpu-reservation
+    networks:
+      app-net:
+        aliases: [llm]
+    restart: unless-stopped
+
+  # ===========================================================================
+  #  AI model services (distributed stack — docs/AI-STACK-SPEC.md §2)
+  #  Each loads its model(s) eagerly at startup; /health returns 503 until
+  #  ready. Internal-only ports (no host publishing needed).
+  # ===========================================================================
+
+  # --- Language detection: Whisper-large-v3 LID + IndicLID + chunk-vote (:8010) ---
+  ai-whisper-lang:
+    image: sp-ai-whisper-lang:prod
+    container_name: sp_ai_whisper_lang
+    logging: *json-logging
+    environment:
+      <<: [*gpu-environment, *ai-logging-env]
+      AI_SERVICE_PORT: "8010"
+      AI_SERVICE_THREADS: ${AI_SERVICE_THREADS:-2}
+      WHISPER_LANG_MODEL_PATH: ${WHISPER_LANG_MODEL_PATH:-/models/Whisper-large-v3}
+      # GPU default (WHISPER_LANG_DEVICE=cuda); set cpu in .env only if VRAM is tight.
+      # Same Whisper-large-v3 model — cpu frees ~3 GB VRAM for vLLM at cost of LID latency.
+      WHISPER_LANG_DEVICE: ${WHISPER_LANG_DEVICE:-cuda}
+      # Old AI/ pipeline energy-ranked multi-window voting on top of language_worker.
+      # OFF for wordmatch — it samples first-2 agent + customer chunks itself.
+      AI_LANG_MULTI_CHUNK: ${AI_LANG_MULTI_CHUNK:-false}
+      AI_LANG_CHUNK_COUNT: ${AI_LANG_CHUNK_COUNT:-3}
+      AI_LANG_CHUNK_SEC: ${AI_LANG_CHUNK_SEC:-15}
+      # LID strategy: enhanced (guards+verification) | whisper-native (Whisper's
+      # built-in language token only, restricted to LANG_REGIONAL_LANGUAGES)
+      LANG_DETECT_MODE: ${LANG_DETECT_MODE:-enhanced}
+      # Reject a regional confirm (Telugu/Tamil/...) when forced-Hindi fits the
+      # audio clearly better — stops Hindi calls being mislabeled Telugu.
+      LANG_REGIONAL_ACOUSTIC_MARGIN: ${LANG_REGIONAL_ACOUSTIC_MARGIN:-0.18}
+      # language_worker tuning (moved here from the monolith ai service)
+      LANG_DISAMBIGUATE_HI_BN: ${LANG_DISAMBIGUATE_HI_BN:-true}
+      LANG_DETECT_CONFIDENCE_MIN: ${LANG_DETECT_CONFIDENCE_MIN:-0.55}
+      LANG_DETECT_HIGH_CONFIDENCE: ${LANG_DETECT_HIGH_CONFIDENCE:-0.82}
+      LANG_DETECT_SAMPLE_SEC: ${LANG_DETECT_SAMPLE_SEC:-12}
+      LANG_VERIFY_SAMPLE_SEC: ${LANG_VERIFY_SAMPLE_SEC:-12}
+      LANG_LID_MAX_TRANSCRIPT_TOKENS: ${LANG_LID_MAX_TRANSCRIPT_TOKENS:-96}
+      LANG_DETECT_CHANNEL: ${LANG_DETECT_CHANNEL:-agent}
+      LANG_DETECT_AGENT_CHANNEL_INDEX: ${LANG_DETECT_AGENT_CHANNEL_INDEX:-0}
+      LANG_DETECT_CUSTOMER_CHANNEL_INDEX: ${LANG_DETECT_CUSTOMER_CHANNEL_INDEX:-1}
+      LANG_DETECT_VOICE_TRIM: ${LANG_DETECT_VOICE_TRIM:-true}
+      LANG_DETECT_MULTI_CHANNEL: ${LANG_DETECT_MULTI_CHANNEL:-true}
+      # wordmatch: transcribe 1st+2nd agent/customer chunks, score against the
+      # 12-language banking word dictionaries, max match wins (legacy AI/src idea).
+      # Falls back to restricted (closed-set) when word evidence is too thin.
+      LANG_LID_BACKEND: ${LANG_LID_BACKEND:-wordmatch}
+      LANG_WORDMATCH_CHUNK_SEC: ${LANG_WORDMATCH_CHUNK_SEC:-10}
+      LANG_WORDMATCH_CHUNKS_PER_CHANNEL: ${LANG_WORDMATCH_CHUNKS_PER_CHANNEL:-2}
+      LANG_WORDMATCH_MIN_EVIDENCE: ${LANG_WORDMATCH_MIN_EVIDENCE:-4}
+      LANG_WORDMATCH_TIEBREAK_MARGIN: ${LANG_WORDMATCH_TIEBREAK_MARGIN:-6}
+      LANG_RESTRICTED_CONFIDENT: ${LANG_RESTRICTED_CONFIDENT:-0.75}
+      LANG_MAP_URDU_TO_HINDI: ${LANG_MAP_URDU_TO_HINDI:-true}
+      LANG_MAP_NEPALI_TO_HINDI: ${LANG_MAP_NEPALI_TO_HINDI:-true}
+      LANG_MAP_ASSAMESE_TO_BENGALI: ${LANG_MAP_ASSAMESE_TO_BENGALI:-true}
+      LANG_LID_FAST_MODE: ${LANG_LID_FAST_MODE:-true}
+      # hi/bn: trust Whisper's detected language; only FLIP to the other language
+      # when its acoustic fit (repetition-penalized avg log-prob) beats by this margin.
+      LANG_HI_BN_FLIP_MARGIN: ${LANG_HI_BN_FLIP_MARGIN:-0.06}
+      LANG_HI_BN_MIN_SCRIPT: ${LANG_HI_BN_MIN_SCRIPT:-6}
+      LANG_REPETITION_MIN_UNIQUE: ${LANG_REPETITION_MIN_UNIQUE:-0.5}
+      LANG_REPETITION_PENALTY: ${LANG_REPETITION_PENALTY:-0.6}
+      LANG_SCRIPT_VERIFY: ${LANG_SCRIPT_VERIFY:-true}
+      LANG_VERIFY_ALWAYS: ${LANG_VERIFY_ALWAYS:-false}
+      LANG_VERIFY_ALWAYS_FOR_ENGLISH: ${LANG_VERIFY_ALWAYS_FOR_ENGLISH:-false}
+      LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN: ${LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN:-true}
+      LANG_HINDI_PRIORITY_BONUS: ${LANG_HINDI_PRIORITY_BONUS:-8}
+      LANG_BENGALI_PRIORITY_BONUS: ${LANG_BENGALI_PRIORITY_BONUS:-8}
+      LANG_ENGLISH_PLAUSIBILITY_MIN: ${LANG_ENGLISH_PLAUSIBILITY_MIN:-0.35}
+      # English guard: confirm English only when English leads bn/hi probability mass.
+      LANG_ENGLISH_GUARD_ENABLED: ${LANG_ENGLISH_GUARD_ENABLED:-true}
+      LANG_ENGLISH_GUARD_MIN_PROB: ${LANG_ENGLISH_GUARD_MIN_PROB:-0.12}
+      LANG_ENGLISH_GUARD_WORD_RATIO: ${LANG_ENGLISH_GUARD_WORD_RATIO:-0.40}
+      # Bengali guard: runs BEFORE English guard (fixes BN banking calls → English).
+      LANG_BENGALI_GUARD_ENABLED: ${LANG_BENGALI_GUARD_ENABLED:-true}
+      LANG_BENGALI_GUARD_MIN_PROB: ${LANG_BENGALI_GUARD_MIN_PROB:-0.12}
+      LANG_BENGALI_GUARD_MIN_ROMAN: ${LANG_BENGALI_GUARD_MIN_ROMAN:-1}
+      LANG_HINDI_GUARD_ENABLED: ${LANG_HINDI_GUARD_ENABLED:-true}
+      LANG_HINDI_GUARD_MIN_PROB: ${LANG_HINDI_GUARD_MIN_PROB:-0.10}
+      LANG_FAST_PATH_HI_CONFIDENCE: ${LANG_FAST_PATH_HI_CONFIDENCE:-0.72}
+      LANG_FAST_PATH_BN_CONFIDENCE: ${LANG_FAST_PATH_BN_CONFIDENCE:-0.72}
+      # Set true for Hindi/Bengali/English-only banks (blocks Tamil/Telugu mislabels).
+      LANG_PRIMARY_ONLY: ${LANG_PRIMARY_ONLY:-true}
+      LANG_REGIONAL_DETECTION: ${LANG_REGIONAL_DETECTION:-false}
+      LANG_DRAVIDIAN_CONFUSABLE_CODES: ${LANG_DRAVIDIAN_CONFUSABLE_CODES:-ta,te,kn,ml}
+      LANG_SILENCE_RMS: ${LANG_SILENCE_RMS:-0.004}
+      LANG_CALL_CENTER_MODE: ${LANG_CALL_CENTER_MODE:-true}
+      LANG_PRIMARY_LANGUAGES: ${LANG_PRIMARY_LANGUAGES:-Hindi,Bengali,English}
+      # Whisper often mislabels Hindi as Urdu/Nepali — re-probe those as Hindi.
+      LANG_HINDI_CONFUSABLE_CODES: ${LANG_HINDI_CONFUSABLE_CODES:-ur,ne}
+      LANG_MIN_SCRIPT_CHARS: ${LANG_MIN_SCRIPT_CHARS:-12}
+      SEAMLESS_LID_ENABLED: ${SEAMLESS_LID_ENABLED:-false}
+      SEAMLESS_LID_SAMPLE_SEC: ${SEAMLESS_LID_SAMPLE_SEC:-22}
+      SEAMLESS_LID_PROBE_LANGUAGES: ${SEAMLESS_LID_PROBE_LANGUAGES:-Hindi,Bengali,English}
+      AI_SEAMLESS_SERVICE_URL: ${AI_SEAMLESS_SERVICE_URL:-http://ai-seamless:8030}
+      INDICLID_ENABLED: ${INDICLID_ENABLED:-true}
+      INDICLID_MODEL_DIR: ${INDICLID_MODEL_DIR:-/models/indiclid}
+      INDICLID_BERT_TOKENIZER_PATH: ${INDICLID_BERT_TOKENIZER_PATH:-/models/indiclid/IndicBERTv2-MLM-only}
+      INDICLID_ROMAN_THRESHOLD: ${INDICLID_ROMAN_THRESHOLD:-0.6}
+      INDICLID_MIN_SCORE: ${INDICLID_MIN_SCORE:-0.45}
+    expose:
+      - "8010"
+    volumes:
+      - ./volumes/models:/models
+      - ./volumes/logs/ai-whisper-lang:/app/logs
+    shm_size: "2gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8010/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 600s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - <<: *gpu-reservation
+    depends_on:
+      llm:
+        condition: service_healthy
     networks: [app-net]
     restart: unless-stopped
 
-  ai:
-    image: sp-aimvp:prod
-    container_name: ai_call_ai
+  # --- NeMo ASR: English parakeet-rnnt-1.1b + Hindi conformer CTC (:8020) ---
+  ai-nemo:
+    image: sp-ai-nemo:prod
+    container_name: sp_ai_nemo
     logging: *json-logging
     environment:
-      <<: *gpu-environment
+      <<: [*gpu-environment, *ai-logging-env]
+      AI_SERVICE_PORT: "8020"
+      AI_SERVICE_THREADS: ${AI_SERVICE_THREADS:-2}
+      ENGLISH_NEMO_MODEL_PATH: ${ENGLISH_NEMO_MODEL_PATH:-/models/nemo/parakeet-rnnt-1.1b.nemo}
+      HINDI_NEMO_MODEL_PATH: ${HINDI_NEMO_MODEL_PATH:-/models/nemo/stt_hi_conformer_ctc_medium.nemo}
+      NEMO_DEVICE: ${NEMO_DEVICE:-cuda}
+      NEMO_DECODER: ${NEMO_DECODER:-rnnt}
+      NEMO_DUAL_DECODER: ${NEMO_DUAL_DECODER:-true}
+      NEMO_DUAL_DECODER_LANGUAGES: ${NEMO_DUAL_DECODER_LANGUAGES:-Bengali,Hindi,Assamese}
+      # Models loaded eagerly at startup; "required" gate /health ready=true.
+      AI_NEMO_PRELOAD_LANGUAGES: ${AI_NEMO_PRELOAD_LANGUAGES:-English}
+      AI_NEMO_REQUIRED_LANGUAGES: ${AI_NEMO_REQUIRED_LANGUAGES:-English}
+      TRANSCRIPTION_RETRY_EMPTY: ${TRANSCRIPTION_RETRY_EMPTY:-true}
+    expose:
+      - "8020"
+    volumes:
+      - ./volumes/models:/models
+      - ./volumes/logs/ai-nemo:/app/logs
+    shm_size: "2gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8020/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 600s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - <<: *gpu-reservation
+    depends_on:
+      llm:
+        condition: service_healthy
+    networks: [app-net]
+    restart: unless-stopped
+
+  # --- SeamlessM4T v2 ASR: Hindi/Bengali/regional languages (:8030) ---
+  ai-seamless:
+    image: sp-ai-seamless-m4t:prod
+    container_name: sp_ai_seamless_m4t
+    logging: *json-logging
+    environment:
+      <<: [*gpu-environment, *ai-logging-env]
+      AI_SERVICE_PORT: "8030"
+      AI_SERVICE_THREADS: ${AI_SERVICE_THREADS:-2}
+      SEAMLESS_M4T_ENABLED: ${SEAMLESS_M4T_ENABLED:-true}
+      SEAMLESS_M4T_MODEL_PATH: ${SEAMLESS_M4T_MODEL_PATH:-/models/seamless-m4t-v2-large}
+      SEAMLESS_M4T_DEVICE: ${SEAMLESS_M4T_DEVICE:-cuda}
+      TRANSCRIPTION_RETRY_EMPTY: ${TRANSCRIPTION_RETRY_EMPTY:-true}
+    expose:
+      - "8030"
+    volumes:
+      - ./volumes/models:/models
+      - ./volumes/logs/ai-seamless:/app/logs
+    shm_size: "2gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8030/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 600s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - <<: *gpu-reservation
+    depends_on:
+      llm:
+        condition: service_healthy
+    networks: [app-net]
+    restart: unless-stopped
+
+  # ===========================================================================
+  #  AI diarization — hybrid stereo VAD + Pyannote 3.1 (:8040)
+  #  NOT started on plain `docker compose up` — use profile pyannote when ready:
+  #    docker compose --profile pyannote up -d ai-diarization
+  #  Seed model: volumes/models/pyannote/speaker-diarization-3.1/ (+ deps)
+  # ===========================================================================
+  ai-diarization:
+    profiles: ["pyannote"]
+    image: sp-ai-diarization:prod
+    container_name: sp_ai_diarization
+    logging: *json-logging
+    environment:
+      <<: [*gpu-environment, *ai-logging-env]
+      AI_SERVICE_THREADS: ${AI_DIAR_SERVICE_THREADS:-2}
+      DIAR_BACKEND: ${DIAR_BACKEND:-hybrid}
+      DIAR_PYANNOTE_ENABLED: ${DIAR_PYANNOTE_ENABLED:-true}
+      DIAR_PYANNOTE_NUM_SPEAKERS: ${DIAR_PYANNOTE_NUM_SPEAKERS:-2}
+      DIAR_PYANNOTE_EXCLUSIVE: ${DIAR_PYANNOTE_EXCLUSIVE:-true}
+      PYANNOTE_MODEL_PATH: ${PYANNOTE_MODEL_PATH:-/models/pyannote/speaker-diarization-3.1}
+      PYANNOTE_DEVICE: ${PYANNOTE_DEVICE:-cuda}
+      SILERO_VAD_DEVICE: ${SILERO_VAD_DEVICE:-cuda}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      AGENT_CHANNEL_INDEX: ${AGENT_CHANNEL_INDEX:-0}
+      CUSTOMER_CHANNEL_INDEX: ${CUSTOMER_CHANNEL_INDEX:-1}
+      CUSTOMER_ENHANCE_ENABLED: ${CUSTOMER_ENHANCE_ENABLED:-false}
+    expose:
+      - "8040"
+    volumes:
+      - ./volumes/models:/models
+      - ./volumes/hub-cache:/root/.cache
+      - ./volumes/logs/ai-diarization:/app/logs
+    shm_size: "2gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8040/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 600s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - <<: *gpu-reservation
+    networks: [app-net]
+    restart: unless-stopped
+
+  # ===========================================================================
+  #  AI controller — full pipeline orchestrator (:8000)
+  #  Network alias "ai" keeps backend AI_MAIN_URL=http://ai:8000 working.
+  #  Keeps the GPU reservation: local model FALLBACKS (faster-whisper, and the
+  #  full worker set when AI_DISTRIBUTED=false) still run in this container.
+  # ===========================================================================
+  ai-controller:
+    image: sp-ai-controller:prod
+    container_name: sp_ai_controller
+    logging: *json-logging
+    environment:
+      <<: [*gpu-environment, *ai-logging-env]
       PORT: "8000"
-      ORCHESTRATOR_SECRET: ${ORCHESTRATOR_SECRET}
-      CALLBACK_SECRET: ${CALLBACK_SECRET}
-      DB_SERVER: db
-      DB_PORT: "1433"
-      DB_USER: sa
-      DB_PASSWORD: ${SA_PASSWORD}
-      DB_DATABASE: call_analysis_db
-      DB_USE_WINDOWS_AUTH: "false"
-      DB_ENCRYPT: "false"
-      DB_TRUST_SERVER_CERTIFICATE: "true"
-      DB_ENABLED: "true"
-      LLM_BACKEND: openai
-      OPENAI_BASE_URL: http://llm:8001/v1
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:5000}
+      AI_ENTITLEMENT_POLL_SEC: ${AI_ENTITLEMENT_POLL_SEC:-90}
+      # --- Distributed AI stack (docs/AI-STACK-SPEC.md §5) ---
+      AI_DISTRIBUTED: ${AI_DISTRIBUTED:-true}
+      AI_LANG_SERVICE_URL: ${AI_LANG_SERVICE_URL:-http://ai-whisper-lang:8010}
+      AI_NEMO_SERVICE_URL: ${AI_NEMO_SERVICE_URL:-http://ai-nemo:8020}
+      AI_SEAMLESS_SERVICE_URL: ${AI_SEAMLESS_SERVICE_URL:-http://ai-seamless:8030}
+      AI_LANG_SERVICE_TIMEOUT_SEC: ${AI_LANG_SERVICE_TIMEOUT_SEC:-180}
+      AI_ASR_SERVICE_TIMEOUT_SEC: ${AI_ASR_SERVICE_TIMEOUT_SEC:-300}
+      ASR_CHUNK_PARALLELISM: ${ASR_CHUNK_PARALLELISM:-1}
+      AI_MAX_CONCURRENT_JOBS: ${AI_MAX_CONCURRENT_JOBS:-1}
+      # --- Database ---
+      DB_SERVER: ${DB_SERVER:-db}
+      DB_PORT: ${DB_PORT:-1433}
+      DB_USER: ${DB_USER:-sa}
+      DB_DATABASE: ${DB_DATABASE:-call_analysis_db}
+      DB_USE_WINDOWS_AUTH: ${DB_USE_WINDOWS_AUTH:-false}
+      DB_ENCRYPT: ${DB_ENCRYPT:-false}
+      DB_TRUST_SERVER_CERTIFICATE: ${DB_TRUST_SERVER_CERTIFICATE:-true}
+      DB_ENABLED: ${DB_ENABLED:-true}
+      # --- LLM (vLLM via OpenAI-compatible API) ---
+      LLM_BACKEND: ${LLM_BACKEND:-openai}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://llm:8001/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-local-prod}
-      OPENAI_MODEL: ${LLM_SERVED_NAME:-Meta-Llama-3.1-8B-Instruct}
-      OLLAMA_MODEL: ${LLM_SERVED_NAME:-Meta-Llama-3.1-8B-Instruct}
+      OPENAI_MODEL: ${LLM_SERVED_NAME:-Qwen3-14B-AWQ}
+      OLLAMA_MODEL: ${LLM_SERVED_NAME:-Qwen3-14B-AWQ}
       OPENAI_MAX_TOKENS: ${OPENAI_MAX_TOKENS:-2048}
-      BANK_CONFIG_CACHE_SEC: "60"
-      SCORING_ENABLED: "true"
-      TRANSLATION_ENABLED: "true"
-      ENRICHMENT_ENABLED: "true"
-      TRANSCRIBE_BACKEND: nemo
-      NEMO_DEVICE: cuda
-      NEMO_DECODER: rnnt
-      NEMO_DUAL_DECODER: "true"
-      NEMO_DUAL_DECODER_LANGUAGES: Bengali,Hindi,Assamese
-      BENGALI_MULTILINGUAL_FALLBACK: "true"
-      BENGALI_ASR_EXTRA_PADDING_SEC: "0.5"
-      ASR_INDIC_MIN_CHUNK_SEC: "1.2"
-      MIN_CHUNK_DURATION_SEC: "0.8"
-      CHUNK_PADDING_SEC: "0.3"
-      CHUNK_BOUNDARY_PAD_SEC: "0.2"
-      # LLM post-correction of the native transcript (fix misheard/broken words
-      # in-script via Llama) before translation. Lifts Original + translation + scoring.
-      TRANSCRIPT_CLEANUP_ENABLED: "true"
-      TRANSCRIPT_CLEANUP_LANGUAGES: Hindi,Bengali
-      # Only English uses NeMo (parakeet). IndicConformer hi/bn/multi retired (→ SeamlessM4T).
-      ENGLISH_NEMO_MODEL_PATH: /models/nemo/parakeet-rnnt-1.1b.nemo
-      # A/B TEST — Hindi on SeamlessM4T. Hindi is in NEITHER faster-whisper NOR
-      # NeMo set, so _resolve_asr_backend falls through to SeamlessM4T.
-      #   Hindi → faster-whisper large-v3:  NEMO_ASR_LANGUAGES=English,
-      #                                     FASTER_WHISPER_ASR_LANGUAGES=Hindi
-      #   Hindi → SeamlessM4T (current):    NEMO_ASR_LANGUAGES=English,
-      #                                     FASTER_WHISPER_ASR_LANGUAGES=(empty)
-      #   Hindi → sp-nemo IndicConformer:   NEMO_ASR_LANGUAGES=Hindi,English,
-      #                                     FASTER_WHISPER_ASR_LANGUAGES=(empty)
-      NEMO_ASR_LANGUAGES: English
-      FASTER_WHISPER_ASR_LANGUAGES: ""
-      SEAMLESS_M4T_ENABLED: "true"
-      SEAMLESS_M4T_MODEL_PATH: /models/seamless-m4t-v2-large
-      SEAMLESS_M4T_DEVICE: cuda
-      LANG_DISAMBIGUATE_HI_BN: "true"
-      LANG_DETECT_CONFIDENCE_MIN: "0.55"
-      LANG_DETECT_HIGH_CONFIDENCE: "0.82"
-      LANG_DETECT_SAMPLE_SEC: "20"
-      LANG_VERIFY_SAMPLE_SEC: "20"
-      LANG_LID_MAX_TRANSCRIPT_TOKENS: "96"
-      LANG_DETECT_CHANNEL: customer
-      LANG_DETECT_AGENT_CHANNEL_INDEX: "0"
-      LANG_DETECT_CUSTOMER_CHANNEL_INDEX: "1"
-      LANG_DETECT_VOICE_TRIM: "true"
-      # hi/bn: trust Whisper's detected language; only FLIP to the other language
-      # when its acoustic fit (repetition-penalized avg log-prob) beats by this margin.
-      LANG_HI_BN_FLIP_MARGIN: "0.06"
-      LANG_HI_BN_MIN_SCRIPT: "6"
-      LANG_REPETITION_MIN_UNIQUE: "0.5"
-      LANG_REPETITION_PENALTY: "0.6"
-      LANG_SCRIPT_VERIFY: "true"
-      LANG_VERIFY_ALWAYS: "false"
-      LANG_VERIFY_ALWAYS_FOR_ENGLISH: "true"
-      LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN: "true"
-      LANG_HINDI_PRIORITY_BONUS: "8"
-      LANG_BENGALI_PRIORITY_BONUS: "8"
-      LANG_ENGLISH_PLAUSIBILITY_MIN: "0.35"
-      SEAMLESS_LID_ENABLED: "false"
-      INDICLID_ENABLED: "true"
-      INDICLID_MODEL_DIR: /models/indiclid
-      INDICLID_BERT_TOKENIZER_PATH: /models/indiclid/IndicBERTv2-MLM-only
-      INDICLID_ROMAN_THRESHOLD: "0.6"
-      INDICLID_MIN_SCORE: "0.45"
-      LANG_CALL_CENTER_MODE: "true"
-      LANG_PRIMARY_LANGUAGES: Hindi,Bengali,English
-      # Whisper often mislabels Hindi as Urdu/Nepali (same spoken Hindustani).
-      # Re-probe these as Hindi via the hi/bn acoustic check.
-      LANG_HINDI_CONFUSABLE_CODES: ur,ne
-      LANG_MIN_SCRIPT_CHARS: "12"
-      FASTER_WHISPER_DOWNLOAD_ROOT: /models
-      FASTER_WHISPER_DEVICE: cuda
-      FASTER_WHISPER_COMPUTE_TYPE: float16
+      # Qwen3 emits <think>…</think> reasoning by default; keep it OFF for
+      # latency + strict-JSON outputs (llm_openai_backend strips leftovers too).
+      OPENAI_DISABLE_THINKING: ${OPENAI_DISABLE_THINKING:-true}
+      BANK_CONFIG_CACHE_SEC: ${BANK_CONFIG_CACHE_SEC:-60}
+      # --- Pipeline feature flags ---
+      SCORING_ENABLED: ${SCORING_ENABLED:-true}
+      TRANSLATION_ENABLED: ${TRANSLATION_ENABLED:-true}
+      ENRICHMENT_ENABLED: ${ENRICHMENT_ENABLED:-true}
+      HOLD_DETECTION_ENABLED: ${HOLD_DETECTION_ENABLED:-true}
+      CUSTOMER_ENHANCE_ENABLED: ${CUSTOMER_ENHANCE_ENABLED:-false}
+      # --- Sentiment / tone / query-type accuracy upgrades (2026-07) ---
+      # Sentiment: "llm" rates each utterance with the Qwen model (banking-aware,
+      # code-switch tolerant); auto-falls back to the HF transformers path.
+      SENTIMENT_BACKEND: ${SENTIMENT_BACKEND:-transformers}
+      SENTIMENT_LLM_BATCH_SIZE: ${SENTIMENT_LLM_BATCH_SIZE:-40}
+      # Tone: emotion2vec+ speech-emotion model merged with librosa levels;
+      # falls back to librosa-only when the model dir is missing.
+      TONE_BACKEND: ${TONE_BACKEND:-emotion2vec}
+      EMOTION2VEC_MODEL_PATH: ${EMOTION2VEC_MODEL_PATH:-/models/emotion2vec_plus_large}
+      EMOTION2VEC_DEVICE: ${EMOTION2VEC_DEVICE:-cpu}
+      # Query type: second LLM pass re-checks Primary_Query_Type against
+      # keyword-candidate categories (balance vs mini-statement mixups).
+      INTELLIGENCE_VERIFY_ENABLED: ${INTELLIGENCE_VERIFY_ENABLED:-true}
+      # --- ASR routing (read once at container start — see .env.example) ---
+      # Priority: FASTER_WHISPER_ASR_LANGUAGES → NEMO_ASR_LANGUAGES → SeamlessM4T.
+      TRANSCRIBE_BACKEND: ${TRANSCRIBE_BACKEND:-nemo}
+      NEMO_ASR_LANGUAGES: ${NEMO_ASR_LANGUAGES:-English}
+      FASTER_WHISPER_ASR_LANGUAGES: ${FASTER_WHISPER_ASR_LANGUAGES:-}
+      SEAMLESS_M4T_ENABLED: ${SEAMLESS_M4T_ENABLED:-true}
+      SEAMLESS_M4T_MODEL_PATH: ${SEAMLESS_M4T_MODEL_PATH:-/models/seamless-m4t-v2-large}
+      SEAMLESS_M4T_DEVICE: ${SEAMLESS_M4T_DEVICE:-cuda}
+      TRANSCRIPTION_RETRY_EMPTY: ${TRANSCRIPTION_RETRY_EMPTY:-true}
+      # Legacy external Sherpa-ONNX Hindi service (default off)
+      SP_NEMO_ENABLED: ${SP_NEMO_ENABLED:-false}
+      SP_NEMO_LANGUAGES: ${SP_NEMO_LANGUAGES:-Hindi}
+      SP_NEMO_URL: ${SP_NEMO_URL:-http://sp-nemo:8020}
+      # NeMo knobs (used by the nemo SERVICE normally; kept for local fallback)
+      NEMO_DEVICE: ${NEMO_DEVICE:-cuda}
+      NEMO_DECODER: ${NEMO_DECODER:-rnnt}
+      NEMO_DUAL_DECODER: ${NEMO_DUAL_DECODER:-true}
+      NEMO_DUAL_DECODER_LANGUAGES: ${NEMO_DUAL_DECODER_LANGUAGES:-Bengali,Hindi,Assamese}
+      ENGLISH_NEMO_MODEL_PATH: ${ENGLISH_NEMO_MODEL_PATH:-/models/nemo/parakeet-rnnt-1.1b.nemo}
+      HINDI_NEMO_MODEL_PATH: ${HINDI_NEMO_MODEL_PATH:-/models/nemo/stt_hi_conformer_ctc_medium.nemo}
+      BENGALI_MULTILINGUAL_FALLBACK: ${BENGALI_MULTILINGUAL_FALLBACK:-true}
+      BENGALI_ASR_EXTRA_PADDING_SEC: ${BENGALI_ASR_EXTRA_PADDING_SEC:-0.5}
+      # --- faster-whisper (controller-local fallback ASR, lazy-loaded) ---
+      FASTER_WHISPER_DOWNLOAD_ROOT: ${FASTER_WHISPER_DOWNLOAD_ROOT:-/models}
+      FASTER_WHISPER_DEVICE: ${FASTER_WHISPER_DEVICE:-cuda}
+      FASTER_WHISPER_COMPUTE_TYPE: ${FASTER_WHISPER_COMPUTE_TYPE:-float16}
       FASTER_WHISPER_MODEL_PATH: ${FASTER_WHISPER_MODEL_PATH:-/models/faster-whisper-large-v3}
-      FASTER_WHISPER_VAD_FILTER: "true"
-      FASTER_WHISPER_BEAM_SIZE: "8"
-      WHISPER_LANG_MODEL_PATH: /models/Whisper-large-v3
-      WHISPER_LANG_DEVICE: cuda
-      AUDIO_UPLOAD_DIR: /data/Sample_Audio
-      LOG_DIR: /app/logs
-      CUSTOMER_ENHANCE_ENABLED: "false"
-      # sp-nemo IndicConformer ASR retired — Hindi+Bengali now run on SeamlessM4T.
-      SP_NEMO_ENABLED: "false"
+      FASTER_WHISPER_VAD_FILTER: ${FASTER_WHISPER_VAD_FILTER:-true}
+      FASTER_WHISPER_BEAM_SIZE: ${FASTER_WHISPER_BEAM_SIZE:-8}
+      # --- Chunking / diarization ---
+      ASR_INDIC_MIN_CHUNK_SEC: ${ASR_INDIC_MIN_CHUNK_SEC:-1.2}
+      MIN_CHUNK_DURATION_SEC: ${MIN_CHUNK_DURATION_SEC:-0.8}
+      CHUNK_PADDING_SEC: ${CHUNK_PADDING_SEC:-0.3}
+      CHUNK_BOUNDARY_PAD_SEC: ${CHUNK_BOUNDARY_PAD_SEC:-0.2}
+      # Diarization anti-oversplit: drop short crosstalk blips that split a continuous
+      # speaker, and rejoin same-speaker turns across a short pause.
+      DIAR_SUPPRESS_SANDWICHED_CROSSTALK: ${DIAR_SUPPRESS_SANDWICHED_CROSSTALK:-true}
+      DIAR_SANDWICH_MAX_DURATION_SEC: ${DIAR_SANDWICH_MAX_DURATION_SEC:-0.6}
+      DIAR_SANDWICH_RMS_RATIO: ${DIAR_SANDWICH_RMS_RATIO:-1.4}
+      DIAR_SAME_SPEAKER_MERGE_GAP_SEC: ${DIAR_SAME_SPEAKER_MERGE_GAP_SEC:-0.8}
+      DIAR_BACKEND: ${DIAR_BACKEND:-stereo}
+      DIAR_PYANNOTE_ENABLED: ${DIAR_PYANNOTE_ENABLED:-false}
+      DIAR_PYANNOTE_NUM_SPEAKERS: ${DIAR_PYANNOTE_NUM_SPEAKERS:-2}
+      SILERO_VAD_DEVICE: ${SILERO_VAD_DEVICE:-cuda}
+      PYANNOTE_MODEL_PATH: ${PYANNOTE_MODEL_PATH:-/models/pyannote/speaker-diarization-3.1}
+      AI_DIAR_SERVICE_URL: ${AI_DIAR_SERVICE_URL:-http://ai-diarization:8040}
+      DIARIZATION_REMOTE_ENABLED: ${DIARIZATION_REMOTE_ENABLED:-false}
+      # --- Transcript cleanup / normalize (LLM post-correction before translation) ---
+      TRANSCRIPT_CLEANUP_ENABLED: ${TRANSCRIPT_CLEANUP_ENABLED:-true}
+      TRANSCRIPT_CLEANUP_LANGUAGES: ${TRANSCRIPT_CLEANUP_LANGUAGES:-English,Hindi,Bengali,Tamil,Telugu,Marathi,Gujarati,Kannada,Malayalam,Punjabi,Odia,Assamese,Urdu}
+      TRANSCRIPT_CLEANUP_MIN_SIMILARITY: ${TRANSCRIPT_CLEANUP_MIN_SIMILARITY:-0.55}
+      TRANSCRIPT_CLEANUP_CONTEXT_MIN_SIMILARITY: ${TRANSCRIPT_CLEANUP_CONTEXT_MIN_SIMILARITY:-0.28}
+      TRANSCRIPT_CLEANUP_ENTITY_MIN_SIMILARITY: ${TRANSCRIPT_CLEANUP_ENTITY_MIN_SIMILARITY:-0.22}
+      TRANSCRIPT_CLEANUP_FULL_CALL_MAX_LINES: ${TRANSCRIPT_CLEANUP_FULL_CALL_MAX_LINES:-45}
+      TRANSCRIPT_CONTEXT_ENABLED: ${TRANSCRIPT_CONTEXT_ENABLED:-true}
+      TRANSCRIPT_CONTEXT_FULL_CALL_MAX_LINES: ${TRANSCRIPT_CONTEXT_FULL_CALL_MAX_LINES:-100}
+      TRANSCRIPT_CONTEXT_BATCH_SIZE: ${TRANSCRIPT_CONTEXT_BATCH_SIZE:-36}
+      TRANSCRIPT_CONTEXT_BATCH_OVERLAP: ${TRANSCRIPT_CONTEXT_BATCH_OVERLAP:-8}
+      TRANSCRIPT_CONTEXT_MIN_SIMILARITY: ${TRANSCRIPT_CONTEXT_MIN_SIMILARITY:-0.12}
+      TRANSCRIPT_CONTEXT_EVIDENCE_MIN_SIMILARITY: ${TRANSCRIPT_CONTEXT_EVIDENCE_MIN_SIMILARITY:-0.10}
+      TRANSCRIPT_REFINEMENT_ENABLED: ${TRANSCRIPT_REFINEMENT_ENABLED:-false}
+      TRANSCRIPT_REFINEMENT_NATIVE: ${TRANSCRIPT_REFINEMENT_NATIVE:-false}
+      TRANSCRIPT_REFINEMENT_ENGLISH: ${TRANSCRIPT_REFINEMENT_ENGLISH:-false}
+      TRANSCRIPT_REFINEMENT_FULL_CALL_MAX_LINES: ${TRANSCRIPT_REFINEMENT_FULL_CALL_MAX_LINES:-100}
+      TRANSCRIPT_REFINEMENT_MIN_ISSUE_CONFIDENCE: ${TRANSCRIPT_REFINEMENT_MIN_ISSUE_CONFIDENCE:-0.40}
+      TRANSCRIPT_REFINEMENT_PRE_AUDIT_ENABLED: ${TRANSCRIPT_REFINEMENT_PRE_AUDIT_ENABLED:-true}
+      TRANSCRIPT_REFINEMENT_VERIFIER_FALLBACK: ${TRANSCRIPT_REFINEMENT_VERIFIER_FALLBACK:-true}
+      TRANSCRIPT_FORMAT_NUMBERS_ENABLED: ${TRANSCRIPT_FORMAT_NUMBERS_ENABLED:-true}
+      TRANSCRIPT_ENTITY_ENABLED: ${TRANSCRIPT_ENTITY_ENABLED:-true}
+      TRANSCRIPT_ENTITY_FULL_CALL_MAX_LINES: ${TRANSCRIPT_ENTITY_FULL_CALL_MAX_LINES:-50}
+      TRANSCRIPT_NORMALIZE_ENABLED: ${TRANSCRIPT_NORMALIZE_ENABLED:-true}
+      TRANSCRIPT_NORMALIZE_DROP_FILLER_TURNS: ${TRANSCRIPT_NORMALIZE_DROP_FILLER_TURNS:-true}
+      # --- Query category autodiscovery (LLM → admin Query Types page) ---
+      QUERY_CATEGORY_AUTODISCOVER_ENABLED: ${QUERY_CATEGORY_AUTODISCOVER_ENABLED:-true}
+      QUERY_CATEGORY_AUTODISCOVER_MAX: ${QUERY_CATEGORY_AUTODISCOVER_MAX:-60}
+      QUERY_CATEGORY_DEDUPE_SIMILARITY: ${QUERY_CATEGORY_DEDUPE_SIMILARITY:-0.82}
+      # --- Language detection (FALLBACK path when lang service is down;
+      #     primary detection now lives in ai-whisper-lang) ---
+      WHISPER_LANG_MODEL_PATH: ${WHISPER_LANG_MODEL_PATH:-/models/Whisper-large-v3}
+      WHISPER_LANG_DEVICE: ${WHISPER_LANG_DEVICE:-cuda}
+      LANG_DETECT_MODE: ${LANG_DETECT_MODE:-enhanced}
+      LANG_REGIONAL_ACOUSTIC_MARGIN: ${LANG_REGIONAL_ACOUSTIC_MARGIN:-0.18}
+      LANG_DISAMBIGUATE_HI_BN: ${LANG_DISAMBIGUATE_HI_BN:-true}
+      LANG_DETECT_CONFIDENCE_MIN: ${LANG_DETECT_CONFIDENCE_MIN:-0.55}
+      LANG_DETECT_HIGH_CONFIDENCE: ${LANG_DETECT_HIGH_CONFIDENCE:-0.82}
+      LANG_DETECT_SAMPLE_SEC: ${LANG_DETECT_SAMPLE_SEC:-12}
+      LANG_VERIFY_SAMPLE_SEC: ${LANG_VERIFY_SAMPLE_SEC:-12}
+      LANG_LID_MAX_TRANSCRIPT_TOKENS: ${LANG_LID_MAX_TRANSCRIPT_TOKENS:-96}
+      LANG_DETECT_CHANNEL: ${LANG_DETECT_CHANNEL:-agent}
+      LANG_DETECT_AGENT_CHANNEL_INDEX: ${LANG_DETECT_AGENT_CHANNEL_INDEX:-0}
+      LANG_DETECT_CUSTOMER_CHANNEL_INDEX: ${LANG_DETECT_CUSTOMER_CHANNEL_INDEX:-1}
+      LANG_DETECT_VOICE_TRIM: ${LANG_DETECT_VOICE_TRIM:-true}
+      LANG_DETECT_MULTI_CHANNEL: ${LANG_DETECT_MULTI_CHANNEL:-true}
+      # wordmatch: 1st+2nd agent/customer chunks vs 12-language word dictionaries
+      LANG_LID_BACKEND: ${LANG_LID_BACKEND:-wordmatch}
+      LANG_WORDMATCH_CHUNK_SEC: ${LANG_WORDMATCH_CHUNK_SEC:-10}
+      LANG_WORDMATCH_CHUNKS_PER_CHANNEL: ${LANG_WORDMATCH_CHUNKS_PER_CHANNEL:-2}
+      LANG_WORDMATCH_MIN_EVIDENCE: ${LANG_WORDMATCH_MIN_EVIDENCE:-4}
+      LANG_WORDMATCH_TIEBREAK_MARGIN: ${LANG_WORDMATCH_TIEBREAK_MARGIN:-6}
+      LANG_RESTRICTED_CONFIDENT: ${LANG_RESTRICTED_CONFIDENT:-0.75}
+      LANG_MAP_URDU_TO_HINDI: ${LANG_MAP_URDU_TO_HINDI:-true}
+      LANG_MAP_NEPALI_TO_HINDI: ${LANG_MAP_NEPALI_TO_HINDI:-true}
+      LANG_MAP_ASSAMESE_TO_BENGALI: ${LANG_MAP_ASSAMESE_TO_BENGALI:-true}
+      LANG_LID_FAST_MODE: ${LANG_LID_FAST_MODE:-true}
+      LANG_HI_BN_FLIP_MARGIN: ${LANG_HI_BN_FLIP_MARGIN:-0.06}
+      LANG_HI_BN_MIN_SCRIPT: ${LANG_HI_BN_MIN_SCRIPT:-6}
+      LANG_REPETITION_MIN_UNIQUE: ${LANG_REPETITION_MIN_UNIQUE:-0.5}
+      LANG_REPETITION_PENALTY: ${LANG_REPETITION_PENALTY:-0.6}
+      LANG_SCRIPT_VERIFY: ${LANG_SCRIPT_VERIFY:-true}
+      LANG_VERIFY_ALWAYS: ${LANG_VERIFY_ALWAYS:-false}
+      LANG_VERIFY_ALWAYS_FOR_ENGLISH: ${LANG_VERIFY_ALWAYS_FOR_ENGLISH:-false}
+      LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN: ${LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN:-true}
+      LANG_HINDI_PRIORITY_BONUS: ${LANG_HINDI_PRIORITY_BONUS:-8}
+      LANG_BENGALI_PRIORITY_BONUS: ${LANG_BENGALI_PRIORITY_BONUS:-8}
+      LANG_ENGLISH_PLAUSIBILITY_MIN: ${LANG_ENGLISH_PLAUSIBILITY_MIN:-0.35}
+      LANG_ENGLISH_GUARD_ENABLED: ${LANG_ENGLISH_GUARD_ENABLED:-true}
+      LANG_ENGLISH_GUARD_MIN_PROB: ${LANG_ENGLISH_GUARD_MIN_PROB:-0.12}
+      LANG_ENGLISH_GUARD_WORD_RATIO: ${LANG_ENGLISH_GUARD_WORD_RATIO:-0.40}
+      LANG_BENGALI_GUARD_ENABLED: ${LANG_BENGALI_GUARD_ENABLED:-true}
+      LANG_BENGALI_GUARD_MIN_PROB: ${LANG_BENGALI_GUARD_MIN_PROB:-0.12}
+      LANG_BENGALI_GUARD_MIN_ROMAN: ${LANG_BENGALI_GUARD_MIN_ROMAN:-1}
+      LANG_HINDI_GUARD_ENABLED: ${LANG_HINDI_GUARD_ENABLED:-true}
+      LANG_HINDI_GUARD_MIN_PROB: ${LANG_HINDI_GUARD_MIN_PROB:-0.10}
+      LANG_FAST_PATH_HI_CONFIDENCE: ${LANG_FAST_PATH_HI_CONFIDENCE:-0.72}
+      LANG_FAST_PATH_BN_CONFIDENCE: ${LANG_FAST_PATH_BN_CONFIDENCE:-0.72}
+      LANG_PRIMARY_ONLY: ${LANG_PRIMARY_ONLY:-true}
+      LANG_REGIONAL_DETECTION: ${LANG_REGIONAL_DETECTION:-false}
+      LANG_DRAVIDIAN_CONFUSABLE_CODES: ${LANG_DRAVIDIAN_CONFUSABLE_CODES:-ta,te,kn,ml}
+      LANG_CALL_CENTER_MODE: ${LANG_CALL_CENTER_MODE:-true}
+      LANG_PRIMARY_LANGUAGES: ${LANG_PRIMARY_LANGUAGES:-Hindi,Bengali,English}
+      LANG_HINDI_CONFUSABLE_CODES: ${LANG_HINDI_CONFUSABLE_CODES:-ur,ne}
+      LANG_MIN_SCRIPT_CHARS: ${LANG_MIN_SCRIPT_CHARS:-12}
+      SEAMLESS_LID_ENABLED: ${SEAMLESS_LID_ENABLED:-false}
+      SEAMLESS_LID_SAMPLE_SEC: ${SEAMLESS_LID_SAMPLE_SEC:-22}
+      SEAMLESS_LID_PROBE_LANGUAGES: ${SEAMLESS_LID_PROBE_LANGUAGES:-Hindi,Bengali,English}
+      INDICLID_ENABLED: ${INDICLID_ENABLED:-true}
+      INDICLID_MODEL_DIR: ${INDICLID_MODEL_DIR:-/models/indiclid}
+      INDICLID_BERT_TOKENIZER_PATH: ${INDICLID_BERT_TOKENIZER_PATH:-/models/indiclid/IndicBERTv2-MLM-only}
+      INDICLID_ROMAN_THRESHOLD: ${INDICLID_ROMAN_THRESHOLD:-0.6}
+      INDICLID_MIN_SCORE: ${INDICLID_MIN_SCORE:-0.45}
+      # --- Paths (container-internal; must match the volume mounts below) ---
+      AUDIO_UPLOAD_DIR: ${AUDIO_UPLOAD_DIR:-/data/Sample_Audio}
+      LOG_DIR: ${LOG_DIR:-/app/logs}
+    expose:
+      - "8000"
+    secrets:
+      - orchestrator_secret
+      - callback_secret
+      - service_token
+      - db_password
     volumes:
       - ./volumes/audio:/data/Sample_Audio
       - ./volumes/models:/models
       - ./volumes/work:/work
-      - ./volumes/logs/ai:/app/logs
+      - ./volumes/logs/ai-controller:/app/logs
+      # torch-hub/HF cache for controller-local helper models (silero VAD,
+      # MiniLM script model, sentiment). Persisted on the host so recreated
+      # containers never re-download (air-gap safe once seeded — see runbook).
+      - ./volumes/hub-cache:/root/.cache
     shm_size: "2gb"
     ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 300s
     deploy:
       resources:
         reservations:
@@ -300,7 +713,15 @@ services:
         condition: service_healthy
       llm:
         condition: service_healthy
-    networks: [app-net]
+      ai-whisper-lang:
+        condition: service_started
+      ai-nemo:
+        condition: service_started
+      ai-seamless:
+        condition: service_started
+    networks:
+      app-net:
+        aliases: [ai]
     restart: unless-stopped
 
 volumes:
