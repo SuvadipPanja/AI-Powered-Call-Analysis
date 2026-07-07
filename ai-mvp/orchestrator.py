@@ -6,16 +6,39 @@ Enhanced with transcript caching and parallel-safe job tracking.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
+from secrets_hydrate import hydrate_secrets
+
+_hydrated = hydrate_secrets()
+if _hydrated:
+    print(f"[secrets] Loaded from files: {', '.join(_hydrated)}", flush=True)
+
+# Rotating-file + stdout logging for the whole process — must run before the
+# worker modules are imported so their loggers inherit the handlers. Existing
+# print()-based logs are unaffected.
+from log_setup import init_service_logging
+
+init_service_logging("sp-ai-controller")
+
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
-from config import AUDIO_UPLOAD_DIR, ENRICHMENT_ENABLED, LOG_DIR, OLLAMA_MODEL, PORT, SCORING_ENABLED
+from asr_client import asr_service_health
+from config import (
+    AI_DISTRIBUTED,
+    AUDIO_UPLOAD_DIR,
+    ENRICHMENT_ENABLED,
+    LOG_DIR,
+    OLLAMA_MODEL,
+    PORT,
+    SCORING_ENABLED,
+)
 from db import (
     ensure_consolidated_table,
     mark_failed,
@@ -25,15 +48,24 @@ from db import (
     upsert_transcription_result,
 )
 from enrichment_worker import enrich_call, enrichment_enabled, enrichment_health
-from intelligence_worker import extract_intelligence, intelligence_enabled, intelligence_health
+from intelligence_worker import extract_intelligence, intelligence_enabled, intelligence_health, reconcile_lead_classification
+from hold_worker import analyze_hold, default_hold, hold_detection_enabled
+from lang_client import lang_service_health
 from model_memory import release_transcription_memory
 from prod_logging import log_call_event
 from progress import stage_message, stage_percent
 from scoring_worker import ollama_health, score_call, scoring_enabled
 from taboo_worker import analyze_taboo, apply_taboo_to_scores, merge_taboo_into_tone
-from transcribe import transcribe, transcription_health
+from transcribe import transcribe, transcription_health, is_transcript_usable
 from transcript_cleanup_worker import cleanup_enabled, cleanup_supported, cleanup_transcript
+from transcript_context_worker import context_cleanup_enabled, context_cleanup_supported, context_cleanup_transcript
+from transcript_entity_worker import entity_normalize_enabled, normalize_entities
+from transcript_format_worker import format_enabled, format_transcript, polish_english_transcript
+from transcript_normalize import normalize_transcript
 from translation_worker import needs_translation, translate_transcript, translation_enabled
+
+from work_token import extract_bearer_token, verify_work_token
+import entitlement
 
 load_dotenv()
 
@@ -48,6 +80,10 @@ MAX_CACHE_SIZE = 50
 # null a model while another is mid-`model.generate`, which surfaces as
 # "'NoneType' object is not callable". Holding the same lock for both the
 # transcribe() call and the release guarantees they never overlap.
+# Distributed mode (AI_DISTRIBUTED): language detection and ASR run in remote
+# services, no shared local models are loaded here — the lock is bypassed so
+# multiple audios can transcribe concurrently end-to-end. (Controller-local
+# fallback models are serialized inside transcribe.py instead.)
 _pipeline_lock = threading.Lock()
 
 
@@ -77,10 +113,20 @@ app = Flask(__name__)
 ORCHESTRATOR_SECRET = os.getenv("ORCHESTRATOR_SECRET", "").strip()
 
 
-def _authorized(req) -> bool:
+def _authorized(req, audio_file: str | None = None) -> bool:
     if not ORCHESTRATOR_SECRET:
         return True
-    return req.headers.get("X-Orchestrator-Secret", "") == ORCHESTRATOR_SECRET
+    legacy = req.headers.get("X-Orchestrator-Secret", "") == ORCHESTRATOR_SECRET
+    if audio_file:
+        token = extract_bearer_token(req)
+        ok, reason = verify_work_token(token, audio_file)
+        if ok:
+            return True
+        if legacy:
+            return True
+        log(f"Work token rejected for {audio_file}: {reason}")
+        return False
+    return legacy
 
 
 def log(msg: str) -> None:
@@ -89,6 +135,37 @@ def log(msg: str) -> None:
     log_file = LOG_DIR / f"orchestrator_{datetime.now():%Y-%m-%d}.log"
     with open(log_file, "a", encoding="utf-8") as fh:
         fh.write(line + "\n")
+
+
+def _apply_llm_transcript_cleanup(
+    transcript: str,
+    language: str,
+    audio_file: str,
+    *,
+    label: str,
+) -> str:
+    """Legacy LLM cleanup passes (context → line cleanup). TRA disabled."""
+    if context_cleanup_enabled() and context_cleanup_supported(language):
+        cleaned = context_cleanup_transcript(transcript, language)
+        if cleaned and cleaned != transcript:
+            log_call_event(
+                audio_file,
+                "cleanup",
+                f"Context cleanup ({label}/{language}) "
+                f"chars {len(transcript)}→{len(cleaned)}",
+            )
+            return cleaned
+    if cleanup_enabled() and cleanup_supported(language):
+        cleaned = cleanup_transcript(transcript, language)
+        if cleaned and cleaned != transcript:
+            log_call_event(
+                audio_file,
+                "cleanup",
+                f"Transcript cleanup ({label}/{language}) "
+                f"chars {len(transcript)}→{len(cleaned)}",
+            )
+            return cleaned
+    return transcript
 
 
 def _progress(
@@ -149,13 +226,23 @@ def process_audio_job(audio_file: str) -> None:
         else:
             stage = "transcription"
             _progress(audio_file, "transcribing", "In Progress")
-            with _pipeline_lock:
+            if AI_DISTRIBUTED:
+                # Remote lang/ASR services — no shared local models to protect,
+                # so jobs transcribe concurrently without the pipeline lock.
                 result = transcribe(
                     audio_path,
                     on_progress=lambda stage, language: _on_transcribe_progress(
                         audio_file, stage, language
                     ),
                 )
+            else:
+                with _pipeline_lock:
+                    result = transcribe(
+                        audio_path,
+                        on_progress=lambda stage, language: _on_transcribe_progress(
+                            audio_file, stage, language
+                        ),
+                    )
             update_detected_language(audio_file, result.language)
             _set_cached_transcript(audio_path, {
                 "transcript": result.transcript,
@@ -173,18 +260,63 @@ def process_audio_job(audio_file: str) -> None:
             f"chunks={result.chunk_count} chars={len(result.transcript)}",
         )
 
+        if not is_transcript_usable(result.transcript, result.chunk_count):
+            raise RuntimeError(
+                f"Transcription failed: no usable speech text "
+                f"(chars={len(result.transcript)}, chunks={result.chunk_count}, "
+                f"engine={result.asr_engine}, lang={result.language}). "
+                "Diarization found speech but ASR returned empty lines — "
+                "check GPU memory, ASR service health, or language detection."
+            )
+
         original_transcript = result.transcript
-        if cleanup_enabled() and cleanup_supported(result.language):
-            stage = "cleanup"
-            cleaned = cleanup_transcript(original_transcript, result.language)
-            if cleaned and cleaned != original_transcript:
+
+        # Deterministic pre-analysis cleanup (all languages): drop filler noise
+        # ("mm", "uh" ...) and collapse immediately-repeated words. Runs before the
+        # LLM cleanup/translation so every downstream stage sees a cleaner transcript.
+        normalized = normalize_transcript(original_transcript)
+        if normalized and normalized != original_transcript:
+            log_call_event(
+                audio_file,
+                "cleanup",
+                f"Transcript normalized (filler/repeat) "
+                f"chars {len(original_transcript)}→{len(normalized)}",
+            )
+            original_transcript = normalized
+
+        if format_enabled():
+            formatted = format_transcript(original_transcript)
+            if formatted and formatted != original_transcript:
                 log_call_event(
                     audio_file,
                     "cleanup",
-                    f"Transcript cleanup applied ({result.language}) "
-                    f"chars {len(original_transcript)}→{len(cleaned)}",
+                    f"Transcript formatted (numbers/abbrev) "
+                    f"chars {len(original_transcript)}→{len(formatted)}",
                 )
-                original_transcript = cleaned
+                original_transcript = formatted
+
+        if (
+            (context_cleanup_enabled() or cleanup_enabled())
+            and (context_cleanup_supported(result.language) or cleanup_supported(result.language))
+            and (result.language or "").strip() != "English"
+        ):
+            original_transcript = _apply_llm_transcript_cleanup(
+                original_transcript,
+                result.language,
+                audio_file,
+                label="native",
+            )
+
+        if entity_normalize_enabled():
+            ent = normalize_entities(original_transcript, result.language)
+            if ent and ent != original_transcript:
+                log_call_event(
+                    audio_file,
+                    "cleanup",
+                    f"Entity normalize ({result.language}) "
+                    f"chars {len(original_transcript)}→{len(ent)}",
+                )
+                original_transcript = ent
 
         english_transcript = original_transcript
         translation_model = ""
@@ -204,6 +336,33 @@ def process_audio_job(audio_file: str) -> None:
         else:
             log_call_event(audio_file, "translation", f"Skipped language={result.language}")
 
+        english_transcript = _apply_llm_transcript_cleanup(
+            english_transcript,
+            "English",
+            audio_file,
+            label="English",
+        )
+        if entity_normalize_enabled():
+            ent_en = normalize_entities(english_transcript, "English")
+            if ent_en and ent_en != english_transcript:
+                log_call_event(
+                    audio_file,
+                    "cleanup",
+                    f"Entity normalize (English translation) "
+                    f"chars {len(english_transcript)}→{len(ent_en)}",
+                )
+                english_transcript = ent_en
+
+        polished = polish_english_transcript(english_transcript)
+        if polished and polished != english_transcript:
+            log_call_event(
+                audio_file,
+                "cleanup",
+                f"English polish (brands/numbers/case) "
+                f"chars {len(english_transcript)}→{len(polished)}",
+            )
+            english_transcript = polished
+
         if not scoring_enabled():
             upsert_transcription_result(
                 audio_file,
@@ -219,8 +378,11 @@ def process_audio_job(audio_file: str) -> None:
             log(f"Completed (transcribed only): {audio_file}")
             return
 
-        with _pipeline_lock:
-            release_transcription_memory()
+        if not AI_DISTRIBUTED:
+            # Distributed mode loads no local transcription models — nothing to
+            # release, and skipping keeps concurrent jobs from serializing here.
+            with _pipeline_lock:
+                release_transcription_memory()
 
         if scoring_enabled():
             stage = "scoring"
@@ -256,14 +418,33 @@ def process_audio_job(audio_file: str) -> None:
                 log_call_event(audio_file, "intelligence", "Intelligence extraction started")
                 intel = extract_intelligence(english_transcript, "English")
                 scoring.scores.update(intel)
+                scoring.scores = reconcile_lead_classification(scoring.scores)
                 log_call_event(
                     audio_file,
                     "intelligence",
                     f"Done query={intel.get('Primary_Query_Type')} "
                     f"escalated={intel.get('Escalation_Requested')} "
                     f"loan={intel.get('Loan_Type')} "
+                    f"lead={scoring.scores.get('Lead_Classification')} "
                     f"prob={intel.get('Loan_Success_Probability')}",
                 )
+
+            if hold_detection_enabled():
+                hold = analyze_hold(
+                    english_transcript,
+                    original_transcript=original_transcript,
+                    total_duration_sec=result.duration_seconds or None,
+                )
+                scoring.scores.update(hold)
+                log_call_event(
+                    audio_file,
+                    "hold",
+                    f"Hold detected={hold.get('Hold_Detected')} "
+                    f"count={hold.get('Hold_Count')} "
+                    f"total_sec={hold.get('Hold_Total_Sec')}",
+                )
+            else:
+                scoring.scores.update(default_hold())
 
             taboo = analyze_taboo(original_transcript, english_transcript, result.language)
             scoring.scores = apply_taboo_to_scores(scoring.scores, taboo)
@@ -279,6 +460,12 @@ def process_audio_job(audio_file: str) -> None:
                 )
 
             elapsed = time.time() - job_started
+            overall = scoring.scores.get("Overall_Scoring", "n/a")
+            complete_msg = f"Success overall={overall} elapsed={elapsed:.1f}s"
+            if overall in (0, 0.0, "0", "0.0", None) and is_transcript_usable(
+                english_transcript, result.chunk_count
+            ):
+                complete_msg += " (low score — review transcript quality)"
             upsert_scoring_result(
                 audio_file,
                 original_transcript,
@@ -302,7 +489,7 @@ def process_audio_job(audio_file: str) -> None:
             log_call_event(
                 audio_file,
                 "complete",
-                f"Success overall={scoring.scores.get('Overall_Scoring', 'n/a')} elapsed={elapsed:.1f}s",
+                complete_msg,
             )
     except Exception as exc:
         log_call_event(
@@ -334,35 +521,60 @@ def health():
         phase = "2b-scoring"
     else:
         phase = "2a-transcribe-only"
-    return jsonify(
-        {
-            "success": True,
-            "service": "ai-mvp-orchestrator",
-            "phase": phase,
-            "ollama_model": OLLAMA_MODEL,
-            "translation_enabled": translation_enabled(),
-            "transcription": transcription_health(),
-            "scoring": ollama_health(),
-            "enrichment": enrichment_health(),
-            "intelligence": intelligence_health(),
+    transcription_info = transcription_health()
+    payload = {
+        "success": True,
+        "service": "ai-mvp-orchestrator",
+        "phase": phase,
+        "ollama_model": OLLAMA_MODEL,
+        "translation_enabled": translation_enabled(),
+        "transcription": transcription_info,
+        "scoring": ollama_health(),
+        "enrichment": enrichment_health(),
+        "intelligence": intelligence_health(),
+        "entitlement": entitlement.snapshot(),
+        "active_jobs": entitlement.active_job_count(),
+    }
+    if AI_DISTRIBUTED:
+        # Downstream service summaries (5s client timeouts keep this fast).
+        # transcription_health() already probed them — reuse instead of re-calling.
+        payload["services"] = {
+            "lang": transcription_info.get("lang_service") or lang_service_health(),
+            "nemo": transcription_info.get("nemo_service") or asr_service_health("nemo"),
+            "seamless": transcription_info.get("seamless_service")
+            or asr_service_health("seamless"),
         }
-    )
+    return jsonify(payload)
+
+
+def _run_job_wrapper(audio_file: str) -> None:
+    try:
+        process_audio_job(audio_file)
+    finally:
+        entitlement.release_job()
 
 
 def _start_audio_job(audio_file: str):
+    ok, reason = entitlement.try_acquire_job()
+    if not ok:
+        log(f"Rejected job {audio_file}: {reason}")
+        return
     log(f"Accepted job: {audio_file}")
-    threading.Thread(target=process_audio_job, args=(audio_file,), daemon=True).start()
+    threading.Thread(target=_run_job_wrapper, args=(audio_file,), daemon=True).start()
 
 
 @app.post("/process-audio")
 def process_audio_endpoint():
-    if not _authorized(request):
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-
     data = request.get_json(silent=True) or {}
     audio_file = data.get("audioFile")
     if not audio_file:
         return jsonify({"success": False, "message": "Missing audioFile"}), 400
+
+    if not _authorized(request, audio_file):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    if not entitlement.ai_allowed():
+        return jsonify({"success": False, "message": "AI not licensed", "code": "AI_NOT_LICENSED"}), 503
 
     audio_path = Path(AUDIO_UPLOAD_DIR) / audio_file
     if not audio_path.is_file():
@@ -380,12 +592,15 @@ def process_audio_endpoint():
 
 @app.post("/upload-and-process")
 def upload_and_process_endpoint():
-    if not _authorized(request):
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-
     audio_file = request.form.get("audioFile")
     if not audio_file:
         return jsonify({"success": False, "message": "Missing audioFile"}), 400
+
+    if not _authorized(request, audio_file):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    if not entitlement.ai_allowed():
+        return jsonify({"success": False, "message": "AI not licensed", "code": "AI_NOT_LICENSED"}), 503
 
     upload = request.files.get("audio")
     if not upload or not upload.filename:
@@ -433,5 +648,11 @@ if __name__ == "__main__":
     if ENRICHMENT_ENABLED:
         enrich_info = enrichment_health()
         log(f"Phase 2c enrichment: {enrich_info}")
+
+    if entitlement.refresh():
+        log(f"Entitlement sync OK: state={entitlement.snapshot().get('license_state')}")
+    else:
+        log(f"Entitlement sync warning: {entitlement.snapshot().get('last_error')}")
+    entitlement.start_poll_thread()
 
     app.run(host="0.0.0.0", port=PORT, debug=False, threaded=True)

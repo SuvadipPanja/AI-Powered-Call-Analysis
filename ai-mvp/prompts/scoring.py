@@ -168,7 +168,12 @@ Constraints:
   Classify by the customer's reason for calling. A how-to / information request is Inquiry or
   Service Request. Use Complaint ONLY for a genuine complaint about a bank service/product/staff —
   NOT because the customer was rude.
-- Lead_Classification: exactly one of [Hot Lead, Cold Lead, Warm Lead, Not a Lead]
+- Lead_Classification: exactly one of [Hot Lead, Cold Lead, Warm Lead, Not a Lead].
+  Use ONLY for genuine LOAN product interest (home/personal/car/business/education/gold loan,
+  EMI, disbursement, loan application, mortgage). "Not a Lead" for balance enquiry, credit card
+  rewards/points/cashback redemption, debit/ATM/PIN issues, KYC, complaints, net banking —
+  even if the word "credit" or "card" appears. Hot = customer wants to apply or strong intent.
+  Warm = loan discussed, moderate interest. Cold = loan mentioned, low interest.
 - Resolution_Status: exactly one of [Resolved, Pending, Escalated, Unresolved]. Mark Resolved when
   the agent gave the correct, complete answer/steps and the customer did not report failure or a new
   unmet need (ending with "no, thank you" after a full answer = Resolved).
@@ -213,6 +218,7 @@ Rude Behavior: Yes or No
 Overall Scoring: <0-100>
 Call Type: Inquiry or Service Request or Transaction Issue or Complaint or Sales or Other
 Lead Classification: Hot Lead or Cold Lead or Warm Lead or Not a Lead
+  (loan products only — NOT credit card rewards/balance/PIN calls)
 Resolution Status: Resolved or Pending or Escalated or Unresolved
 Feedback: <2-3 sentences: one strength then the top improvement, each citing a moment>
 Summary: <2-3 sentence summary>

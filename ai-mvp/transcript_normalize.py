@@ -1,0 +1,108 @@
+"""Deterministic pre-analysis transcript normalization.
+
+Runs BEFORE LLM cleanup / translation, for EVERY language. It removes recording
+noise that hurts both readability and downstream scoring/intelligence:
+
+  * standalone filler tokens ("mm", "hmm", "uh", "um", "erm", ...)
+  * immediately-repeated words ("basically basically" -> "basically",
+    "yes yes yes" -> "yes")
+  * turns that are left empty / filler-only after cleaning (optionally dropped)
+
+It is language-agnostic and conservative: tokens are ONLY ever dropped whole,
+never rewritten or re-joined, so complex scripts (Bengali/Devanagari combining
+marks), hyphenated words, numbers like 9,000 and contractions stay byte-exact.
+The output can only be shorter than (or equal to) the input.
+"""
+
+from __future__ import annotations
+
+import re
+
+from config import (
+    TRANSCRIPT_NORMALIZE_DROP_FILLER_TURNS,
+    TRANSCRIPT_NORMALIZE_ENABLED,
+)
+
+# Line shape produced by transcription: "0.00 - 2.00 (Agent): text"
+_LINE_RE = re.compile(r"^(\s*[\d.]+\s*-\s*[\d.]+\s*\([^)]+\)\s*:)(.*)$")
+
+# Pure filler / hesitation tokens (no semantic content). Case-insensitive.
+# NOTE: meaningful acknowledgements (yes/no/ok/haan/ji/accha) are intentionally
+# NOT here — only remove noise.
+_FILLER_TOKENS = frozenset({
+    "mm", "mmm", "mmmm", "mhm", "mhmm", "mm-hmm", "mmhmm", "hmm", "hmmm", "hmmmm",
+    "hm", "uh", "uhh", "uhhh", "uh-huh", "uhhuh", "um", "umm", "ummm", "uhm",
+    "er", "err", "erm", "ah", "ahh", "ahem", "eh", "huh", "hmp", "mhh",
+})
+
+# ASCII/Indic sentence punctuation stripped from token EDGES to build the
+# comparison key. Fixed list on purpose: a Unicode \W class would also strip
+# Bengali/Devanagari combining marks and corrupt the comparison.
+_EDGE_PUNCT = ".,!?;:()[]{}\"'`~\u2013\u2014\u2026%\u0964\u0965-"
+
+
+def _core(token: str) -> str:
+    """Comparison key for a whitespace token: edge punctuation off, lowercased."""
+    return token.strip(_EDGE_PUNCT).lower()
+
+
+def _strip_fillers_and_repeats(text: str) -> str:
+    """Drop filler tokens and immediately-repeated words; never edits tokens."""
+    tokens = (text or "").split()
+    if not tokens:
+        return ""
+
+    kept: list[str] = []
+    prev_core: str | None = None
+    for tok in tokens:
+        core = _core(tok)
+        if core:
+            if core in _FILLER_TOKENS:
+                continue  # drop hesitation noise ("mm", "uh", "mm-hmm", ...)
+            if core == prev_core:
+                continue  # collapse immediate duplicate ("yes yes" -> "yes")
+            prev_core = core
+        # punctuation-only tokens are kept verbatim and don't affect repeats
+        kept.append(tok)
+
+    return " ".join(kept).strip(" -")
+
+
+def _has_content(text: str) -> bool:
+    for tok in (text or "").split():
+        core = _core(tok)
+        if core and core not in _FILLER_TOKENS and any(ch.isalnum() for ch in core):
+            return True
+    return False
+
+
+def normalize_transcript(transcript: str) -> str:
+    """Return a filler/repeat-cleaned transcript; safe no-op on empty/disabled."""
+    if not TRANSCRIPT_NORMALIZE_ENABLED:
+        return transcript
+    trimmed = (transcript or "").strip()
+    if not trimmed:
+        return transcript
+
+    out_lines: list[str] = []
+    for raw_line in trimmed.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            continue
+        match = _LINE_RE.match(line)
+        if not match:
+            out_lines.append(line)
+            continue
+
+        prefix, speech = match.group(1), match.group(2).strip()
+        cleaned = _strip_fillers_and_repeats(speech)
+
+        if not cleaned or not _has_content(cleaned):
+            if TRANSCRIPT_NORMALIZE_DROP_FILLER_TURNS:
+                continue  # whole turn was filler/noise → drop it
+            out_lines.append(f"{prefix} [No speech detected]".rstrip())
+            continue
+
+        out_lines.append(f"{prefix} {cleaned}".rstrip())
+
+    return "\n".join(out_lines).strip() or transcript

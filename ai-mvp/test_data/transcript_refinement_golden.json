@@ -1,0 +1,39 @@
+[
+  {
+    "id": "pulkit_name_mismatch",
+    "source_folder": "AutoUpload/audio/14-04-2025",
+    "description": "Customer fulkid; agent says mister police — expect Pulkit aligned",
+    "sample_lines": [
+      "my name is fulkid and my postcard number is 9854281137",
+      "thank you mister police for providing your name and registered mobile number"
+    ],
+    "expect_canonical_name": "Pulkit"
+  },
+  {
+    "id": "icon_pattern_balance",
+    "description": "Customer icon pattern; agent confirms account balance",
+    "sample_lines": [
+      "hello charlie can you tell me my icon pattern",
+      "yes sir as i understood that you want to know your account balance"
+    ],
+    "expect_phrase": "account balance"
+  },
+  {
+    "id": "xyz_big_papa",
+    "description": "Agent Vinod intro; customer big Papa / Teacher",
+    "sample_lines": [
+      "Hello welcome to XYZ Bank I am Vinod How can I assist you",
+      "Yes big Papa I can't access my account balance"
+    ],
+    "expect_honorific": "sir"
+  },
+  {
+    "id": "deep_name_variant",
+    "description": "Deep Gadhuli vs Deepak Adhikari phonetic cluster",
+    "sample_lines": [
+      "our name is L S Deep Gadhuli",
+      "Okay Mr Deepak Adhikari I would like to inform you"
+    ],
+    "expect_single_name_cluster": true
+  }
+]

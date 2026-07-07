@@ -1,20 +1,33 @@
 """
-Phase 2c — transformer sentiment per utterance (English + Hindi/multilingual).
+Phase 2c — per-utterance sentiment.
+
+Backends (SENTIMENT_BACKEND):
+  llm          — the shared scoring LLM rates every utterance in context
+                 (banking-aware, handles code-switched Hindi/Bengali/English).
+                 Any failure falls back to the transformers path below.
+  transformers — HF pipelines (DistilBERT-SST2 / multilingual BERT), the
+                 previous behavior and the always-available fallback.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from typing import Any, Optional
 
 from config import (
+    SENTIMENT_BACKEND,
     SENTIMENT_ENABLED,
     SENTIMENT_ENSEMBLE_ENABLED,
+    SENTIMENT_LLM_BATCH_SIZE,
     SENTIMENT_MODEL,
     SENTIMENT_MODEL_EN,
     SENTIMENT_MODEL_MULTILINGUAL,
 )
 from transcript_utils import parse_transcript
+
+logger = logging.getLogger(__name__)
 
 _pipe_en = None
 _pipe_multi = None
@@ -172,14 +185,82 @@ def _ensemble_polarity(text: str, model_polarity: float, model_confidence: float
     return round(final_polarity, 3), round(confidence, 3)
 
 
-def analyze_sentiment(transcript: str, language: str = "English") -> list[dict[str, Any]]:
-    if not SENTIMENT_ENABLED:
-        return []
+def _entry(utt, polarity: float, confidence: float) -> dict[str, Any]:
+    return {
+        "Role": utt.role if utt.role != "Call" else "Agent",
+        "Start": utt.start,
+        "End": utt.end,
+        "Text": utt.text,
+        "Sentiment Polarity": polarity,
+        "Confidence": confidence,
+    }
 
-    utterances = parse_transcript(transcript)
-    if not utterances:
-        return []
 
+def _analyze_sentiment_llm(utterances) -> list[dict[str, Any]]:
+    """Rate every utterance with the shared scoring LLM (vLLM in prod).
+
+    The LLM sees the numbered dialog in batches, so each rating uses the
+    conversational context — far more accurate than per-sentence classifiers
+    on banking calls and code-switched Indic text. Raises on any failure so
+    the caller can fall back to the transformers path.
+    """
+    import scoring_worker  # late import so the prod OpenAI patch applies
+    from llm_utils import strip_llm_thinking
+
+    system = (
+        "You rate the sentiment of each line of a banking call-center transcript. "
+        "Polarity is a number from -1.0 (very negative: angry, frustrated, complaint, "
+        "threat to leave) to 1.0 (very positive: satisfied, thankful, delighted). "
+        "Use 0.0 for neutral/procedural lines (greetings, OTP, account numbers, "
+        "hold requests, factual statements). Judge the SPEAKER's emotion, not the "
+        "topic. Lines may mix English with Hindi/Bengali/regional words. "
+        "Return ONLY valid JSON, no commentary."
+    )
+
+    results: list[dict[str, Any]] = []
+    batch = max(5, SENTIMENT_LLM_BATCH_SIZE)
+    for i in range(0, len(utterances), batch):
+        chunk = utterances[i : i + batch]
+        numbered = "\n".join(
+            f"{idx}. ({u.role}): {u.text[:300]}" for idx, u in enumerate(chunk)
+        )
+        prompt = (
+            "Rate each numbered line.\n\n"
+            f"{numbered}\n\n"
+            "Return ONLY JSON in this exact shape (one item per line, same order):\n"
+            '{"ratings": [{"i": 0, "polarity": 0.0, "confidence": 0.9}, ...]}\n'
+            f"There are exactly {len(chunk)} lines (i = 0..{len(chunk) - 1})."
+        )
+        raw = scoring_worker.ollama_generate(
+            prompt, system=system, json_mode=True, temperature=0.0,
+            max_tokens=max(256, 24 * len(chunk)),
+        )
+        cleaned = strip_llm_thinking(raw or "").strip()
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start == -1 or end == -1:
+            raise ValueError("no JSON in LLM sentiment output")
+        data = json.loads(cleaned[start : end + 1])
+        ratings = data.get("ratings")
+        if not isinstance(ratings, list):
+            raise ValueError("LLM sentiment output missing 'ratings'")
+
+        by_index: dict[int, dict[str, Any]] = {}
+        for r in ratings:
+            if isinstance(r, dict) and isinstance(r.get("i"), (int, float)):
+                by_index[int(r["i"])] = r
+
+        for idx, utt in enumerate(chunk):
+            r = by_index.get(idx)
+            if r is None:
+                raise ValueError(f"LLM sentiment output missing line {idx}")
+            polarity = max(-1.0, min(1.0, float(r.get("polarity", 0.0))))
+            confidence = max(0.0, min(1.0, float(r.get("confidence", 0.7))))
+            results.append(_entry(utt, round(polarity, 3), round(confidence, 3)))
+    return results
+
+
+def _analyze_sentiment_transformers(utterances, language: str) -> list[dict[str, Any]]:
+    """HF-pipeline sentiment (previous behavior); keyword fallback inside."""
     entries: list[dict[str, Any]] = []
     batch_size = 8
     texts = [u.text[:512] for u in utterances]
@@ -202,30 +283,29 @@ def analyze_sentiment(transcript: str, language: str = "English") -> list[dict[s
                 polarity, confidence = _ensemble_polarity(
                     utt.text, raw_polarity, model_confidence
                 )
-                entries.append(
-                    {
-                        "Role": utt.role if utt.role != "Call" else "Agent",
-                        "Start": utt.start,
-                        "End": utt.end,
-                        "Text": utt.text,
-                        "Sentiment Polarity": polarity,
-                        "Confidence": confidence,
-                    }
-                )
+                entries.append(_entry(utt, polarity, confidence))
     except Exception:
-        for utt in utterances:
-            kw_pol = _keyword_polarity(utt.text)
-            entries.append(
-                {
-                    "Role": utt.role if utt.role != "Call" else "Agent",
-                    "Start": utt.start,
-                    "End": utt.end,
-                    "Text": utt.text,
-                    "Sentiment Polarity": kw_pol,
-                    "Confidence": 0.4,
-                }
-            )
+        entries = [
+            _entry(utt, _keyword_polarity(utt.text), 0.4) for utt in utterances
+        ]
     return entries
+
+
+def analyze_sentiment(transcript: str, language: str = "English") -> list[dict[str, Any]]:
+    if not SENTIMENT_ENABLED:
+        return []
+
+    utterances = parse_transcript(transcript)
+    if not utterances:
+        return []
+
+    if SENTIMENT_BACKEND == "llm":
+        try:
+            return _analyze_sentiment_llm(utterances)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LLM sentiment failed (%s) — falling back to transformers", exc)
+
+    return _analyze_sentiment_transformers(utterances, language)
 
 
 def sentiment_health() -> dict[str, Any]:

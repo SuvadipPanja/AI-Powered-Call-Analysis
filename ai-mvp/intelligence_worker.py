@@ -13,10 +13,19 @@ import json
 import re
 from typing import Any
 
+import logging
+
 import scoring_worker  # call attributes dynamically so prod LLM patch applies
 from bank_config import get_bank_config
-from config import INTELLIGENCE_ENABLED, SCORING_MAX_TRANSCRIPT_CHARS
-from query_categories import get_query_categories
+from config import (
+    INTELLIGENCE_ENABLED,
+    INTELLIGENCE_VERIFY_ENABLED,
+    QUERY_CATEGORY_AUTODISCOVER_ENABLED,
+    QUERY_CATEGORY_AUTODISCOVER_MAX,
+    QUERY_CATEGORY_DEDUPE_SIMILARITY,
+    SCORING_MAX_TRANSCRIPT_CHARS,
+)
+from query_categories import add_discovered_category, fallback_name, get_query_categories
 from prompts.intelligence import (
     AGENT_CONVINCED,
     EMI_AFFORDABILITY,
@@ -26,9 +35,13 @@ from prompts.intelligence import (
     QUERY_CATEGORIES,
     YES_NO,
     YES_NO_NA,
+    category_discovery_prompt,
+    category_verify_prompt,
     intelligence_json_prompt,
     intelligence_system_prompt,
 )
+
+logger = logging.getLogger(__name__)
 
 # Keys merged into the scoring `scores` dict and persisted by db.upsert_scoring_result.
 INTELLIGENCE_KEYS: tuple[str, ...] = (
@@ -206,6 +219,34 @@ def _normalize(raw: dict[str, Any], categories: list[dict[str, Any]] | None = No
     return out
 
 
+def reconcile_lead_classification(scores: dict[str, Any]) -> dict[str, Any]:
+    """Align scoring Lead_Classification with intelligence loan signals.
+
+    Intelligence is the source of truth for whether a LOAN was discussed.
+    Scoring LLM often false-positives on "credit card", "credit", rewards, etc.
+    """
+    is_loan = str(scores.get("Loan_Is_Loan_Call", "No")).strip().lower()
+    if is_loan != "yes":
+        scores["Lead_Classification"] = "Not a Lead"
+        return scores
+
+    interest = str(scores.get("Loan_Interest", "None")).strip().lower()
+    prob = scores.get("Loan_Success_Probability")
+    try:
+        prob_val = float(prob) if prob is not None else 0.0
+    except (TypeError, ValueError):
+        prob_val = 0.0
+
+    if interest == "high" or prob_val >= 70:
+        scores["Lead_Classification"] = "Hot Lead"
+    elif interest == "low" or (0 < prob_val < 40):
+        scores["Lead_Classification"] = "Cold Lead"
+    else:
+        # medium interest, or loan discussed with moderate success probability
+        scores["Lead_Classification"] = "Warm Lead"
+    return scores
+
+
 def _parse(raw_text: str, categories: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     from llm_utils import strip_llm_thinking
 
@@ -229,6 +270,112 @@ def _truncate(transcript: str) -> str:
     return transcript[:half] + "\n...[truncated]...\n" + transcript[-half:]
 
 
+def _maybe_discover_category(transcript: str, cfg, categories) -> str | None:
+    """When a call matches no existing category, ask the LLM to propose a genuine
+    new one; validate + insert it. Returns the new category name or None."""
+    if not QUERY_CATEGORY_AUTODISCOVER_ENABLED:
+        return None
+    try:
+        prompt = category_discovery_prompt(_truncate(transcript), cfg, categories)
+        raw = scoring_worker.ollama_generate(
+            prompt,
+            system="You classify banking calls. Return only strict JSON.",
+            json_mode=True,
+            temperature=0.0,
+            max_tokens=400,
+        )
+        from llm_utils import strip_llm_thinking
+
+        cleaned = strip_llm_thinking(raw or "").strip()
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        data = json.loads(cleaned[start : end + 1])
+        if not isinstance(data, dict) or not data.get("needs_new_category"):
+            return None
+        name = str(data.get("name") or "").strip()
+        if not name:
+            return None
+        return add_discovered_category(
+            name,
+            str(data.get("description") or "").strip(),
+            str(data.get("keywords") or "").strip(),
+            dedupe_similarity=QUERY_CATEGORY_DEDUPE_SIMILARITY,
+            max_auto=QUERY_CATEGORY_AUTODISCOVER_MAX,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Query auto-discovery skipped: %s", exc)
+        return None
+
+
+def _keyword_candidates(
+    transcript: str, categories: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Categories whose admin keywords literally appear in the transcript."""
+    if not categories:
+        return []
+    low = (transcript or "").lower()
+    hits = []
+    for c in categories:
+        kws = [k.strip().lower() for k in str(c.get("keywords") or "").split(",") if k.strip()]
+        if any(kw in low for kw in kws):
+            hits.append(c)
+    return hits
+
+
+def _verify_primary_category(
+    transcript: str, cfg, parsed: dict[str, Any], categories: list[dict[str, Any]] | None
+) -> None:
+    """Second LLM pass: re-check Primary_Query_Type against the categories whose
+    keywords actually occur in the call. Mutates `parsed` in place; never raises.
+
+    Only runs when the transcript's keywords point at MORE than one category
+    (i.e. real ambiguity, like balance vs mini statement) — cheap on clear calls.
+    """
+    if not INTELLIGENCE_VERIFY_ENABLED or not categories:
+        return
+    try:
+        chosen = parsed.get("Primary_Query_Type") or ""
+        candidates = _keyword_candidates(transcript, categories)
+        names = {c["name"] for c in candidates}
+        if chosen and chosen not in names:
+            chosen_cat = next((c for c in categories if c["name"] == chosen), None)
+            if chosen_cat:
+                candidates.append(chosen_cat)
+                names.add(chosen)
+        if len(names) < 2:
+            return  # nothing to disambiguate
+
+        prompt = category_verify_prompt(_truncate(transcript), cfg, chosen, candidates)
+        raw = scoring_worker.ollama_generate(
+            prompt,
+            system="You audit banking call classifications. Return only strict JSON.",
+            json_mode=True,
+            temperature=0.0,
+            max_tokens=300,
+        )
+        from llm_utils import strip_llm_thinking
+
+        cleaned = strip_llm_thinking(raw or "").strip()
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start == -1 or end == -1:
+            return
+        data = json.loads(cleaned[start : end + 1])
+        best = _match_category(data.get("best_category"), candidates, "")
+        if best and best != chosen:
+            logger.info(
+                "Query type verify: %r -> %r (evidence: %s)",
+                chosen, best, str(data.get("evidence") or "")[:120],
+            )
+            secondary = [s for s in parsed.get("Secondary_Query_Types", []) if s != best]
+            if chosen and chosen not in secondary:
+                secondary.insert(0, chosen)  # demote the first-pass pick
+            parsed["Secondary_Query_Types"] = secondary
+            parsed["Primary_Query_Type"] = best
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Query type verification skipped: %s", exc)
+
+
 def extract_intelligence(transcript: str, language: str = "English") -> dict[str, Any]:
     """Return normalized intelligence fields; never raises."""
     if not INTELLIGENCE_ENABLED or not (transcript or "").strip():
@@ -244,7 +391,19 @@ def extract_intelligence(transcript: str, language: str = "English") -> dict[str
         raw = scoring_worker.ollama_generate(
             prompt, system=system, json_mode=True, temperature=0.0, max_tokens=1024
         )
-        return _parse(raw, categories)
+        parsed = _parse(raw, categories)
+
+        # Second-pass audit against keyword-candidate categories (balance vs
+        # mini-statement style mixups) before any auto-discovery.
+        _verify_primary_category(transcript, cfg, parsed, categories)
+
+        # No existing category matched → try to discover a genuine new one and,
+        # if added, re-tag this call with it so the taxonomy grows automatically.
+        if parsed.get("Primary_Query_Type") == fallback_name():
+            new_name = _maybe_discover_category(transcript, cfg, categories)
+            if new_name:
+                parsed["Primary_Query_Type"] = new_name
+        return parsed
     except Exception:
         return default_intelligence()
 

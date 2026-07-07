@@ -60,10 +60,12 @@ def _bullet_list(values: tuple[str, ...]) -> str:
 
 
 def _category_block(categories: list[dict] | None) -> str:
-    """Render the admin-managed query categories as `- Name: description` lines.
+    """Render the admin-managed query categories as `- Name: description [keywords]`.
 
-    Falls back to the built-in QUERY_CATEGORIES if none are supplied so the
-    prompt is always valid.
+    Keywords are the admin-maintained trigger phrases from the Query Types page;
+    including them lets the LLM anchor each category to the customer's actual
+    words instead of guessing from the name alone. Falls back to the built-in
+    QUERY_CATEGORIES if none are supplied so the prompt is always valid.
     """
     if not categories:
         return "\n".join(f"- {name}" for name in QUERY_CATEGORIES)
@@ -73,7 +75,15 @@ def _category_block(categories: list[dict] | None) -> str:
         if not name:
             continue
         desc = (c.get("description") or "").strip()
-        lines.append(f"- {name}: {desc}" if desc else f"- {name}")
+        kws = (c.get("keywords") or "").strip()
+        if len(kws) > 160:  # keep the prompt bounded on long admin keyword lists
+            kws = kws[:160].rsplit(",", 1)[0]
+        line = f"- {name}"
+        if desc:
+            line += f": {desc}"
+        if kws:
+            line += f" [keywords: {kws}]"
+        lines.append(line)
     return "\n".join(lines) if lines else "\n".join(f"- {name}" for name in QUERY_CATEGORIES)
 
 
@@ -101,8 +111,29 @@ most SPECIFIC matching category name (copy the name EXACTLY) from this list:
 Rules for picking the category:
 - Always prefer the most specific match. E.g. if the customer wants to generate/reset their
   ATM/debit card PIN, pick "ATM/Debit PIN Generation", NOT the broader "ATM/Debit Card Issue".
+- REQUEST vs ISSUE: a category whose name/description says "Issue", "Problem", "Failed",
+  "Blocked", "Complaint", "Dispute" or "Fraud" is ONLY for something that is actually broken,
+  failed, declined, blocked, or a grievance. Do NOT use an "Issue/Problem" category for a normal
+  service request, an enquiry, or a task the agent completes successfully.
+- A request to DO or KNOW something (redeem reward points/cashback, check points or balance,
+  get a statement, generate a PIN, apply for a card, transfer funds, update details) is a
+  service REQUEST/ENQUIRY — pick the specific request/enquiry/rewards category, NEVER an
+  "Issue" category, unless the customer explicitly reports that something went wrong.
+- Reward points / cashback / points redemption → pick the rewards/redemption category if one
+  exists (e.g. "Credit Card Rewards/Redemption"); otherwise the closest request/enquiry category.
+- Use each category's [keywords] as strong evidence: prefer the category whose keywords match
+  what the CUSTOMER actually said (the customer's own words outweigh the agent's words).
+- Balance vs statement — decide by what the CUSTOMER ASKED FOR, not what the agent did:
+  * Customer wants to KNOW HOW MUCH money is in the account ("balance", "how much do I have",
+    "available balance") → "Balance/Account Enquiry", EVEN IF the agent also reads out or sends
+    recent transactions.
+  * Pick "Mini Statement/Transaction History" ONLY when the customer explicitly asks for recent
+    transactions / mini statement / last few transactions.
+  * Pick a full statement category (e.g. "Account Statement Request") ONLY for a complete or
+    emailed statement for a period, or a passbook update.
 - Copy the category name EXACTLY as written above (text before the colon).
-- Use "Other/General Info" only when nothing else fits.
+- If no listed category clearly matches, choose "Other/General Info" rather than forcing a wrong
+  specific category (especially an "Issue/Problem/Complaint" one).
 
 Secondary_Query_Types: a JSON array of any OTHER category names from the same list that also
 came up (empty array if none). Do NOT repeat the primary one.
@@ -158,6 +189,92 @@ Required JSON keys (ALL must be present):
   "Agent_Convinced": "Yes|Partial|No|N/A",
   "Success_Probability": <0-100>,
   "Intelligence_Summary": "<one short sentence on the customer's intent/outcome>"
+}}
+
+Transcript:
+{transcript}
+"""
+
+
+def category_discovery_prompt(
+    transcript: str, config: BankConfig, categories: list[dict] | None = None
+) -> str:
+    """Ask the LLM to propose ONE genuinely new, reusable query category.
+
+    Used only when the call did not match any existing category. The model must
+    either return a specific, reusable banking category (name + description +
+    keywords) or decline. Returns a prompt expecting strict JSON.
+    """
+    org = config.org_label()
+    existing = _category_block(categories)
+    return f"""You maintain the customer-query taxonomy for {org}.
+
+The following call did NOT match any of these EXISTING categories:
+{existing}
+
+Decide whether this call is about a SPECIFIC, RECURRING banking topic that
+deserves its OWN new category (one that other future calls would also fall into).
+
+Return ONLY valid JSON:
+{{
+  "needs_new_category": true|false,
+  "name": "<short Title Case category name, 2-5 words>",
+  "description": "<one sentence describing what calls in this category are about>",
+  "keywords": "<6-12 lowercase comma-separated phrases customers/agents would say>",
+  "reason": "<one short sentence why this is a distinct, reusable category>"
+}}
+
+Rules:
+- Set "needs_new_category" to false when the call is generic small-talk, a wrong
+  number, a duplicate of an existing category, or too one-off to reuse. When
+  false, the other fields may be empty.
+- The name MUST be generic and reusable (e.g. "Credit Card Statement Request"),
+  NEVER call-specific (no customer names, amounts, dates or ticket numbers).
+- Do NOT propose a name that is essentially the same as an existing category
+  above — reuse would be better, so return false instead.
+- Prefer a clear REQUEST/ENQUIRY vs ISSUE/COMPLAINT distinction in the name.
+- Keywords must be real phrases people say, not a description.
+
+Transcript:
+{transcript}
+"""
+
+
+def category_verify_prompt(
+    transcript: str,
+    config: BankConfig,
+    chosen: str,
+    candidates: list[dict],
+) -> str:
+    """Second-pass check of Primary_Query_Type against keyword-matched candidates.
+
+    The model must justify the winner with a literal CUSTOMER quote, which stops
+    plausible-but-wrong picks (e.g. Mini Statement when the customer asked for
+    the balance). Candidates are the few categories whose keywords actually
+    appear in the transcript, so this is a small, focused choice.
+    """
+    org = config.org_label()
+    block = _category_block(candidates)
+    return f"""You are auditing the query classification of a {org} call.
+
+A first pass labeled this call: "{chosen}"
+
+The ONLY allowed categories (pick from these, copy the name EXACTLY):
+{block}
+
+Task: decide which single category is the CUSTOMER's main reason for calling.
+- Judge by what the CUSTOMER asked for in their own words. What the agent did
+  or offered afterwards does not change the customer's query type.
+- If the customer wants to know how much money they have, that is a balance
+  enquiry even if transactions/statements are also mentioned.
+- Keep "{chosen}" unless another listed category is CLEARLY a better match for
+  the customer's request.
+
+Return ONLY valid JSON:
+{{
+  "best_category": "<one category name from the list>",
+  "evidence": "<short literal quote from a Customer line that proves it>",
+  "changed": true|false
 }}
 
 Transcript:

@@ -14,12 +14,25 @@ unreachable so the pipeline never breaks.
 
 from __future__ import annotations
 
+import difflib
+import logging
 import os
+import re
 import threading
 import time
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 _CACHE_TTL_SEC = int(os.getenv("QUERY_CATEGORY_CACHE_SEC", "60"))
+
+# Palette used when auto-adding LLM-discovered categories (picked round-robin,
+# skipping colours already in use).
+_AUTO_COLOR_PALETTE: tuple[str, ...] = (
+    "#e11d48", "#db2777", "#c026d3", "#9333ea", "#7c3aed", "#4f46e5",
+    "#2563eb", "#0284c7", "#0891b2", "#0d9488", "#059669", "#16a34a",
+    "#65a30d", "#ca8a04", "#d97706", "#ea580c", "#dc2626", "#78716c",
+)
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"loaded_at": 0.0, "categories": None}
 
@@ -41,6 +54,8 @@ DEFAULT_CATEGORIES: tuple[tuple[str, str, str, str], ...] = (
      "credit card issue, credit card blocked, credit card limit, credit card bill", "#f97316"),
     ("Credit Card Request", "Customer wants a new credit card.",
      "new credit card, apply credit card, credit card eligibility", "#fb923c"),
+    ("Credit Card Rewards/Redemption", "Redeem or ask about credit card reward points, cashback, points value or offers — not a problem/complaint.",
+     "reward points, rewards, redeem, redemption, cashback, cash back, points redemption, redeem points, reward redemption, points balance", "#f59e0b"),
     ("Cheque Book Request", "Customer requests a cheque book or asks about one.",
      "cheque book, chequebook, new cheque book, request cheque", "#a3e635"),
     ("Fund Transfer Issue (NEFT/RTGS/IMPS/UPI)", "Issue or query about transferring money.",
@@ -109,6 +124,15 @@ def _ensure_schema(cursor) -> None:
                 CONSTRAINT UQ_AI_Query_Categories_Name UNIQUE (Name)
             );
         END
+    """)
+    # Auto-discovery bookkeeping columns (added in-place for existing installs).
+    cursor.execute("""
+        IF COL_LENGTH('dbo.AI_Query_Categories', 'AutoAdded') IS NULL
+            ALTER TABLE dbo.AI_Query_Categories ADD AutoAdded BIT NOT NULL DEFAULT 0;
+    """)
+    cursor.execute("""
+        IF COL_LENGTH('dbo.AI_Query_Categories', 'PendingReview') IS NULL
+            ALTER TABLE dbo.AI_Query_Categories ADD PendingReview BIT NOT NULL DEFAULT 0;
     """)
 
 
@@ -200,3 +224,120 @@ def invalidate_cache() -> None:
     with _lock:
         _cache["loaded_at"] = 0.0
         _cache["categories"] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-discovery of new categories (LLM-proposed, validated + deduped)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Words that make a proposed name too generic to be a real category.
+_GENERIC_NAME_TOKENS = frozenset({
+    "other", "general", "misc", "miscellaneous", "unknown", "none", "n/a",
+    "call", "customer", "query", "question", "info", "information", "various",
+})
+
+
+def _norm_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).strip()
+
+
+def _similar(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, _norm_name(a), _norm_name(b)).ratio()
+
+
+def _is_reasonable_name(name: str) -> bool:
+    n = (name or "").strip()
+    if not (3 <= len(n) <= 80):
+        return False
+    words = _norm_name(n).split()
+    if not words:
+        return False
+    # Reject purely-generic names ("Other Query", "General Information").
+    if all(w in _GENERIC_NAME_TOKENS for w in words):
+        return False
+    return True
+
+
+def _pick_color(existing: set[str]) -> str:
+    used = {c.lower() for c in existing if c}
+    for color in _AUTO_COLOR_PALETTE:
+        if color.lower() not in used:
+            return color
+    return _AUTO_COLOR_PALETTE[len(used) % len(_AUTO_COLOR_PALETTE)]
+
+
+def add_discovered_category(
+    name: str,
+    description: str,
+    keywords: str,
+    *,
+    dedupe_similarity: float = 0.82,
+    max_auto: int = 60,
+) -> str | None:
+    """Validate + insert an LLM-discovered category into dbo.AI_Query_Categories.
+
+    Returns the canonical stored name to use for the call, or None if it was
+    rejected (invalid, duplicate/too-similar, cap reached, or DB unavailable).
+    Duplicates resolve to the existing category name so the call is still tagged.
+    """
+    name = (name or "").strip()
+    if not _is_reasonable_name(name):
+        return None
+
+    existing = get_query_categories()
+    for c in existing:  # dedupe: reuse an existing near-identical category
+        if _similar(name, c["name"]) >= dedupe_similarity:
+            logger.info(
+                "Query auto-discovery: %r ~ existing %r — reusing existing.",
+                name, c["name"],
+            )
+            return c["name"]
+
+    try:
+        from db import connect
+
+        conn = connect()
+        try:
+            cursor = conn.cursor()
+            _ensure_schema(cursor)
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM dbo.AI_Query_Categories WHERE AutoAdded = 1"
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None and int(row[0]) >= max_auto:
+                logger.warning(
+                    "Query auto-discovery cap reached (%s); not adding %r.",
+                    max_auto, name,
+                )
+                return None
+
+            cursor.execute("SELECT ISNULL(MAX(SortOrder), 0) FROM dbo.AI_Query_Categories")
+            max_sort = int((cursor.fetchone() or [0])[0] or 0)
+            cursor.execute("SELECT Color FROM dbo.AI_Query_Categories")
+            used_colors = {(r[0] or "").strip() for r in cursor.fetchall()}
+            color = _pick_color(used_colors)
+
+            cursor.execute(
+                """
+                IF NOT EXISTS (SELECT 1 FROM dbo.AI_Query_Categories WHERE Name = ?)
+                    INSERT INTO dbo.AI_Query_Categories
+                        (Name, Description, Keywords, Color, IsActive, SortOrder,
+                         AutoAdded, PendingReview, UpdatedBy)
+                    VALUES (?, ?, ?, ?, 1, ?, 1, 1, ?)
+                """,
+                name, name,
+                (description or "").strip()[:500] or None,
+                (keywords or "").strip() or None,
+                color, max_sort + 1, "auto-discovery",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Query auto-discovery insert failed for %r: %s", name, exc)
+        return None
+
+    invalidate_cache()
+    logger.info("Query auto-discovery: added new category %r (color=%s).", name, color)
+    return name

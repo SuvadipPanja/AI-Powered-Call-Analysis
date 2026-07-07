@@ -23,6 +23,8 @@ LINE_RE = re.compile(
     r"^(\s*[\d.]+\s*-\s*[\d.]+\s*\([^)]+\)\s*:)(.*)$",
 )
 SPEAKER_RE = re.compile(r"\(([^)]+)\)")
+_SPEAKER_TAG_RE = re.compile(r"^\[(?:Agent|Customer)\]\s*", re.I)
+_INLINE_SPEAKER_TAG_RE = re.compile(r"\[(?:Agent|Customer)\]\s*", re.I)
 
 
 def _speaker_from_prefix(prefix: str) -> str:
@@ -64,6 +66,8 @@ def _clean_translation_line(raw: str) -> str:
     if m:
         cleaned = m.group(2).strip()
     first = cleaned.split("\n")[0].strip()
+    first = _SPEAKER_TAG_RE.sub("", first)
+    first = _INLINE_SPEAKER_TAG_RE.sub("", first).strip()
     if is_meta_line(first):
         return ""
     return first

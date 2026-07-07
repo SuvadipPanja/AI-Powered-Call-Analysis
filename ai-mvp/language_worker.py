@@ -11,6 +11,7 @@ import logging
 import math
 import re
 import uuid
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -22,14 +23,31 @@ from config import (
     LANG_BENGALI_PRIORITY_BONUS,
     LANG_CALL_CENTER_MODE,
     LANG_HINDI_CONFUSABLE_CODES,
+    LANG_MAP_URDU_TO_HINDI,
+    LANG_MAP_NEPALI_TO_HINDI,
+    LANG_MAP_ASSAMESE_TO_BENGALI,
+    LANG_RESTRICTED_CONFIDENT,
     LANG_DETECT_CONFIDENCE_MIN,
     LANG_DETECT_HIGH_CONFIDENCE,
+    LANG_DETECT_MODE,
     LANG_DETECT_SAMPLE_SEC,
     LANG_DISAMBIGUATE_HI_BN,
+    LANG_BENGALI_GUARD_ENABLED,
+    LANG_BENGALI_GUARD_MIN_PROB,
+    LANG_BENGALI_GUARD_MIN_ROMAN,
+    LANG_DRAVIDIAN_CONFUSABLE_CODES,
+    LANG_ENGLISH_GUARD_ENABLED,
+    LANG_ENGLISH_GUARD_MIN_PROB,
+    LANG_ENGLISH_GUARD_WORD_RATIO,
     LANG_ENGLISH_PLAUSIBILITY_MIN,
+    LANG_FAST_PATH_HI_CONFIDENCE,
+    LANG_FAST_PATH_BN_CONFIDENCE,
+    LANG_HINDI_GUARD_ENABLED,
+    LANG_HINDI_GUARD_MIN_PROB,
     LANG_HINDI_PRIORITY_BONUS,
     LANG_MIN_SCRIPT_CHARS,
     LANG_PRIMARY_LANGUAGES,
+    LANG_PRIMARY_ONLY,
     LANG_SCRIPT_VERIFY,
     LANG_VERIFY_ALWAYS,
     LANG_VERIFY_ALWAYS_FOR_DRAVIDIAN,
@@ -38,6 +56,12 @@ from config import (
     INDICLID_ENABLED,
     INDICLID_MIN_SCORE,
     LANG_LID_MAX_TRANSCRIPT_TOKENS,
+    LANG_LID_BACKEND,
+    LANG_LID_FAST_MODE,
+    LANG_DETECT_MULTI_CHANNEL,
+    SEAMLESS_LID_ENABLED,
+    SEAMLESS_LID_PROBE_LANGUAGES,
+    SEAMLESS_LID_SAMPLE_SEC,
     LANG_DETECT_CHANNEL,
     LANG_DETECT_AGENT_CHANNEL_INDEX,
     LANG_DETECT_CUSTOMER_CHANNEL_INDEX,
@@ -46,6 +70,7 @@ from config import (
     LANG_HI_BN_MIN_SCRIPT,
     LANG_REPETITION_MIN_UNIQUE,
     LANG_REPETITION_PENALTY,
+    LANG_REGIONAL_ACOUSTIC_MARGIN,
     LANG_REGIONAL_DETECTION,
     LANG_REGIONAL_LANGUAGES,
     LANG_SCRIPT_FIRST_MIN_CHARS,
@@ -64,7 +89,10 @@ def _lid_log(msg: str, *args) -> None:
         text = msg % args if args else msg
     except Exception:
         text = msg
-    print(f"[LID] {text}", flush=True)
+    try:
+        print(f"[LID] {text}", flush=True)
+    except UnicodeEncodeError:  # non-UTF8 console (Windows cp1252)
+        print(f"[LID] {text}".encode("ascii", "replace").decode("ascii"), flush=True)
     logger.info(msg, *args)
 
 
@@ -141,20 +169,26 @@ BANKING_FALLBACK_PHRASES = {
         "transaction", "customer", "please", "credit card",
     ],
     "Bengali": [
-        "namaskar", "nomoshkar", "dhonnobad", "dhanyabad", "apni", "apnar", "amar", "ami",
-        "kemon", "achhen", "ache", "balance", "balence", "balese", "account", "ekhane",
-        "bank", "benk", "loan", "transaction", "customer", "shubho", "bolchi", "bolun",
-        "sunun", "korben", "korte", "hoyeche", "janaben", "dukhito",
+        # Legacy AI/src/2nd step Language_Detection fallback_phrases + banking BN roman
+        "nomoshkar", "namaskar", "dhonnobad", "dhanyabad", "dhonnobad", "apni keman",
+        "apni kemon", "keman achhen", "kemon achhen", "apnar account", "account balance",
+        "balance koto", "apnar otp", "otp din", "apni", "apnar", "apnader", "amar", "amader",
+        "ami", "kemon", "achhen", "achen", "ache", "hoyeche", "hobe", "hocche", "korte",
+        "korben", "korbo", "bolchi", "bolben", "bolun", "bolte", "sunun", "shunun", "janai",
+        "janaben", "janaben", "dukhito", "shubho", "shubhechha", "ekhane", "ekhan", "taka",
+        "joma", "somoy", "kothay", "keno", "kivabe", "balence", "balese", "benk", "somossa",
+        "samasy", "problem ta", "loan er", "emi ta", "customer er", "number ta", "mobile ta",
+        "registered", "verify kor", "confirm kor", "details ta", "statement ta",
     ],
 }
 
 # Romanized Hindi tokens when Whisper forced to English on Hindi audio
 HINDI_ROMAN_HINTS = frozenset({
-    "aap", "aapka", "aapki", "aapke", "main", "mera", "meri", "kya", "kaise",
-    "kripya", "dhanyawad", "dhanyavad", "shukriya", "namaste", "ji", "haan",
-    "nahin", "nahi", "theek", "thik", "sir", "madam", "ji", "bataiye", "bataye",
-    "samajh", "samjha", "problem", "account", "balance", "bank", "loan", "emi",
-    "otp", "transaction", "customer", "madam", "sahab",
+    "aap", "aapka", "aapki", "aapke", "aapko", "main", "mera", "meri", "kya", "kaise",
+    "kripya", "dhanyawad", "dhanyavad", "shukriya", "namaste", "namaskar", "namaskaram",
+    "pranam", "swagat", "sawagat", "ji", "haan", "han", "nahin", "nahi", "theek", "thik",
+    "bataiye", "bataye", "batain", "suniye", "sunie", "samajh", "samjha", "samajhiye",
+    "madad", "sahayata", "kripya", "dhanyawad", "shukriya", "sahab", "sahib",
 })
 
 # Display name â†’ native script key for minimum-script guard
@@ -227,10 +261,14 @@ _tw_model = None
 _tw_tokenizer = None
 _tw_load_error: Optional[str] = None
 BENGALI_ROMAN_HINTS = frozenset({
-    "ami", "apni", "apnar", "amader", "apnader", "kemon", "achhen", "ache",
-    "hoyeche", "hobe", "korte", "korben", "janai", "bolchi", "bolben", "sunun",
-    "dhonnobad", "namaskar", "shubho", "bank", "benk", "balese", "balence",
-    "ekhane", "ekhan", "samasy", "dukhito", "janaben", "bolun", "thik",
+    "ami", "amader", "apni", "apnar", "apnader", "apnake", "amake", "amra", "apnara",
+    "kemon", "keman", "achhen", "achen", "ache", "achhe", "hoyeche", "hocche", "hobe",
+    "korte", "korbo", "korben", "korchi", "korechen", "janai", "janaben", "bolchi",
+    "bolben", "bolun", "bolte", "sunun", "shunun", "shunben", "dhonnobad", "dhanyabad",
+    "namaskar", "nomoshkar", "shubho", "shubhechha", "ekhane", "ekhan", "taka", "joma",
+    "somoy", "kothay", "keno", "kivabe", "samasy", "somossa", "dukhito", "thik", "bhalo",
+    "koto", "taar", "tar", "er", "eke", "dite", "pari", "parben", "lagbe", "chai",
+    "jani", "bujhi", "mone", "hoy", "na", "ki", "ke", "kothay", "kokhon", "kivabe",
 })
 
 _COMMON_ENGLISH_WORDS = frozenset({
@@ -258,6 +296,305 @@ def _english_plausibility(text: str) -> float:
         return 0.0
     hits = sum(1 for t in tokens if t in _COMMON_ENGLISH_WORDS or (len(t) <= 2 and t.isalpha()))
     return hits / len(tokens)
+
+
+# Language-neutral / banking terms that appear in BOTH English and romanized Indic
+# speech — these must NOT count as evidence for an Indic language.
+_ROMAN_SHARED_TERMS = frozenset({
+    "account", "balance", "bank", "loan", "emi", "otp", "transaction",
+    "customer", "problem", "sir", "madam", "card", "credit", "debit",
+})
+
+# Tokens that only appear when the speaker is genuinely using Hindi/Bengali
+# (Whisper romanizes them when force-transcribing Indic audio as English).
+_DISTINCTIVE_INDIC_ROMAN = frozenset(
+    (HINDI_ROMAN_HINTS | BENGALI_ROMAN_HINTS) - _COMMON_ENGLISH_WORDS - _ROMAN_SHARED_TERMS
+)
+
+
+def _english_word_ratio_strict(text: str) -> float:
+    """Fraction of multi-char tokens that are real common English words.
+
+    Stricter than _english_plausibility (no <=2-char shortcut) so romanized Indic
+    speech, which rarely contains English function words, scores low.
+    """
+    tokens = [t for t in re.findall(r"[a-zA-Z']+", (text or "").lower()) if len(t) >= 2]
+    if not tokens:
+        return 0.0
+    hits = sum(1 for t in tokens if t in _COMMON_ENGLISH_WORDS)
+    return hits / len(tokens)
+
+
+def _distinctive_indic_roman_count(text: str) -> int:
+    tokens = re.findall(r"[a-zA-Z']+", (text or "").lower())
+    return sum(1 for t in tokens if t in _DISTINCTIVE_INDIC_ROMAN)
+
+
+def _english_guard_confirms(processor, model, tokenizer, sample_path: Path) -> bool:
+    """Force-transcribe as English; accept English only when the text is genuinely
+    English (enough real English words AND no distinctive romanized Indic tokens).
+
+    Rejects English when forced-Bengali transcription shows Bengali script or strong
+    Bengali roman hints (common on Bengali banking calls mislabeled as English).
+    """
+    try:
+        text = _sample_transcribe_whisper_v3(
+            processor, model, tokenizer, sample_path, "en",
+            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+    except Exception as exc:
+        _lid_log("English guard transcribe failed: %s", exc)
+        return False
+
+    # Cross-check: Bengali forced transcript beats phonetic English banking garbage.
+    try:
+        bn_text = _sample_transcribe_whisper_v3(
+            processor, model, tokenizer, sample_path, "bn",
+            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+        bn_native = _script_counts(bn_text).get("bengali", 0)
+        bn_roman = _bengali_roman_hint_count(bn_text)
+        if bn_native >= LANG_HI_BN_MIN_SCRIPT:
+            _lid_log(
+                "English guard rejected — forced-bn has %d Bengali script chars",
+                bn_native,
+            )
+            return False
+        if bn_roman >= max(2, LANG_BENGALI_GUARD_MIN_ROMAN + 1):
+            _lid_log(
+                "English guard rejected — forced-bn has %d Bengali roman hints",
+                bn_roman,
+            )
+            return False
+        if _fallback_phrase_detection(bn_text) == "Bengali":
+            _lid_log("English guard rejected — Bengali phrase fallback on forced-bn")
+            return False
+    except Exception as exc:
+        _lid_log("English guard Bengali cross-check skipped: %s", exc)
+
+    # Hindi/Hinglish cross-check (namaskar + Devanagari on forced-hi).
+    try:
+        hi_text = _sample_transcribe_whisper_v3(
+            processor, model, tokenizer, sample_path, "hi",
+            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+        hi_native = _script_counts(hi_text).get("devanagari", 0)
+        hi_roman = _hindi_roman_hint_count(hi_text)
+        hi_lower = hi_text.lower()
+        if hi_native >= LANG_HI_BN_MIN_SCRIPT:
+            _lid_log("English guard rejected — forced-hi has %d Devanagari chars", hi_native)
+            return False
+        if hi_roman >= 1 or "namaskar" in hi_lower or "namaste" in hi_lower:
+            _lid_log("English guard rejected — Hindi roman/script cues in forced-hi")
+            return False
+        if _fallback_phrase_detection(hi_text) == "Hindi":
+            _lid_log("English guard rejected — Hindi phrase fallback on forced-hi")
+            return False
+    except Exception as exc:
+        _lid_log("English guard Hindi cross-check skipped: %s", exc)
+
+    ratio = _english_word_ratio_strict(text)
+    indic = _distinctive_indic_roman_count(text)
+    bn_roman_en = _bengali_roman_hint_count(text)
+    uniq = _repetition_unique_ratio(text)
+    confirms = (
+        ratio >= LANG_ENGLISH_GUARD_WORD_RATIO
+        and indic == 0
+        and bn_roman_en == 0
+        and uniq >= LANG_REPETITION_MIN_UNIQUE
+    )
+    _lid_log(
+        "English guard: word_ratio=%.2f bn_roman=%d distinctive_indic=%d uniq=%.2f confirms=%s text=%r",
+        ratio, bn_roman_en, indic, uniq, confirms, text[:80],
+    )
+    return confirms
+
+
+def _bengali_guard_confirms(
+    processor,
+    model,
+    tokenizer,
+    sample_path: Path,
+    all_probs: dict[str, float] | None,
+) -> bool:
+    """Confirm Bengali before English guard can swallow the call.
+
+    Uses forced-Bengali script, roman hints, and legacy banking phrase fallback
+    (from AI/src/2nd step Language_Detection/language_detection.py).
+    """
+    try:
+        bn_text = _sample_transcribe_whisper_v3(
+            processor, model, tokenizer, sample_path, "bn",
+            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+    except Exception as exc:
+        _lid_log("Bengali guard transcribe failed: %s", exc)
+        return False
+
+    native = _script_counts(bn_text).get("bengali", 0)
+    bn_roman = _bengali_roman_hint_count(bn_text)
+    phrase = _fallback_phrase_detection(bn_text)
+
+    if native >= LANG_HI_BN_MIN_SCRIPT:
+        _lid_log("Bengali guard confirmed — %d native script chars", native)
+        return True
+    if bn_roman >= LANG_BENGALI_GUARD_MIN_ROMAN:
+        _lid_log("Bengali guard confirmed — %d roman hints", bn_roman)
+        return True
+    if phrase == "Bengali":
+        _lid_log("Bengali guard confirmed — phrase fallback")
+        return True
+
+    # Open-ended Whisper snippet + phrase/IndicLID (legacy second signal).
+    try:
+        auto_text = _whisper_auto_transcribe_snippet(
+            processor, model, sample_path, max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+        if _fallback_phrase_detection(auto_text) == "Bengali":
+            _lid_log("Bengali guard confirmed — auto-transcript phrase fallback")
+            return True
+        if _bengali_roman_hint_count(auto_text) >= max(2, LANG_BENGALI_GUARD_MIN_ROMAN + 1):
+            _lid_log("Bengali guard confirmed — auto-transcript roman hints")
+            return True
+    except Exception as exc:
+        _lid_log("Bengali guard auto-transcript skipped: %s", exc)
+
+    if all_probs:
+        bn_p = all_probs.get("bn", 0.0)
+        hi_p = all_probs.get("hi", 0.0)
+        en_p = all_probs.get("en", 0.0)
+        if bn_p >= LANG_BENGALI_GUARD_MIN_PROB and bn_p >= hi_p and bn_p > en_p and bn_roman >= 1:
+            _lid_log(
+                "Bengali guard confirmed — bn_prob=%.3f > en=%.3f with roman hint",
+                bn_p, en_p,
+            )
+            return True
+
+    _lid_log(
+        "Bengali guard not confirmed (native=%d roman=%d phrase=%s)",
+        native, bn_roman, phrase,
+    )
+    return False
+
+
+def _english_guard_eligible(lang_code: str, all_probs: dict[str, float]) -> bool:
+    """English guard only when English actually leads — not when bn/hi are stronger."""
+    en_prob = all_probs.get("en", 0.0)
+    bn_prob = all_probs.get("bn", 0.0)
+    hi_prob = all_probs.get("hi", 0.0)
+    if lang_code == "en":
+        return True
+    if en_prob < LANG_ENGLISH_GUARD_MIN_PROB:
+        return False
+    return en_prob > bn_prob and en_prob > hi_prob
+
+
+def _regional_detection_enabled() -> bool:
+    """Regional Tamil/Telugu/... confirm is off when the deployment is hi/bn/en only."""
+    return LANG_REGIONAL_DETECTION and not LANG_PRIMARY_ONLY
+
+
+def _hindi_guard_eligible(lang_code: str, all_probs: dict[str, float]) -> bool:
+    hi_prob = all_probs.get("hi", 0.0)
+    bn_prob = all_probs.get("bn", 0.0)
+    en_prob = all_probs.get("en", 0.0)
+    if lang_code == "hi":
+        return True
+    # Urdu/Nepali tokens on Hindi banking audio — always run Hindi guard.
+    if LANG_CALL_CENTER_MODE and lang_code in LANG_HINDI_CONFUSABLE_CODES:
+        return True
+    if lang_code in LANG_DRAVIDIAN_CONFUSABLE_CODES and hi_prob >= LANG_HINDI_GUARD_MIN_PROB:
+        return True
+    if lang_code in LANG_HINDI_CONFUSABLE_CODES and hi_prob >= LANG_HINDI_GUARD_MIN_PROB:
+        return True
+    if hi_prob >= LANG_HINDI_GUARD_MIN_PROB and hi_prob >= bn_prob and hi_prob >= en_prob:
+        return True
+    return False
+
+
+def _hindi_guard_confirms(
+    processor,
+    model,
+    tokenizer,
+    sample_path: Path,
+    all_probs: dict[str, float] | None,
+) -> bool:
+    try:
+        hi_text = _sample_transcribe_whisper_v3(
+            processor, model, tokenizer, sample_path, "hi",
+            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+    except Exception as exc:
+        _lid_log("Hindi guard transcribe failed: %s", exc)
+        return False
+
+    native = _script_counts(hi_text).get("devanagari", 0)
+    hi_roman = _hindi_roman_hint_count(hi_text)
+    phrase = _fallback_phrase_detection(hi_text)
+
+    if native >= LANG_HI_BN_MIN_SCRIPT:
+        _lid_log("Hindi guard confirmed — %d Devanagari chars", native)
+        return True
+    if hi_roman >= 2:
+        _lid_log("Hindi guard confirmed — %d Hindi roman hints", hi_roman)
+        return True
+    if phrase == "Hindi":
+        _lid_log("Hindi guard confirmed — phrase fallback")
+        return True
+
+    if all_probs and all_probs.get("hi", 0.0) >= 0.20 and hi_roman >= 1:
+        _lid_log("Hindi guard confirmed — hi_prob + roman hint")
+        return True
+
+    _lid_log(
+        "Hindi guard not confirmed (native=%d roman=%d phrase=%s)",
+        native, hi_roman, phrase,
+    )
+    return False
+
+
+def _dravidian_mislabel_to_hindi(
+    processor,
+    model,
+    tokenizer,
+    sample_path: Path,
+    lang_code: str,
+    detected: str,
+    all_probs: dict[str, float],
+) -> str | None:
+    """Whisper top=ta/te/kn/ml on Hindi banking audio — re-probe as Hindi/Bengali."""
+    if not LANG_CALL_CENTER_MODE:
+        return None
+    if lang_code not in LANG_DRAVIDIAN_CONFUSABLE_CODES:
+        return None
+    hi_p = all_probs.get("hi", 0.0)
+    bn_p = all_probs.get("bn", 0.0)
+    if hi_p < LANG_HINDI_GUARD_MIN_PROB and bn_p < LANG_BENGALI_GUARD_MIN_PROB:
+        return None
+    _lid_log(
+        "Dravidian mislabel guard: Whisper=%r (%s) hi=%.3f bn=%.3f — re-probing hi/bn",
+        lang_code, detected, hi_p, bn_p,
+    )
+    seed = "Bengali" if bn_p > hi_p else "Hindi"
+    if lang_code == "bn":
+        seed = "Bengali"
+    return _disambiguate_hi_bn(processor, model, tokenizer, sample_path, seed)
+
+
+def _bengali_guard_eligible(lang_code: str, all_probs: dict[str, float]) -> bool:
+    bn_prob = all_probs.get("bn", 0.0)
+    hi_prob = all_probs.get("hi", 0.0)
+    en_prob = all_probs.get("en", 0.0)
+    if lang_code == "bn":
+        return True
+    if bn_prob < LANG_BENGALI_GUARD_MIN_PROB:
+        return False
+    if bn_prob >= hi_prob and bn_prob >= en_prob:
+        return True
+    # Whisper top=en but Bengali mass is meaningful (common BN banking mislabel).
+    if lang_code == "en" and bn_prob >= 0.18 and bn_prob > hi_prob:
+        return True
+    return False
 
 
 def _bengali_roman_hint_count(text: str) -> int:
@@ -289,15 +626,16 @@ def _script_counts(text: str) -> dict[str, int]:
     return {key: len(rx.findall(text or "")) for key, rx in SCRIPT_RES.items()}
 
 
-def _select_lid_channel(waveform: torch.Tensor) -> torch.Tensor:
-    """Pick the customer channel for stereo calls; else mono mix."""
+def _select_lid_channel(waveform: torch.Tensor, channel_override: str | None = None) -> torch.Tensor:
+    """Pick agent/customer/mix channel for stereo calls; else mono mix."""
     channels = waveform.shape[0]
     if channels < 2:
         return waveform[:1]
 
-    if LANG_DETECT_CHANNEL == "agent":
+    pick = (channel_override or LANG_DETECT_CHANNEL).strip().lower()
+    if pick == "agent":
         idx = LANG_DETECT_AGENT_CHANNEL_INDEX
-    elif LANG_DETECT_CHANNEL in ("mix", "mono"):
+    elif pick in ("mix", "mono"):
         return torch.mean(waveform, dim=0, keepdim=True)
     else:  # customer (default)
         idx = LANG_DETECT_CUSTOMER_CHANNEL_INDEX
@@ -350,15 +688,20 @@ def _voiced_segment(waveform: torch.Tensor, sample_rate: int, max_seconds: float
     return collected
 
 
-def _prepare_detection_sample(audio_path: Path, max_seconds: float) -> tuple[Path, bool]:
-    """Build mono 16 kHz LID sample from the customer channel, voiced-trimmed."""
+def _prepare_detection_sample(
+    audio_path: Path,
+    max_seconds: float,
+    channel: str | None = None,
+) -> tuple[Path, bool]:
+    """Build mono 16 kHz LID sample from the chosen channel, voiced-trimmed."""
     waveform, sample_rate = load_audio(audio_path)
     if sample_rate != 16000:
         waveform = torchaudio.transforms.Resample(sample_rate, 16000)(waveform)
         sample_rate = 16000
 
     orig_channels = waveform.shape[0]
-    waveform = _select_lid_channel(waveform)
+    pick = channel or LANG_DETECT_CHANNEL
+    waveform = _select_lid_channel(waveform, channel)
 
     if LANG_DETECT_VOICE_TRIM:
         waveform = _voiced_segment(waveform, sample_rate, max_seconds)
@@ -369,7 +712,7 @@ def _prepare_detection_sample(audio_path: Path, max_seconds: float) -> tuple[Pat
 
     _lid_log(
         "sample: channels=%d pick=%s dur=%.1fs voice_trim=%s",
-        orig_channels, LANG_DETECT_CHANNEL, waveform.shape[1] / sample_rate,
+        orig_channels, pick, waveform.shape[1] / sample_rate,
         LANG_DETECT_VOICE_TRIM,
     )
 
@@ -560,10 +903,26 @@ def _forced_transcribe_scored(
     return text, avg_logprob
 
 
+def _normalize_call_center_language(lang: str) -> str:
+    """Map confusable mislabels (Urdu/Nepali→Hindi, Assamese→Bengali) for banking deployments."""
+    if not LANG_CALL_CENTER_MODE or not lang:
+        return lang
+    if LANG_MAP_URDU_TO_HINDI and lang == "Urdu":
+        _lid_log("call-center normalize: Urdu → Hindi")
+        return "Hindi"
+    if LANG_MAP_NEPALI_TO_HINDI and lang == "Nepali":
+        _lid_log("call-center normalize: Nepali → Hindi")
+        return "Hindi"
+    if LANG_MAP_ASSAMESE_TO_BENGALI and lang == "Assamese":
+        _lid_log("call-center normalize: Assamese → Bengali")
+        return "Bengali"
+    return lang
+
+
 def _resolve_language(code: str, probability: float = 1.0) -> str:
     lang = WHISPER_CODE_TO_LANGUAGE.get(code)
     if lang:
-        return lang
+        return _normalize_call_center_language(lang)
     if code:
         logger.warning("Unsupported Whisper language code %r (prob=%.2f)", code, probability)
         return code.upper()
@@ -674,6 +1033,15 @@ def _apply_result_guards(
                     alt,
                 )
                 return alt
+        if LANG_CALL_CENTER_MODE:
+            hi_row = next(((n, s, t) for n, s, t in results if n == "Hindi"), None)
+            dr_row = next(((n, s, t) for n, s, t in results if n == best_name), None)
+            if hi_row and dr_row and hi_row[1] >= dr_row[1] - 15:
+                logger.info(
+                    "LID guard: rejected %s (score=%.1f) — Hindi competitive (%.1f)",
+                    best_name, dr_row[1], hi_row[1],
+                )
+                return "Hindi"
 
     return best_name
 
@@ -898,15 +1266,20 @@ def _fallback_phrase_detection(transcription: str) -> str:
     if len(lower) < 4:
         return "Unknown"
 
+    shared = _ROMAN_SHARED_TERMS | {"account", "balance", "loan", "emi", "otp", "transaction", "customer"}
     best_lang = "Unknown"
-    best_hits = 0
+    best_score = 0.0
     for language, phrases in BANKING_FALLBACK_PHRASES.items():
-        hits = sum(1 for p in phrases if p in lower)
-        if hits > best_hits:
-            best_hits = hits
+        score = 0.0
+        for p in phrases:
+            if p not in lower:
+                continue
+            score += 1.0 if p in shared else 2.5
+        if score > best_score:
+            best_score = score
             best_lang = language
-    if best_hits >= 2:
-        logger.info("LID phrase fallback: %s (hits=%d)", best_lang, best_hits)
+    if best_score >= 2.0:
+        logger.info("LID phrase fallback: %s (score=%.1f)", best_lang, best_score)
         return best_lang
 
     bn_roman = _bengali_roman_hint_count(transcription)
@@ -997,7 +1370,7 @@ def _verify_by_script_lite(
             candidates.append((whisper_code, name))
 
     # Widen to regional languages so a mislabeled regional call can still be found.
-    if LANG_REGIONAL_DETECTION:
+    if _regional_detection_enabled():
         if all_probs:
             for code, _p in sorted(all_probs.items(), key=lambda x: -x[1])[:LANG_VERIFY_TOPK]:
                 name = WHISPER_CODE_TO_LANGUAGE.get(code)
@@ -1053,44 +1426,178 @@ def _confirm_regional(
     code: str,
     name: str,
 ) -> Optional[str]:
-    """Forced-transcribe in `name`; accept it only if it yields enough of its OWN
-    native script. Reliable for unique-script regional languages."""
+    """Forced-transcribe in `name` and accept it only when BOTH hold:
+
+    1. it yields enough of its OWN native script, AND
+    2. its acoustic fit (repetition-penalized avg log-prob) is not clearly worse
+       than forced-Hindi on the same sample.
+
+    (2) matters because forcing Whisper to a language ALWAYS yields that
+    language's script — script presence alone is self-fulfilling and used to let
+    Hindi calls be confirmed as Telugu/Tamil. Hindi is the call-center prior for
+    such mislabels, so it is the acoustic reference.
+    """
     verify_sample, is_temp = _prepare_detection_sample(sample_path, LANG_VERIFY_SAMPLE_SEC)
     try:
-        text = _sample_transcribe_whisper_v3(
-            processor, model, tokenizer, verify_sample, code,
-            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        try:
+            text, lp = _forced_transcribe_scored(
+                processor, model, tokenizer, verify_sample, code,
+                max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+            )
+        except Exception as exc:
+            _lid_log("regional confirm failed for %s: %s", name, exc)
+            return None
+
+        eff_lp, uniq = _effective_logprob(lp, text)
+        native = _native_script_count(text, name)
+        sf = _script_first_language(text, LANG_SCRIPT_FIRST_MIN_CHARS)
+        _lid_log(
+            "regional confirm %s: native=%d script_first=%s eff_lp=%.4f uniq=%.2f text=%r",
+            name, native, sf, eff_lp, uniq, text[:80],
         )
-    except Exception as exc:
-        _lid_log("regional confirm failed for %s: %s", name, exc)
-        return None
+        if sf != name and native < LANG_SCRIPT_FIRST_MIN_CHARS:
+            return None
+
+        # Acoustic sanity vs Hindi (skip when confirming a primary language itself).
+        if LANG_CALL_CENTER_MODE and name not in LANG_PRIMARY_LANGUAGES:
+            try:
+                hi_text, hi_lp = _forced_transcribe_scored(
+                    processor, model, tokenizer, verify_sample, "hi",
+                    max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+                )
+                hi_eff, hi_uniq = _effective_logprob(hi_lp, hi_text)
+                margin = hi_eff - eff_lp
+                _lid_log(
+                    "regional acoustic check %s eff_lp=%.4f vs Hindi eff_lp=%.4f "
+                    "(uniq=%.2f) margin=%.4f limit=%.2f",
+                    name, eff_lp, hi_eff, hi_uniq, margin, LANG_REGIONAL_ACOUSTIC_MARGIN,
+                )
+                if margin > LANG_REGIONAL_ACOUSTIC_MARGIN:
+                    _lid_log(
+                        "regional %s REJECTED — Hindi fits the audio clearly better "
+                        "(likely a Whisper LID mislabel)",
+                        name,
+                    )
+                    return None
+            except Exception as exc:
+                _lid_log("regional acoustic check failed (%s) — keeping %s", exc, name)
+
+        return name
     finally:
         if is_temp and verify_sample.exists():
             verify_sample.unlink(missing_ok=True)
 
-    native = _native_script_count(text, name)
-    sf = _script_first_language(text, LANG_SCRIPT_FIRST_MIN_CHARS)
-    _lid_log("regional confirm %s: native=%d script_first=%s text=%r", name, native, sf, text[:80])
-    # Accept when the detected language's own script dominates the transcription.
-    if sf == name or native >= LANG_SCRIPT_FIRST_MIN_CHARS:
-        return name
-    return None
 
+def _detect_language_whisper_native(audio_path: Path) -> str:
+    """Whisper Large V3's built-in LID only (<|lang|> token probabilities).
 
-def _detect_language_fast(audio_path: Path) -> str:
-    """Fast LID: Whisper token (~1s) → hi/bn disambiguation → optional text hints."""
+    No remaps, no guards, no forced-transcribe verification. The probability
+    mass is restricted to LANG_REGIONAL_LANGUAGES so impossible languages
+    (for this deployment) can never win. Robustness comes from the lang
+    service's multi-window vote calling this once per window.
+    """
     processor, model, tokenizer = _load_transformers_whisper()
     sample_path, is_temp = _prepare_detection_sample(audio_path, LANG_DETECT_SAMPLE_SEC)
     try:
         lang_code, probability, all_probs = _whisper_v3_detect_language(
             processor, model, tokenizer, sample_path
         )
+        allowed = {
+            code: name
+            for code, name in WHISPER_CODE_TO_LANGUAGE.items()
+            if name in (
+                LANG_PRIMARY_LANGUAGES
+                if LANG_PRIMARY_ONLY
+                else LANG_REGIONAL_LANGUAGES
+            )
+        }
+        restricted = {c: all_probs.get(c, 0.0) for c in allowed}
+        total = sum(restricted.values())
+        if total <= 0:
+            detected = _resolve_language(lang_code, probability)
+            _lid_log("native LID: no allowed-language mass — raw token %s", detected)
+            return detected
+
+        best_code = max(restricted, key=lambda c: restricted[c])
+        renorm = restricted[best_code] / total
+        _lid_log(
+            "native LID: %s (raw token=%r p=%.3f; allowed-renorm p=%.3f; top3=%s)",
+            allowed[best_code], lang_code, probability, renorm,
+            sorted(
+                ((allowed[c], round(p / total, 3)) for c, p in restricted.items()),
+                key=lambda x: -x[1],
+            )[:3],
+        )
+        return allowed[best_code]
+    finally:
+        if is_temp and sample_path.exists():
+            sample_path.unlink(missing_ok=True)
+
+
+def _detect_language_fast(audio_path: Path, channel: str | None = None) -> str:
+    """Fast LID: Whisper token (~1s) → hi/bn disambiguation → optional text hints."""
+    processor, model, tokenizer = _load_transformers_whisper()
+    sample_path, is_temp = _prepare_detection_sample(
+        audio_path, LANG_DETECT_SAMPLE_SEC, channel=channel,
+    )
+    try:
+        lang_code, probability, all_probs = _whisper_v3_detect_language(
+            processor, model, tokenizer, sample_path
+        )
         detected = _resolve_language(lang_code, probability)
         _lid_log(
-            "fast LID: whisper code=%r prob=%.3f resolved=%s hi=%.3f bn=%.3f en=%.3f",
+            "fast LID: whisper code=%r prob=%.3f resolved=%s hi=%.3f bn=%.3f en=%.3f ta=%.3f te=%.3f",
             lang_code, probability, detected,
             all_probs.get("hi", 0.0), all_probs.get("bn", 0.0), all_probs.get("en", 0.0),
+            all_probs.get("ta", 0.0), all_probs.get("te", 0.0),
         )
+
+        # Urdu/Nepali Whisper tokens → Hindi immediately (Hindustani banking speech).
+        if LANG_CALL_CENTER_MODE and lang_code in LANG_HINDI_CONFUSABLE_CODES:
+            if LANG_MAP_URDU_TO_HINDI and lang_code == "ur":
+                _lid_log("fast path: Urdu token → Hindi (Hindustani banking)")
+                return "Hindi"
+            if LANG_MAP_NEPALI_TO_HINDI and lang_code == "ne":
+                _lid_log("fast path: Nepali token → Hindi (Hindustani banking)")
+                return "Hindi"
+
+        # Fast path: confident Hindi/Bengali token — skip heavy guard transcribes.
+        if lang_code == "hi" and probability >= LANG_FAST_PATH_HI_CONFIDENCE:
+            _lid_log("fast path: confident Hindi token (p=%.3f)", probability)
+            return "Hindi"
+        if lang_code == "bn" and probability >= LANG_FAST_PATH_BN_CONFIDENCE:
+            _lid_log("fast path: confident Bengali token (p=%.3f)", probability)
+            return "Bengali"
+
+        # Bengali guard (runs FIRST): Bengali banking calls often get forced-English
+        # romanization full of account/balance/please — legacy AI/src used multi-chunk
+        # voting + phrase fallback to keep these as Bengali.
+        if LANG_BENGALI_GUARD_ENABLED and _bengali_guard_eligible(lang_code, all_probs):
+            if _bengali_guard_confirms(processor, model, tokenizer, sample_path, all_probs):
+                disambig = _disambiguate_hi_bn(
+                    processor, model, tokenizer, sample_path, "Bengali",
+                )
+                _lid_log("Bengali guard final result: %s", disambig)
+                return disambig
+
+        # Hindi guard: blocks Hindi mislabeled as Telugu/Tamil/Kannada/Malayalam.
+        if LANG_HINDI_GUARD_ENABLED and _hindi_guard_eligible(lang_code, all_probs):
+            if _hindi_guard_confirms(processor, model, tokenizer, sample_path, all_probs):
+                disambig = _disambiguate_hi_bn(
+                    processor, model, tokenizer, sample_path, "Hindi",
+                )
+                _lid_log("Hindi guard final result: %s", disambig)
+                return disambig
+
+        # English guard: only when English actually leads the probability mass.
+        en_prob = all_probs.get("en", 0.0)
+        if LANG_ENGLISH_GUARD_ENABLED and _english_guard_eligible(lang_code, all_probs):
+            if _english_guard_confirms(processor, model, tokenizer, sample_path):
+                _lid_log(
+                    "English guard confirmed English (code=%r en_prob=%.3f) — skipping hi/bn remap",
+                    lang_code, en_prob,
+                )
+                return "English"
 
         # Bengali vs Hindi — highest priority for call-center (fixes BN mislabeled as HI)
         if _hi_bn_probable(lang_code, all_probs):
@@ -1119,11 +1626,18 @@ def _detect_language_fast(audio_path: Path) -> str:
             _lid_log("hi/bn final result: %s (seed=Hindi, was %s)", disambig, detected)
             return disambig
 
-        # Regional unique-script languages (Tamil/Telugu/Kannada/Malayalam/Gujarati/
-        # Punjabi/Odia): confirm the Whisper guess directly via forced-transcribe +
-        # native-script check. This wins before the call-center guard can drop it.
+        # Whisper top=Tamil/Telugu/... on Hindi banking audio — force hi/bn re-probe.
+        dravidian_fix = _dravidian_mislabel_to_hindi(
+            processor, model, tokenizer, sample_path, lang_code, detected, all_probs,
+        )
+        if dravidian_fix:
+            _lid_log("Dravidian mislabel guard final: %s (was %s)", dravidian_fix, detected)
+            return dravidian_fix
+
+        # Regional unique-script languages (Tamil/Telugu/...): only when enabled for
+        # this deployment (LANG_PRIMARY_ONLY=false).
         if (
-            LANG_REGIONAL_DETECTION
+            _regional_detection_enabled()
             and detected in UNIQUE_SCRIPT_TO_LANGUAGE.values()
             and detected in LANG_REGIONAL_LANGUAGES
         ):
@@ -1153,9 +1667,405 @@ def _detect_language_fast(audio_path: Path) -> str:
             sample_path.unlink(missing_ok=True)
 
 
+def _score_lid_transcript(text: str, lang_name: str) -> float:
+    """Score a forced-transcribe snippet for LID probe voting."""
+    if not (text or "").strip():
+        return 0.0
+    score = float(_native_script_count(text, lang_name)) * 2.0
+    if lang_name == "Hindi":
+        score += _hindi_roman_hint_count(text) * 3.0
+        if "namaskar" in text.lower() or "namaste" in text.lower():
+            score += 4.0
+    elif lang_name == "Bengali":
+        score += _bengali_roman_hint_count(text) * 3.0
+    elif lang_name == "English":
+        score += _english_plausibility(text) * 10.0
+        score += _english_word_ratio_strict(text) * 8.0
+    if _fallback_phrase_detection(text) == lang_name:
+        score += 5.0
+    if INDICLID_ENABLED:
+        try:
+            from indiclid_worker import indiclid_ready, predict_text_language
+            if indiclid_ready():
+                display, il_score, _, _ = predict_text_language(text)
+                if display == lang_name and il_score >= INDICLID_MIN_SCORE:
+                    score += il_score * 6.0
+        except Exception:
+            pass
+    return score
+
+
+def _detect_language_indiclid_first(audio_path: Path) -> str | None:
+    """Whisper short snippets on agent channel → IndicLID text classifier."""
+    if not INDICLID_ENABLED:
+        return None
+    try:
+        from indiclid_worker import indiclid_ready, predict_text_language
+        if not indiclid_ready():
+            return None
+    except Exception:
+        return None
+
+    processor, model, tokenizer = _load_transformers_whisper()
+    sample_path, is_temp = _prepare_detection_sample(
+        audio_path, LANG_DETECT_SAMPLE_SEC, channel="agent",
+    )
+    try:
+        best_lang: str | None = None
+        best_score = 0.0
+        for code, lang_name in (("hi", "Hindi"), ("bn", "Bengali"), ("en", "English")):
+            try:
+                text = _sample_transcribe_whisper_v3(
+                    processor, model, tokenizer, sample_path, code,
+                    max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+                )
+            except Exception as exc:
+                _lid_log("IndicLID-first transcribe %s failed: %s", code, exc)
+                continue
+            if not text:
+                continue
+            display, score, _, engine = predict_text_language(text)
+            _lid_log(
+                "IndicLID-first forced-%s: display=%s score=%.3f engine=%s text=%r",
+                code, display, score, engine, text[:70],
+            )
+            if display != "Unknown" and score >= INDICLID_MIN_SCORE and score > best_score:
+                best_score = score
+                best_lang = display
+        return best_lang
+    finally:
+        if is_temp and sample_path.exists():
+            sample_path.unlink(missing_ok=True)
+
+
+def _detect_language_seamless_probe(audio_path: Path) -> str | None:
+    """Probe ai-seamless with forced Hindi/Bengali/English; pick best-scoring transcript."""
+    if not SEAMLESS_LID_ENABLED:
+        return None
+    try:
+        from seamless_lid_client import probe_transcribe_remote, seamless_service_health
+        health = seamless_service_health()
+        if not health.get("ready"):
+            _lid_log("Seamless LID skipped — service not ready: %s", health.get("error"))
+            return None
+    except Exception as exc:
+        _lid_log("Seamless LID import/health failed: %s", exc)
+        return None
+
+    sample_path, is_temp = _prepare_detection_sample(
+        audio_path, SEAMLESS_LID_SAMPLE_SEC, channel="agent",
+    )
+    try:
+        best_lang: str | None = None
+        best_score = -1.0
+        for lang in SEAMLESS_LID_PROBE_LANGUAGES:
+            try:
+                text = probe_transcribe_remote(sample_path, lang, audio_path.stem)
+                score = _score_lid_transcript(text, lang)
+                _lid_log("Seamless LID probe %s score=%.1f text=%r", lang, score, text[:70])
+                if score > best_score:
+                    best_score = score
+                    best_lang = lang
+            except Exception as exc:
+                _lid_log("Seamless LID probe %s failed: %s", lang, exc)
+        if best_lang and best_score >= 3.0:
+            _lid_log("Seamless LID winner: %s (score=%.1f)", best_lang, best_score)
+            return best_lang
+        return None
+    finally:
+        if is_temp and sample_path.exists():
+            sample_path.unlink(missing_ok=True)
+
+
+def _detect_language_multi_channel(audio_path: Path, *, include_mix: bool = True) -> str:
+    """Run Whisper LID on agent + customer (+ optional mix); agent weighted highest."""
+    channel_weights: tuple[tuple[str, float], ...] = (
+        ("agent", 2.5),
+        ("customer", 1.0),
+    )
+    if include_mix:
+        channel_weights = channel_weights + (("mix", 0.5),)
+    scores: dict[str, float] = defaultdict(float)
+    for ch, weight in channel_weights:
+        try:
+            lang = _detect_language_fast(audio_path, channel=ch)
+            scores[lang] += weight
+            _lid_log("multi-channel %s → %s (weight=%.1f)", ch, lang, weight)
+        except Exception as exc:
+            _lid_log("multi-channel %s failed: %s", ch, exc)
+    if not scores:
+        return _detect_language_fast(audio_path)
+    winner = max(scores, key=lambda k: scores[k])
+    _lid_log("multi-channel winner: %s scores=%s", winner, dict(scores))
+    return winner
+
+
+def _detect_language_ensemble_fast(audio_path: Path) -> str:
+    """GPU-friendly LID: agent channel first; expand only when ambiguous."""
+    agent_lang = _detect_language_fast(audio_path, channel="agent")
+    if agent_lang in ("Hindi", "Bengali"):
+        _lid_log("fast ensemble: agent Indic → %s (skip slow probes)", agent_lang)
+        return agent_lang
+
+    if agent_lang == "English":
+        cust_lang = _detect_language_fast(audio_path, channel="customer")
+        if cust_lang in ("Hindi", "Bengali"):
+            _lid_log(
+                "fast ensemble: customer %s overrides agent English (Hinglish call)",
+                cust_lang,
+            )
+            return cust_lang
+        if cust_lang == "English":
+            _lid_log("fast ensemble: agent+customer English")
+            return "English"
+
+    # Ambiguous — agent+customer vote only (no mix channel, no Seamless unless still tied).
+    if LANG_DETECT_MULTI_CHANNEL:
+        whisper_lang = _detect_language_multi_channel(audio_path, include_mix=False)
+    else:
+        whisper_lang = agent_lang
+
+    if whisper_lang in ("Hindi", "Bengali"):
+        _lid_log("fast ensemble: two-channel vote → %s", whisper_lang)
+        return whisper_lang
+    if whisper_lang in ("Urdu", "Nepali"):
+        mapped = _normalize_call_center_language(whisper_lang)
+        _lid_log("fast ensemble: %s → %s", whisper_lang, mapped)
+        return mapped
+    if whisper_lang == "English" and agent_lang in ("Hindi", "Bengali"):
+        return agent_lang
+
+    if whisper_lang not in ("Unknown", "English"):
+        return whisper_lang
+
+    if INDICLID_ENABLED:
+        indic_lang = _detect_language_indiclid_first(audio_path)
+        if indic_lang and indic_lang != "Unknown":
+            _lid_log("fast ensemble: IndicLID fallback → %s", indic_lang)
+            return indic_lang
+
+    if SEAMLESS_LID_ENABLED:
+        seamless_lang = _detect_language_seamless_probe(audio_path)
+        if seamless_lang:
+            _lid_log("fast ensemble: Seamless fallback → %s", seamless_lang)
+            return seamless_lang
+
+    fallback = agent_lang if agent_lang != "Unknown" else whisper_lang
+    return fallback if fallback != "Unknown" else "Hindi"
+
+
+def _ensemble_tiebreak(scores: dict[str, float]) -> str:
+    """Prefer Indic over English when votes are close (common on Hinglish calls)."""
+    if not scores:
+        return "Hindi"
+    winner = max(scores, key=lambda k: scores[k])
+    en_score = scores.get("English", 0.0)
+    hi_score = scores.get("Hindi", 0.0)
+    bn_score = scores.get("Bengali", 0.0)
+    indic_best = max(hi_score, bn_score)
+    if winner == "English" and indic_best > 0 and (en_score - indic_best) < 1.5:
+        indic_winner = "Hindi" if hi_score >= bn_score else "Bengali"
+        _lid_log(
+            "ensemble tiebreak: English=%.1f vs Indic=%.1f → %s",
+            en_score, indic_best, indic_winner,
+        )
+        return indic_winner
+    return winner
+
+
+def _detect_language_ensemble(audio_path: Path) -> str:
+    """Vote across Whisper, IndicLID, and Seamless — fast mode skips slow probes when clear."""
+    if LANG_LID_FAST_MODE:
+        return _detect_language_ensemble_fast(audio_path)
+
+    scores: dict[str, float] = defaultdict(float)
+
+    if LANG_DETECT_MULTI_CHANNEL:
+        whisper_lang = _detect_language_multi_channel(audio_path)
+    else:
+        whisper_lang = _detect_language_fast(audio_path)
+    scores[whisper_lang] += 3.0
+    _lid_log("ensemble whisper → %s (+3.0)", whisper_lang)
+
+    indic_lang = _detect_language_indiclid_first(audio_path)
+    if indic_lang:
+        scores[indic_lang] += 2.0
+        _lid_log("ensemble indiclid → %s (+2.0)", indic_lang)
+
+    seamless_lang = _detect_language_seamless_probe(audio_path)
+    if seamless_lang:
+        scores[seamless_lang] += 2.5
+        _lid_log("ensemble seamless → %s (+2.5)", seamless_lang)
+
+    winner = _ensemble_tiebreak(scores)
+    _lid_log("ensemble final: %s (scores=%s)", winner, dict(scores))
+    return _normalize_call_center_language(winner)
+
+
+def _restricted_probs(all_probs: dict[str, float]) -> dict[str, float]:
+    """Fold confusable-language mass into the deployment languages and renormalize.
+
+    Only LANG_PRIMARY_LANGUAGES can appear in the result, so mislabels like
+    Tamil/Telugu/Kannada simply lose their probability mass instead of winning.
+    Urdu/Nepali mass counts toward Hindi (same spoken language, Hindustani);
+    Assamese mass counts toward Bengali (same script, close acoustics).
+    """
+    out: dict[str, float] = {}
+    if "Hindi" in LANG_PRIMARY_LANGUAGES:
+        hi = all_probs.get("hi", 0.0)
+        hi += sum(all_probs.get(c, 0.0) for c in LANG_HINDI_CONFUSABLE_CODES)
+        out["Hindi"] = hi
+    if "Bengali" in LANG_PRIMARY_LANGUAGES:
+        bn = all_probs.get("bn", 0.0)
+        if LANG_MAP_ASSAMESE_TO_BENGALI:
+            bn += all_probs.get("as", 0.0)
+        out["Bengali"] = bn
+    if "English" in LANG_PRIMARY_LANGUAGES:
+        out["English"] = all_probs.get("en", 0.0)
+    for name in LANG_PRIMARY_LANGUAGES:
+        if name not in out:
+            out[name] = all_probs.get(language_code_for(name), 0.0)
+
+    total = sum(out.values())
+    if total <= 0:
+        return {k: 1.0 / len(out) for k in out} if out else {}
+    return {k: v / total for k, v in out.items()}
+
+
+def _detect_language_restricted(audio_path: Path, channel: str | None = None) -> str:
+    """Closed-set LID — the result is ALWAYS one of LANG_PRIMARY_LANGUAGES.
+
+    Whisper's open-set LID mislabels Indic telephone audio as Tamil/Telugu/
+    Assamese/Urdu/etc. Instead of patching each mislabel after the fact, the
+    decision space is restricted up front:
+
+      1. Whisper LID probabilities are folded (ur/ne→hi, as→bn) and
+         renormalized over the deployment languages only.
+      2. An English winner must survive the strict English guard (forced-en
+         transcript must look like real English, not romanized Indic).
+      3. A Hindi/Bengali winner below the confidence gate is settled by the
+         forced-decode acoustic probe (_disambiguate_hi_bn).
+    """
+    processor, model, tokenizer = _load_transformers_whisper()
+    sample_path, is_temp = _prepare_detection_sample(
+        audio_path, LANG_DETECT_SAMPLE_SEC, channel=channel,
+    )
+    try:
+        lang_code, probability, all_probs = _whisper_v3_detect_language(
+            processor, model, tokenizer, sample_path
+        )
+        rprobs = _restricted_probs(all_probs or {})
+        if not rprobs:
+            return _resolve_language(lang_code, probability)
+
+        best = max(rprobs, key=lambda k: rprobs[k])
+        best_p = rprobs[best]
+        _lid_log(
+            "restricted LID: raw=%r p=%.3f → %s %s",
+            lang_code, probability, best,
+            {k: round(v, 3) for k, v in sorted(rprobs.items(), key=lambda x: -x[1])},
+        )
+
+        if best == "English":
+            indic = [k for k in rprobs if k != "English"]
+            # Overwhelming English mass on the raw token too — trust it directly.
+            if best_p >= 0.92 and lang_code == "en" and probability >= 0.80:
+                _lid_log("restricted: overwhelming English (renorm=%.3f raw=%.3f)", best_p, probability)
+                return "English"
+            if not indic:
+                return "English"
+            if _english_guard_confirms(processor, model, tokenizer, sample_path):
+                return "English"
+            best = max(indic, key=lambda k: rprobs[k])
+            best_p = rprobs[best]
+            _lid_log("restricted: English rejected by guard → %s (p=%.3f)", best, best_p)
+
+        if best in ("Hindi", "Bengali"):
+            other = "Bengali" if best == "Hindi" else "Hindi"
+            other_p = rprobs.get(other, 0.0)
+            if other_p <= 0.0:
+                return best
+            if best_p >= LANG_RESTRICTED_CONFIDENT and other_p < best_p * 0.5:
+                _lid_log("restricted: confident %s (p=%.3f vs %s=%.3f)", best, best_p, other, other_p)
+                return best
+            result = _disambiguate_hi_bn(processor, model, tokenizer, sample_path, best)
+            _lid_log("restricted: hi/bn probe → %s (seed=%s)", result, best)
+            return result
+
+        return best
+    finally:
+        if is_temp and sample_path.exists():
+            sample_path.unlink(missing_ok=True)
+
+
+def _sample_transcribe_auto(audio_path: Path, *, max_new_tokens: int = 110) -> str:
+    """Whisper v3 AUTO-mode transcribe — decoder picks the language itself and
+    writes in that language's native script. This is far more reliable on
+    telephone audio than the <|lang|> token probabilities (which are noise),
+    because the decoder conditions on the full audio while generating."""
+    processor, model, tokenizer = _load_transformers_whisper()
+    input_features = _input_features(processor, model, audio_path)
+    with torch.inference_mode():
+        generated = model.generate(
+            input_features,
+            task="transcribe",
+            max_new_tokens=max_new_tokens,
+        )
+    return processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
+
+
+def _detect_language_wordmatch(audio_path: Path) -> str:
+    """Word-match LID (legacy AI/src idea): transcribe first agent+customer
+    chunks, score per-language word dictionaries, max match wins. Falls back
+    to the restricted backend when there is not enough word evidence."""
+    from wordmatch_lid import detect_language_wordmatch
+
+    processor, model, tokenizer = _load_transformers_whisper()
+
+    def _forced(path: Path, code: str) -> str:
+        return _sample_transcribe_whisper_v3(
+            processor, model, tokenizer, path, code,
+            max_new_tokens=LANG_LID_MAX_TRANSCRIPT_TOKENS,
+        )
+
+    try:
+        result, _debug = detect_language_wordmatch(
+            audio_path, _sample_transcribe_auto, _forced,
+        )
+    except Exception as exc:
+        _lid_log("wordmatch backend failed (%s) — restricted fallback", exc)
+        return _detect_language_restricted(audio_path)
+
+    if result and result != "Unknown":
+        return result
+    _lid_log("wordmatch inconclusive — restricted fallback")
+    return _detect_language_restricted(audio_path)
+
+
 def detect_language(audio_path: Path, max_seconds: int = 30) -> str:
-    """Fast LID: Whisper token + hi/bn script disambiguation + text hints."""
-    return _detect_language_fast(audio_path)
+    """LID entry point. LANG_DETECT_MODE + LANG_LID_BACKEND select the strategy."""
+    if LANG_DETECT_MODE == "whisper-native":
+        return _normalize_call_center_language(_detect_language_whisper_native(audio_path))
+
+    backend = LANG_LID_BACKEND
+    if backend == "wordmatch":
+        result = _detect_language_wordmatch(audio_path)
+    elif backend == "restricted":
+        result = _detect_language_restricted(audio_path)
+    elif backend == "ensemble":
+        result = _detect_language_ensemble(audio_path)
+    elif backend == "seamless":
+        result = _detect_language_seamless_probe(audio_path) or _detect_language_fast(audio_path)
+    elif backend == "indiclid":
+        result = _detect_language_indiclid_first(audio_path) or _detect_language_fast(audio_path)
+    elif backend == "whisper":
+        if LANG_DETECT_MULTI_CHANNEL:
+            result = _detect_language_multi_channel(audio_path)
+        else:
+            result = _detect_language_fast(audio_path)
+    else:
+        result = _detect_language_fast(audio_path)
+    return _normalize_call_center_language(result)
 
 
 def release_language_model() -> None:
@@ -1173,15 +2083,42 @@ def language_health() -> dict:
     except Exception as exc:
         indic = {"ready": False, "error": str(exc)}
 
+    seamless = {}
+    try:
+        from seamless_lid_client import seamless_service_health
+        seamless = seamless_service_health()
+    except Exception as exc:
+        seamless = {"ready": False, "error": str(exc)}
+
     try:
         _load_transformers_whisper()
-        method = "whisper-v3-fast+indiclid-hints" if indic.get("ready") else "whisper-v3-fast-lid"
+        method = f"lid-{LANG_LID_BACKEND}"
+        if LANG_LID_BACKEND == "wordmatch":
+            method = "wordmatch(agent+customer chunks, 12-language dictionaries)"
+        if LANG_LID_BACKEND == "restricted":
+            method = "whisper-v3-restricted({})".format(
+                "/".join(sorted(LANG_PRIMARY_LANGUAGES))
+            )
+        if LANG_LID_BACKEND == "ensemble":
+            parts = ["whisper-v3"]
+            if LANG_DETECT_MULTI_CHANNEL:
+                parts.append("multi-channel")
+            if indic.get("ready"):
+                parts.append("indiclid")
+            if SEAMLESS_LID_ENABLED and seamless.get("ready"):
+                parts.append("seamless-probe")
+            method = "+".join(parts)
         return {
             "ready": True,
             "method": method,
+            "lid_backend": LANG_LID_BACKEND,
+            "lid_fast_mode": LANG_LID_FAST_MODE,
+            "multi_channel": LANG_DETECT_MULTI_CHANNEL,
+            "seamless_lid": SEAMLESS_LID_ENABLED,
             "model_path": str(WHISPER_LANG_MODEL_PATH),
             "device": _tw_device(),
             "indiclid": indic,
+            "seamless": seamless,
             "supported_languages": list(WHISPER_CODE_TO_LANGUAGE.values()),
             "script_verify": LANG_SCRIPT_VERIFY,
             "verify_always": LANG_VERIFY_ALWAYS,
@@ -1192,12 +2129,8 @@ def language_health() -> dict:
             "detect_sample_sec": LANG_DETECT_SAMPLE_SEC,
             "verify_sample_sec": LANG_VERIFY_SAMPLE_SEC,
             "min_script_chars": LANG_MIN_SCRIPT_CHARS,
-            "note": "Fast Whisper LID token; hi/bn script disambiguation; IndicLID on one short snippet",
+            "detect_channel": LANG_DETECT_CHANNEL,
+            "note": "Ensemble LID: Whisper v3 + agent-weighted multi-channel + IndicLID + Seamless probe",
         }
     except Exception as exc:
         return {"ready": False, "error": str(exc), "method": "none"}
-
-    """Run Whisper LID; prefer detect_language() for full probability table when available."""
-    all_probs: dict[str, float] | None = None
-    lang_code = ""
-    probability = 0.0

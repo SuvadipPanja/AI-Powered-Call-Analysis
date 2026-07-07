@@ -400,7 +400,16 @@ def _write_call_intelligence(cur, audio_file: str, scores: dict[str, Any]) -> No
         "Agent_Convinced": scores.get("Agent_Convinced"),
         "Loan_Success_Probability": scores.get("Loan_Success_Probability"),
         "Intelligence_Summary": scores.get("Intelligence_Summary"),
+        "Hold_Detected": scores.get("Hold_Detected"),
+        "Hold_Count": scores.get("Hold_Count"),
+        "Hold_Total_Sec": scores.get("Hold_Total_Sec"),
+        "Hold_Longest_Sec": scores.get("Hold_Longest_Sec"),
+        "Hold_Events": scores.get("Hold_Events"),
     }
+
+    hold_events_json = scores.get("Hold_Events_JSON")
+    if not hold_events_json and scores.get("Hold_Events"):
+        hold_events_json = json.dumps(scores.get("Hold_Events"), ensure_ascii=False)
 
     try:
         cur.execute(
@@ -421,7 +430,12 @@ def _write_call_intelligence(cur, audio_file: str, scores: dict[str, Any]) -> No
                 AI_Agent_Convinced = ?,
                 AI_Loan_Success_Probability = ?,
                 AI_Intelligence_Summary = ?,
-                AI_Call_Intelligence = ?
+                AI_Call_Intelligence = ?,
+                AI_Hold_Detected = ?,
+                AI_Hold_Count = ?,
+                AI_Hold_Total_Sec = ?,
+                AI_Hold_Longest_Sec = ?,
+                AI_Hold_Events = ?
             WHERE AudioFileName = ?
             """,
             str(scores.get("Primary_Query_Type", "Other/General Info"))[:100],
@@ -440,12 +454,20 @@ def _write_call_intelligence(cur, audio_file: str, scores: dict[str, Any]) -> No
             _safe_float(scores.get("Loan_Success_Probability")),
             str(scores.get("Intelligence_Summary", ""))[:4000],
             json.dumps(intel_blob, ensure_ascii=False),
+            str(scores.get("Hold_Detected", "No"))[:10],
+            int(scores.get("Hold_Count") or 0),
+            _safe_float(scores.get("Hold_Total_Sec")),
+            _safe_float(scores.get("Hold_Longest_Sec")),
+            (hold_events_json or "[]")[:8000],
             audio_file,
         )
-    except Exception:
+    except Exception as ex:
         # Intelligence columns may not exist on a not-yet-migrated DB; never let
-        # this break the scoring write.
-        pass
+        # this break the scoring write — but log so hold issues are visible in prod.
+        import logging
+        logging.getLogger(__name__).warning(
+            "call intelligence/hold write failed for %s: %s", audio_file, ex
+        )
 
 
 def _fetch_upload_metadata(audio_file: str) -> dict[str, Any]:

@@ -129,6 +129,11 @@ _CAA_INTELLIGENCE_COLUMNS = (
     ("AI_Loan_Success_Probability", "FLOAT NULL"),
     ("AI_Intelligence_Summary", "NVARCHAR(MAX) NULL"),
     ("AI_Call_Intelligence", "NVARCHAR(MAX) NULL"),
+    ("AI_Hold_Detected", "NVARCHAR(10) NULL"),
+    ("AI_Hold_Count", "INT NULL"),
+    ("AI_Hold_Total_Sec", "FLOAT NULL"),
+    ("AI_Hold_Longest_Sec", "FLOAT NULL"),
+    ("AI_Hold_Events", "NVARCHAR(MAX) NULL"),
 )
 
 ALTER_CAA_INTELLIGENCE_SQL = "\n".join(

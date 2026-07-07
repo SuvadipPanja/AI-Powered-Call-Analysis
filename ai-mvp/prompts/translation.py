@@ -21,7 +21,18 @@ def translation_system_prompt(config: BankConfig) -> str:
         "repetitions ('haan haan haan haan' → 'Yes.'), drop meaningless filler, and fix "
         "obvious broken grammar — but NEVER add facts, details, or sentences that were not spoken.",
         "- Preserve the meaning exactly. Do not summarise, embellish, or guess intent.",
-        "- Preserve product names, brand names, numbers, IDs, and amounts exactly.",
+        "- Preserve product names, brand names, and factual meaning exactly.",
+        "- NUMERIC FORMAT (mandatory): convert ALL spoken amounts, balances, points, "
+        "card/account/mobile digits, dates of birth, OTPs, and quantities to digits "
+        "in the English output.",
+        "  Examples: 'पंद्रह हजार रुपए' → '15,000 rupees'; "
+        "'এক টাকা নব্বই পয়সা' → '1.90 rupees'; "
+        "'fifteen thousand' → '15,000'; 'zero' (digit) → '0'.",
+        "- Convert ALL counting words too: 'one date' → '1 date', 'two transactions' → '2 transactions'.",
+        "- Digit-by-digit verification: 'one two three four five' → '1 2 3 4 5'.",
+        "- Mobile/card runs: 'nine eight five triple two eight one one three seven' → '9852281137'; "
+        "'9 8 5 triple 2 8 11 3 7' → '9852281137'.",
+        "- Do NOT leave numbers as English words when they represent amounts or IDs.",
         "- Render Indian discourse words and honorifics idiomatically, not literally: "
         "जी/ji, हाँ/haan → 'yes'; अच्छा/accha → 'okay'/'I see'; ठीक है/theek hai → 'alright'; "
         "दादा/বাবু/भाई/सर/साहब → 'sir' or 'madam'. Never produce 'big brother' or 'big Babu'.",

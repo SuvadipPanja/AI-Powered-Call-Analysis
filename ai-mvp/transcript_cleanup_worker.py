@@ -15,13 +15,17 @@ import re
 from difflib import SequenceMatcher
 
 from config import (
+    TRANSCRIPT_CLEANUP_CONTEXT_MIN_SIMILARITY,
     TRANSCRIPT_CLEANUP_ENABLED,
+    TRANSCRIPT_CLEANUP_ENTITY_MIN_SIMILARITY,
+    TRANSCRIPT_CLEANUP_FULL_CALL_MAX_LINES,
     TRANSCRIPT_CLEANUP_LANGUAGES,
     TRANSCRIPT_CLEANUP_MIN_SIMILARITY,
 )
 from llm_utils import is_meta_line, strip_llm_thinking
 from prompts.transcript_cleanup import (
     CLEANUP_BATCH_SIZE,
+    CLEANUP_FULL_CALL_MAX_LINES,
     cleanup_batch_prompt,
     cleanup_system_prompt,
 )
@@ -34,6 +38,32 @@ SPEAKER_RE = re.compile(r"\(([^)]+)\)")
 _BN_RE = re.compile(r"[\u0980-\u09FF]")
 _HI_RE = re.compile(r"[\u0900-\u097F]")
 _WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
+_STOP = frozenset({
+    "a", "an", "the", "i", "you", "we", "he", "she", "it", "they", "my", "your",
+    "is", "are", "was", "were", "am", "be", "to", "of", "in", "on", "at", "for",
+    "and", "or", "but", "so", "if", "that", "this", "yes", "no", "ok", "okay",
+    "sir", "madam", "please", "thank", "thanks", "hello", "hi", "may", "can",
+    "me", "know", "tell", "want", "like", "as", "do", "did", "have", "has",
+})
+_MONTHS = (
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+)
+_DATE_NORM_RE = re.compile(
+    r"\b\d{1,2}\s+(?:"
+    + "|".join(_MONTHS)
+    + r")\s+\d{2,4}\b",
+    re.I,
+)
+_DECIMAL_RUPEE_RE = re.compile(r"\d+\.\d{2}\s*rupees?", re.I)
+_INDIAN_AMOUNT_RE = re.compile(r"[₹]?\d{1,2}(?:,\d{2})+(?:\s*rupees?)?", re.I)
+_SPELL_NUM_RE = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+    r"thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakh|"
+    r"crore|double|triple|quadruple|oh)\b",
+    re.I,
+)
 
 
 def cleanup_enabled() -> bool:
@@ -84,23 +114,93 @@ def _native_script_ratio(text: str, language: str) -> float:
     return native / max(len("".join(letters)), 1)
 
 
-def _accept_correction(original: str, corrected: str, language: str) -> bool:
+def _digit_count(text: str) -> int:
+    return sum(c.isdigit() for c in text or "")
+
+
+def _has_spelled_numbers(text: str) -> bool:
+    return bool(_SPELL_NUM_RE.search(text or ""))
+
+
+def _is_entity_normalization(original: str, corrected: str) -> bool:
+    """True when correction converts spoken entities to numeric readable form."""
+    orig_d = _digit_count(original)
+    new_d = _digit_count(corrected)
+    if new_d > orig_d:
+        added = new_d - orig_d
+        spelled_tokens = len(_SPELL_NUM_RE.findall(original))
+        # Require enough spoken number words to justify a long digit string
+        if added >= 6 and spelled_tokens < max(3, added // 2):
+            return False
+        return True
+    if _DATE_NORM_RE.search(corrected) and not _DATE_NORM_RE.search(original):
+        return True
+    if _DECIMAL_RUPEE_RE.search(corrected) and not _DECIMAL_RUPEE_RE.search(original):
+        return True
+    if _INDIAN_AMOUNT_RE.search(corrected) and not _INDIAN_AMOUNT_RE.search(original):
+        return True
+    return False
+
+
+def _token_words(text: str) -> set[str]:
+    return {
+        w.lower()
+        for w in _WORD_RE.findall(text or "")
+        if len(w) > 2 and w.lower() not in _STOP
+    }
+
+
+def _context_supports_correction(
+    original: str,
+    corrected: str,
+    context_lines: list[str],
+) -> bool:
+    """True when new terms in the correction appear in adjacent turns."""
+    orig = _token_words(original)
+    corr = _token_words(corrected)
+    new_terms = corr - orig
+    if not new_terms:
+        return False
+    context_blob = " ".join(context_lines).lower()
+    hits = sum(1 for t in new_terms if t in context_blob)
+    return hits >= min(2, len(new_terms))
+
+
+def _accept_correction(
+    original: str,
+    corrected: str,
+    language: str,
+    context_lines: list[str] | None = None,
+) -> bool:
     if corrected == original:
         return True
     if not corrected.strip():
         return False
 
     ratio = SequenceMatcher(None, original, corrected).ratio()
-    if ratio < TRANSCRIPT_CLEANUP_MIN_SIMILARITY:
+    contextual = bool(context_lines) and _context_supports_correction(
+        original, corrected, context_lines,
+    )
+    entity = _is_entity_normalization(original, corrected)
+    min_sim = TRANSCRIPT_CLEANUP_MIN_SIMILARITY
+    max_len_delta = 0.35
+    if entity:
+        min_sim = min(min_sim, TRANSCRIPT_CLEANUP_ENTITY_MIN_SIMILARITY)
+        max_len_delta = 0.65
+    elif contextual:
+        min_sim = min(min_sim, TRANSCRIPT_CLEANUP_CONTEXT_MIN_SIMILARITY)
+        max_len_delta = 0.55
+
+    if ratio < min_sim:
         return False
 
     orig_len = max(len(original), 1)
-    if abs(len(corrected) - len(original)) / orig_len > 0.35:
+    if abs(len(corrected) - len(original)) / orig_len > max_len_delta:
         return False
 
     orig_script = _native_script_ratio(original, language)
     new_script = _native_script_ratio(corrected, language)
-    if orig_script >= 0.25 and new_script < orig_script - 0.12:
+    if not entity and orig_script >= 0.25 and new_script < orig_script - 0.12:
         return False
 
     return True
@@ -145,18 +245,26 @@ def _correct_batch(
     system = cleanup_system_prompt(language)
     prompt = cleanup_batch_prompt(items, language)
     try:
-        raw = ollama_generate(prompt, system=system, json_mode=True)
+        raw = ollama_generate(
+            prompt, system=system, json_mode=True, max_tokens=2048,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Transcript cleanup LLM call failed (%s): %s", language, exc)
         return {}
 
     parsed = _parse_corrections(raw, [idx for idx, _, _ in items])
+    context_by_idx = {idx: text for idx, _, text in items}
     accepted: dict[int, str] = {}
     for idx, corrected in parsed.items():
         original = originals.get(idx, "")
-        if _accept_correction(original, corrected, language):
+        others = [t for i, t in context_by_idx.items() if i != idx]
+        if _accept_correction(original, corrected, language, others):
             if corrected != original:
                 accepted[idx] = corrected
+                logger.info(
+                    "Transcript cleanup accepted line %s: %r -> %r",
+                    idx, original[:60], corrected[:60],
+                )
         else:
             logger.info(
                 "Transcript cleanup rejected line %s (%s): too different from ASR",
@@ -199,9 +307,13 @@ def cleanup_transcript(transcript: str, language: str) -> str:
         return transcript
 
     corrections: dict[int, str] = {}
-    for start in range(0, len(batch_items), CLEANUP_BATCH_SIZE):
-        chunk = batch_items[start : start + CLEANUP_BATCH_SIZE]
-        corrections.update(_correct_batch(chunk, language, originals))
+    full_call_max = TRANSCRIPT_CLEANUP_FULL_CALL_MAX_LINES or CLEANUP_FULL_CALL_MAX_LINES
+    if len(batch_items) <= full_call_max:
+        corrections.update(_correct_batch(batch_items, language, originals))
+    else:
+        for start in range(0, len(batch_items), CLEANUP_BATCH_SIZE):
+            chunk = batch_items[start : start + CLEANUP_BATCH_SIZE]
+            corrections.update(_correct_batch(chunk, language, originals))
 
     if not corrections:
         logger.info("Transcript cleanup produced no accepted corrections for %s", language)
