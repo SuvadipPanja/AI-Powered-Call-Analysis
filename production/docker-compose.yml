@@ -6,7 +6,7 @@
 #      backend ──► ai-controller (sp_ai_controller :8000, alias "ai")
 #                     │ language?              │ per-chunk ASR (parallel)
 #                     ▼                        ▼
-#          ai-whisper-lang (:8010)   ai-nemo (:8020)  /  ai-seamless (:8030)
+#          ai-whisper-lang (:8010)   ai-nemo (:8020 en) / ai-seamless (:8030 other)
 #                     │
 #                     ▼ LLM tasks (cleanup · translate · scoring · intelligence)
 #                  llm (sp_ai_llama :8001, alias "llm", vLLM — unchanged image)
@@ -65,14 +65,18 @@ services:
     image: sp-db:prod
     container_name: sp_db
     logging: *json-logging
+    # Reads /run/secrets/db_password via image entrypoint (same as backend/ai).
+    # Host file must be readable by mssql (uid 10001): chmod 644 secrets/db_password
+    # No SA_PASSWORD export needed for `docker compose up -d`.
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${SA_PASSWORD}
       MSSQL_PID: Express
+    secrets:
+      - db_password
     volumes:
       - dbdata:/var/opt/mssql
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -h -1 -W -Q \"SET NOCOUNT ON; IF DB_ID('call_analysis_db') IS NULL RAISERROR('nodb',16,1)\" || exit 1"]
+      test: ["CMD-SHELL", "SQLCMDPASSWORD=\"$$(cat /run/secrets/db_password)\" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -h -1 -W -Q \"SET NOCOUNT ON; IF DB_ID('call_analysis_db') IS NULL RAISERROR('nodb',16,1)\" || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 30
@@ -87,6 +91,33 @@ services:
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes:
       - redisdata:/data
+    networks: [app-net]
+    restart: unless-stopped
+
+  # CUDA nvidia-smi sidecar for System Monitoring (Alpine backend has no nvidia-smi).
+  # Sees ALL host GPUs; not limited to GPU_DEVICE_ID used by the AI stack.
+  gpu-metrics:
+    image: sp-ai-controller:prod
+    container_name: sp_gpu_metrics
+    logging: *json-logging
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: utility
+      GPU_METRICS_PORT: "9101"
+      HOST_PROC: /host/proc
+    command: ["python3", "/app/gpu_metrics_server.py"]
+    volumes:
+      - ./scripts/gpu_metrics_server.py:/app/gpu_metrics_server.py:ro
+      - /proc:/host/proc:ro
+    expose:
+      - "9101"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     networks: [app-net]
     restart: unless-stopped
 
@@ -113,6 +144,7 @@ services:
       DB_TRUST_SERVER_CERTIFICATE: "true"
       AI_MAIN_URL: ${AI_MAIN_URL}
       REDIS_URL: ${REDIS_URL}
+      GPU_METRICS_URL: ${GPU_METRICS_URL:-http://gpu-metrics:9101/gpus}
       LICENSE_FILE_PATH: ./license/license.lic
       AUDIO_UPLOAD_DIR: /app/data/Sample_Audio
       PROJECT_ROOT: /app
@@ -538,9 +570,11 @@ services:
       INTELLIGENCE_VERIFY_ENABLED: ${INTELLIGENCE_VERIFY_ENABLED:-true}
       # --- ASR routing (read once at container start — see .env.example) ---
       # Priority: FASTER_WHISPER_ASR_LANGUAGES → NEMO_ASR_LANGUAGES → SeamlessM4T.
+      # Hindi / other Indic → Seamless (Qwen ASR removed from prod stack).
       TRANSCRIBE_BACKEND: ${TRANSCRIBE_BACKEND:-nemo}
       NEMO_ASR_LANGUAGES: ${NEMO_ASR_LANGUAGES:-English}
       FASTER_WHISPER_ASR_LANGUAGES: ${FASTER_WHISPER_ASR_LANGUAGES:-}
+      QWEN_ASR_LANGUAGES: ${QWEN_ASR_LANGUAGES:-}
       SEAMLESS_M4T_ENABLED: ${SEAMLESS_M4T_ENABLED:-true}
       SEAMLESS_M4T_MODEL_PATH: ${SEAMLESS_M4T_MODEL_PATH:-/models/seamless-m4t-v2-large}
       SEAMLESS_M4T_DEVICE: ${SEAMLESS_M4T_DEVICE:-cuda}

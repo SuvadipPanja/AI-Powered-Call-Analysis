@@ -78,11 +78,29 @@ fix_script_line_endings() {
   done
 }
 
+# Loads SA_PASSWORD from secrets/db_password for compose db env + helper scripts.
+load_sa_password_from_secrets() {
+  if [[ -n "${SA_PASSWORD:-}" ]]; then
+    return 0
+  fi
+  local secret_file="$PROD_DIR/secrets/db_password"
+  if [[ -f "$secret_file" && -s "$secret_file" ]]; then
+    SA_PASSWORD="$(tr -d '\r\n' < "$secret_file")"
+    export SA_PASSWORD
+    return 0
+  fi
+  echo "ERROR: secrets/db_password missing/empty — cannot start db" >&2
+  return 1
+}
+
 load_compose_env() {
   if [[ -f "$PROD_DIR/.env" ]]; then
+    # Windows copies often leave CRLF; strip before source.
+    sed -i 's/\r$//' "$PROD_DIR/.env" 2>/dev/null || true
     # shellcheck disable=SC1091
     set -a; source "$PROD_DIR/.env"; set +a
   fi
+  load_sa_password_from_secrets || true
   export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-call-analysis-prod}"
   export COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 }

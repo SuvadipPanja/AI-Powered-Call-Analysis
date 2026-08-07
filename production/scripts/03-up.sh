@@ -20,11 +20,10 @@ bash "$HERE/validate-prod-layout.sh" || exit 1
 
 remove_legacy_containers
 
-# shellcheck disable=SC1091
-set -a; . ./.env; set +a
+# Non-secret config from .env + SA_PASSWORD from secrets/db_password (for db).
+load_compose_env
+load_sa_password_from_secrets || true
 
-export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-call-analysis-prod}"
-export COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 GPU_ID="${GPU_DEVICE_ID:-1}"
 
 # --- GPU preflight: AI services + llm use host GPU index GPU_DEVICE_ID (default 1) ---
