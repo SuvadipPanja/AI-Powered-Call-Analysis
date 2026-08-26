@@ -1,0 +1,17 @@
+{
+  "name": "AI-Powered Call Analysis (backend + frontend dev)",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "cd backend && node server.js"
+    },
+    {
+      "name": "frontend",
+      "command": "cd frontend && HOST=0.0.0.0 PORT=3000 BROWSER=none NODE_OPTIONS=--openssl-legacy-provider ./node_modules/.bin/react-scripts start"
+    }
+  ],
+  "ports": [3000, 5000, 1433]
+}
