@@ -1,0 +1,13 @@
+# Scoped overlay: Trends top-scorer resilience + quality workbook data isolation.
+# Copies only the three files this change touches onto the current prod image, so
+# no unrelated working-tree files ride along. Flatten afterwards:
+#   docker tag sp-backend:prod sp-backend:pre-trends-workbook
+#   docker build -t sp-backend:prod -f production-build/docker/Dockerfile.backend.trends-workbook .
+#   docker build --provenance=false -t sp-backend:prod -f production-build/docker/Dockerfile.backend.flatten .
+#   docker save -o production/docker-images/sp-backend.tar sp-backend:prod
+FROM sp-backend:prod AS patched
+COPY backend/services/reportHelpers.js /app/services/reportHelpers.js
+COPY backend/services/qualityWorkbookData.js /app/services/qualityWorkbookData.js
+COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
+RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
+  && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)"
