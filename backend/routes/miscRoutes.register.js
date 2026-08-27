@@ -37,6 +37,7 @@ module.exports = function registerMiscRoutes(router, deps, H) {
     takeQualityBuild,
     rememberQualityBuild,
   } = require("../services/qualityReportCache");
+  const { fetchQualityWorkbookRows } = require("../services/qualityWorkbookData");
   const dashboardDrilldown = require("../services/dashboardDrilldown");
   const { ptpQualitySql } = require("../services/ptpQuality");
   const { getUploadQueueMetrics } = require("../services/uploadQueue");
@@ -674,14 +675,19 @@ router.get('/api/collections/quality-report', requireCollectionsDashboardAccess,
   const hasRange = !!(fromDate && toDate);
   const params = pickReportFilterParams(req.query);
 
+  const requestStartedAt = Date.now();
   const sendWorkbook = (bytes, cacheStatus) => {
     const stamp = hasRange ? `${fromDate}_to_${toDate}` : new Date().toISOString().slice(0, 10);
     const filename = `ICICI_HFC_Quality_Report_${stamp}.xlsx`;
+    const totalMs = Date.now() - requestStartedAt;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', bytes.length);
     res.setHeader('X-Cache', cacheStatus);
-    console.info(`[quality-report] cache=${cacheStatus} bytes=${bytes.length}`);
+    res.setHeader('Server-Timing', `cache;desc="${cacheStatus}", total;dur=${totalMs}`);
+    console.info(
+      `[quality-report] cache=${cacheStatus} totalMs=${totalMs} bytes=${bytes.length}`,
+    );
     return res.status(200).end(bytes);
   };
 
@@ -725,12 +731,6 @@ router.get('/api/collections/quality-report', requireCollectionsDashboardAccess,
     return res.status(503).json({ success: false, message: 'Database unavailable.' });
   }
 
-  const dateClause = hasRange
-    ? consolidatedReportDateBetween('@fromDate', '@toDate')
-    : 'CAST(COALESCE(UploadDate, SelectedCallDate) AS DATE) >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))';
-  const extra = consolidatedReportExtraFilters(params);
-  const where = `WHERE AI_Coll_Score IS NOT NULL AND ${dateClause}${extra}`;
-
   const metaCols = [
     'AudioFileName', 'AgentName', 'AgentID', 'AgentLocation', 'AgentSupervisor',
     'AgentManager', 'AgentAuditor', 'SelectedCallDate', 'UploadDate',
@@ -743,25 +743,23 @@ router.get('/api/collections/quality-report', requireCollectionsDashboardAccess,
     try { dims = (await getEffectiveRubric(pool)).filter((d) => d.enabled !== false); } catch { dims = []; }
 
     const buildPromise = rememberQualityBuild(cacheKey, (async () => {
-      const r = pool.request();
-      if (hasRange) {
-        r.input('fromDate', sql.Date, fromDate);
-        r.input('toDate', sql.Date, toDate);
-      }
-      bindReportFilters(r, params);
-      const result = await r.query(`
-        SELECT ${selectCols}
-        FROM Consolidated_Audio_Analysis
-        ${where}
-        ORDER BY COALESCE(UploadDate, SelectedCallDate) DESC
-      `);
-      const calls = result.recordset || [];
+      const { rows: calls, sqlMs } = await fetchQualityWorkbookRows(pool, {
+        selectCols,
+        hasRange,
+        fromDate,
+        toDate,
+        params,
+        extraFilters: consolidatedReportExtraFilters(params),
+        bindReportFilters,
+        sqlTypes: sql,
+      });
       if (!calls.length) {
         const empty = new Error('No collections-scored calls found for this period.');
         empty.statusCode = 409;
         throw empty;
       }
 
+      const excelStartedAt = Date.now();
       const buffer = await buildIcicQualityReportBuffer({
         calls,
         dims,
@@ -769,7 +767,11 @@ router.get('/api/collections/quality-report', requireCollectionsDashboardAccess,
         period: hasRange ? { fromDate, toDate } : null,
         orgName: 'ICICI HFC',
       });
+      const excelMs = Date.now() - excelStartedAt;
       const bytes = Buffer.from(buffer);
+      console.info(
+        `[quality-report] build rows=${calls.length} sqlMs=${sqlMs} excelMs=${excelMs} bytes=${bytes.length}`,
+      );
       if (shouldStoreWorkbook(bytes)) {
         await cacheService.setBuffer(cacheKey, bytes, QUALITY_CACHE_TTL_SEC);
       }
