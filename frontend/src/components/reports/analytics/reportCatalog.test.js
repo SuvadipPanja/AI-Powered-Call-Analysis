@@ -2,6 +2,7 @@ import { downloadCollectionsQualityReport } from "../../../services/reportsServi
 import { clearQualityWorkbookCache } from "../../../utils/qualityWorkbookCache";
 import {
   downloadOfficialQualityWorkbook,
+  listReportCards,
   previewQualityWorkbook,
   qualityReportFilename,
   qualityReportQuery,
@@ -89,5 +90,19 @@ describe("quality workbook helpers", () => {
     const [a, b] = await Promise.all([first, second]);
     expect(a.blob).toBe(b.blob);
     expect(downloadCollectionsQualityReport).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("listReportCards", () => {
+  it("keeps four collections cards and hides leftover banking extracts", () => {
+    const keys = listReportCards({ isCollections: true }).map((c) => c.key);
+    expect(keys).toEqual(["quality", "callwise", "escalations", "hold"]);
+  });
+
+  it("keeps banking extracts when not collections", () => {
+    expect(listReportCards({ isCollections: false }).map((c) => c.key)).toEqual([
+      "callwise", "inbound", "outbound", "audit",
+      "agentwise", "escalations", "hold", "query", "loan",
+    ]);
   });
 });

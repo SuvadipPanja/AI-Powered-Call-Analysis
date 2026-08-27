@@ -80,10 +80,11 @@ export async function downloadOfficialQualityWorkbook(filters, username) {
   return { blob: result.blob, filename, fromCache: result.cached };
 }
 
-export async function fetchCallwise(filters, buildBulkExportBody) {
+export async function fetchCallwise(filters, buildBulkExportBody, { collections = false } = {}) {
   return previewFromCsvBlob(await exportReportCsv("/api/reports/download-callwise", {
     ...buildBulkExportBody("all"),
     callType: "all",
+    ...(collections ? { mode: "collections" } : {}),
   }));
 }
 
@@ -181,10 +182,12 @@ export function listReportCards({ isCollections }) {
       key: "callwise",
       title: "Call-wise extract",
       format: "CSV",
-      description: "One row per processed call, including parameter scores.",
-      fetch: (filters, buildBody) => fetchCallwise(filters, buildBody),
+      description: isCollections
+        ? "One row per collections-scored call: quality, campaign, fatal, PTP, red-alert, and disposition."
+        : "One row per processed call, including parameter scores.",
+      fetch: (filters, buildBody) => fetchCallwise(filters, buildBody, { collections: isCollections }),
     },
-    {
+    !isCollections && {
       key: "inbound",
       title: "Inbound extract",
       format: "CSV",
@@ -198,19 +201,12 @@ export function listReportCards({ isCollections }) {
       description: "Outbound calls matching the current filters.",
       fetch: (filters, buildBody) => fetchOutbound(filters, buildBody),
     },
-    {
+    !isCollections && {
       key: "audit",
       title: "Audit sheet",
       format: "CSV",
       description: "Manual audit rows with every parameter score for the selected range.",
       fetch: (filters) => fetchAuditSheet(filters),
-    },
-    isCollections && {
-      key: "scorecard",
-      title: "Agent scorecard",
-      format: "CSV",
-      description: "Collections quality, RAG, PTP and fatal counts by agent.",
-      fetch: (filters) => fetchAgentScorecard(filters),
     },
     !isCollections && {
       key: "agentwise",
@@ -233,7 +229,7 @@ export function listReportCards({ isCollections }) {
       description: "Hold totals, averages, and calls with hold in this range.",
       fetch: (filters) => fetchHoldTime(filters),
     },
-    {
+    !isCollections && {
       key: "query",
       title: "Query types",
       format: "CSV",

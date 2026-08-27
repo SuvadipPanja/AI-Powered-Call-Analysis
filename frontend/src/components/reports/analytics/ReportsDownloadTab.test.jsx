@@ -48,13 +48,11 @@ describe("ReportsDownloadTab", () => {
     expect(screen.getByText("Quality workbook")).toBeInTheDocument();
     expect(screen.getByText(/Official ICICI HFC multi-sheet workbook/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Download \.xlsx/i })).toBeInTheDocument();
-    expect(screen.getByText("Audit sheet")).toBeInTheDocument();
     expect(screen.getByText("Call-wise extract")).toBeInTheDocument();
-    expect(screen.getByText("Agent scorecard")).toBeInTheDocument();
     expect(screen.queryByText("Loan details")).not.toBeInTheDocument();
     expect(screen.queryByText("Outbound extract")).not.toBeInTheDocument();
     expect(screen.queryByText("Production report center")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /Preview & download/i })).toHaveLength(7);
+    expect(screen.getAllByRole("button", { name: /Preview & download/i })).toHaveLength(3);
   });
 
   it("shows banking cards including loan details when not collections", () => {
