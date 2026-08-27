@@ -129,7 +129,10 @@ test("Summary identities hold: audits, pass/fail, RAG, campaigns, fatals", async
   // sampleCalls: 3 rows, 1 fatal, scores 35.09 / 40 / 88
   assert.equal(byLabel["Audits Count"], 3);
   assert.equal(byLabel["Fatal Count"], 1);
-  assert.equal(byLabel["Passed Audits Count"] + byLabel["Failed Audits Count"], 3);
+  assert.equal(
+    byLabel["Passed (score ≥80, not fatal)"] + byLabel["Failed (fatal or score <80)"],
+    3,
+  );
 
   const audit = wb.getWorksheet("Audit Sheet");
   const auditHeaders = audit.getRow(1).values.slice(1).map(String);
@@ -147,4 +150,18 @@ test("Summary identities hold: audits, pass/fail, RAG, campaigns, fatals", async
   });
   assert.equal(fatalSheetRows, 1);
   assert.equal(fatalFlags, 1);
+});
+
+test("Summary uses one head-count row and honest pass/fail labels", async () => {
+  const wb = await loadWorkbook();
+  const labels = [];
+  wb.getWorksheet("Summary").eachRow((row) => {
+    const v = String(row.getCell(1).value || "");
+    if (v && !v.includes("Performance") && !v.includes("ICICI")) labels.push(v);
+  });
+  assert.equal(labels.filter((l) => /head count/i.test(l)).length, 1);
+  assert.ok(labels.includes("Passed (score ≥80, not fatal)"));
+  assert.ok(labels.includes("Failed (fatal or score <80)"));
+  assert.ok(!labels.includes("Active Head Count"));
+  assert.ok(!labels.includes("Passed Audits Count"));
 });
