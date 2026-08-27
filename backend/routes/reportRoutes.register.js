@@ -28,6 +28,7 @@ module.exports = function registerReportRoutes(router, deps, H) {
     aggregateCustomerSentimentSummary,
     intelDateClause,
   } = H;
+  const { collectionsWhere } = require("../services/collectionsReportScope");
   const { isMissingDbObjectError } = require("../projectPaths");
 
 /**
@@ -1132,86 +1133,126 @@ router.post("/api/reports/download-callwise", async (req, res) => {
   
   try {
     const pool = await connectToDatabase();
-    let query = `
-      SELECT 
-        AudioFileName,
-        CallType,
-        AgentName,
-        AgentID,
-        AgentLocation,
-        AgentSupervisor,
-        SelectedCallDate,
-        UploadDate,
-        AudioLanguage,
-        AudioDuration,
-        AudioWPM,
-        AI_Overall_Scoring,
-        Manual_Overall_Scoring,
-        AI_Opening_Speech,
-        AI_Empathy,
-        AI_Query_Handling,
-        AI_Adherence_to_Protocol,
-        AI_Resolution_Assurance,
-        AI_Query_Resolution,
-        AI_Polite_Tone,
-        AI_Authentication_Verification,
-        AI_Escalation_Handling,
-        AI_Closing_Speech,
-        AI_Rude_Behavior,
-        AI_Call_Type,
-        AI_Lead_Classification,
-        AI_Resolution_Status,
-        AI_Feedback,
-        Manual_Opening_Speech,
-        Manual_Empathy,
-        Manual_Query_Handling,
-        Manual_Adherence_to_Protocol,
-        Manual_Resolution_Assurance,
-        Manual_Query_Resolution,
-        Manual_Polite_Tone,
-        Manual_Authentication_Verification,
-        Manual_Escalation_Handling,
-        Manual_Closing_Speech,
-        Manual_Rude_Behavior,
-        Manual_Call_Type,
-        Manual_Lead_Classification,
-        Manual_Resolution_Status,
-        Manual_Feedback,
-        ManualScoredByUserID,
-        AI_Hold_Detected,
-        AI_Hold_Count,
-        AI_Hold_Total_Sec,
-        AI_Hold_Longest_Sec
-      FROM [dbo].[Consolidated_Audio_Analysis]
-      WHERE Status = 'Success'
-    `;
-    
-    const request = pool.request();
-    
-    if (fromDate && toDate) {
-      query += ` AND ${consolidatedReportDateBetween('@fromDate', '@toDate')}`;
-      request.input("fromDate", sql.Date, fromDate);
-      request.input("toDate", sql.Date, toDate);
+    const mode = String(req.body.mode || "");
+    const isCollectionsDump = mode === "collections";
+
+    let result;
+    if (isCollectionsDump) {
+      const request = pool.request();
+      const extra = [];
+      if (location && location !== "All") {
+        extra.push(" AND TRIM(LOWER(AgentLocation)) = TRIM(LOWER(@location))");
+        request.input("location", sql.NVarChar, location);
+      }
+      if (supervisor && supervisor !== "All") {
+        extra.push(" AND TRIM(LOWER(AgentSupervisor)) = TRIM(LOWER(@supervisor))");
+        request.input("supervisor", sql.NVarChar, supervisor);
+      }
+      if (callType && callType !== "all") {
+        extra.push(" AND CallType = @callType");
+        request.input("callType", sql.NVarChar, callType);
+      }
+      const hasRange = !!(fromDate && toDate);
+      if (hasRange) {
+        request.input("fromDate", sql.Date, fromDate);
+        request.input("toDate", sql.Date, toDate);
+      }
+      const query = `
+        SELECT
+          AudioFileName, CallType, AgentName, AgentID, AgentLocation, AgentSupervisor,
+          SelectedCallDate, UploadDate, AudioLanguage, AudioDuration,
+          AI_Coll_Score, AI_Coll_Campaign, AI_Coll_Disposition,
+          AI_Coll_Fatal_Triggered, AI_Coll_Fatal_Reason,
+          AI_Red_Alert, AI_ZTP_Violation,
+          AI_PTP_Present, AI_PTP_Genuineness, AI_PTP_Date, AI_PTP_Amount,
+          AI_Summary
+        FROM [dbo].[Consolidated_Audio_Analysis]
+        ${collectionsWhere({ hasRange, extraFilters: extra.join("") })}
+        ORDER BY COALESCE(UploadDate, SelectedCallDate) DESC
+      `;
+      result = await request.query(query);
+    } else {
+      let query = `
+        SELECT 
+          AudioFileName,
+          CallType,
+          AgentName,
+          AgentID,
+          AgentLocation,
+          AgentSupervisor,
+          SelectedCallDate,
+          UploadDate,
+          AudioLanguage,
+          AudioDuration,
+          AudioWPM,
+          AI_Overall_Scoring,
+          Manual_Overall_Scoring,
+          AI_Opening_Speech,
+          AI_Empathy,
+          AI_Query_Handling,
+          AI_Adherence_to_Protocol,
+          AI_Resolution_Assurance,
+          AI_Query_Resolution,
+          AI_Polite_Tone,
+          AI_Authentication_Verification,
+          AI_Escalation_Handling,
+          AI_Closing_Speech,
+          AI_Rude_Behavior,
+          AI_Call_Type,
+          AI_Lead_Classification,
+          AI_Resolution_Status,
+          AI_Feedback,
+          Manual_Opening_Speech,
+          Manual_Empathy,
+          Manual_Query_Handling,
+          Manual_Adherence_to_Protocol,
+          Manual_Resolution_Assurance,
+          Manual_Query_Resolution,
+          Manual_Polite_Tone,
+          Manual_Authentication_Verification,
+          Manual_Escalation_Handling,
+          Manual_Closing_Speech,
+          Manual_Rude_Behavior,
+          Manual_Call_Type,
+          Manual_Lead_Classification,
+          Manual_Resolution_Status,
+          Manual_Feedback,
+          ManualScoredByUserID,
+          AI_Hold_Detected,
+          AI_Hold_Count,
+          AI_Hold_Total_Sec,
+          AI_Hold_Longest_Sec
+        FROM [dbo].[Consolidated_Audio_Analysis]
+        WHERE Status = 'Success'
+      `;
+
+      const request = pool.request();
+
+      if (fromDate && toDate) {
+        query += ` AND ${consolidatedReportDateBetween('@fromDate', '@toDate')}`;
+        request.input("fromDate", sql.Date, fromDate);
+        request.input("toDate", sql.Date, toDate);
+      }
+
+      if (location && location !== 'All') {
+        query += ` AND TRIM(LOWER(AgentLocation)) = TRIM(LOWER(@location))`;
+        request.input("location", sql.NVarChar, location);
+      }
+
+      if (supervisor && supervisor !== 'All') {
+        query += ` AND TRIM(LOWER(AgentSupervisor)) = TRIM(LOWER(@supervisor))`;
+        request.input("supervisor", sql.NVarChar, supervisor);
+      }
+
+      if (callType && callType !== 'all') {
+        query += ` AND CallType = @callType`;
+        request.input("callType", sql.NVarChar, callType);
+      }
+
+      query += ` ORDER BY SelectedCallDate DESC`;
+
+      result = await request.query(query);
     }
-    
-    if (location && location !== 'All') {
-      query += ` AND TRIM(LOWER(AgentLocation)) = TRIM(LOWER(@location))`;
-      request.input("location", sql.NVarChar, location);
-    }
-    
-    if (supervisor && supervisor !== 'All') {
-      query += ` AND TRIM(LOWER(AgentSupervisor)) = TRIM(LOWER(@supervisor))`;
-      request.input("supervisor", sql.NVarChar, supervisor);
-    }
-    
-    if (callType && callType !== 'all') {
-      query += ` AND CallType = @callType`;
-      request.input("callType", sql.NVarChar, callType);
-    }
-    
-    query += ` ORDER BY SelectedCallDate DESC`;
-    
-    const result = await request.query(query);
     
     // Convert to CSV format
     const csvHeaders = Object.keys(result.recordset[0] || {}).join(',');
