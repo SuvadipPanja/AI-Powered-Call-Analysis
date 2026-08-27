@@ -8,22 +8,15 @@
  * comparisons, so IX_CAA_UploadDate can be used.
  */
 
+const { collectionsDateClause } = require("./collectionsReportScope");
+
 /** Sargable equivalent of "COALESCE(UploadDate, SelectedCallDate) date-between". */
 function qualityWorkbookDateClause() {
-  return `(
-        (UploadDate IS NOT NULL
-          AND UploadDate >= @fromDate
-          AND UploadDate < DATEADD(DAY, 1, @toDate))
-        OR (UploadDate IS NULL
-          AND SelectedCallDate >= @fromDate
-          AND SelectedCallDate < DATEADD(DAY, 1, @toDate))
-      )`;
+  return collectionsDateClause({ hasRange: true });
 }
 
 function buildQualityWorkbookQuery({ selectCols, hasRange, extraFilters = '' }) {
-  const dateClause = hasRange
-    ? qualityWorkbookDateClause()
-    : 'COALESCE(UploadDate, SelectedCallDate) >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))';
+  const dateClause = collectionsDateClause({ hasRange });
   return `
         SELECT ${selectCols}
         FROM Consolidated_Audio_Analysis

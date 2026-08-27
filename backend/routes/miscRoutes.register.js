@@ -38,6 +38,7 @@ module.exports = function registerMiscRoutes(router, deps, H) {
     rememberQualityBuild,
   } = require("../services/qualityReportCache");
   const { fetchQualityWorkbookRows } = require("../services/qualityWorkbookData");
+  const { collectionsDateClause } = require("../services/collectionsReportScope");
   const dashboardDrilldown = require("../services/dashboardDrilldown");
   const { ptpQualitySql } = require("../services/ptpQuality");
   const { getUploadQueueMetrics } = require("../services/uploadQueue");
@@ -523,9 +524,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
     toDate = today.toISOString().slice(0, 10);
   }
   const params = pickReportFilterParams(req.query);
-  const dateClause = hasRange
-    ? consolidatedReportDateBetween('@fromDate', '@toDate')
-    : 'CAST(COALESCE(UploadDate, SelectedCallDate) AS DATE) >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))';
+  const dateClause = collectionsDateClause({ hasRange });
   const extra = consolidatedReportExtraFilters(params);
   const where = `WHERE AI_Coll_Score IS NOT NULL AND ${dateClause}${extra}`;
 
@@ -812,9 +811,7 @@ router.get('/api/collections/agent-performance', requireCollectionsDashboardAcce
   const { fromDate, toDate } = req.query;
   const hasRange = !!(fromDate && toDate);
   const params = pickReportFilterParams(req.query);
-  const dateClause = hasRange
-    ? consolidatedReportDateBetween('@fromDate', '@toDate')
-    : 'CAST(COALESCE(UploadDate, SelectedCallDate) AS DATE) >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))';
+  const dateClause = collectionsDateClause({ hasRange });
   const extra = consolidatedReportExtraFilters(params);
   const where = `WHERE AI_Coll_Score IS NOT NULL AND ${dateClause}${extra}`;
 
