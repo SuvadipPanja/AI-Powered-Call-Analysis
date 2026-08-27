@@ -5,7 +5,8 @@
 
 FROM ai-call-backend:prod
 COPY backend/package.json /app/package.json
-RUN npm install bull@4.16.5 --omit=dev --no-audit --no-fund || true
+RUN node -e "for (const p of ['bull','pdf-parse','xlsx','exceljs','mammoth','tesseract.js','pdfjs-dist','@napi-rs/canvas']) require.resolve(p)" \
+  || npm install bull@4.16.5 pdf-parse@1.1.1 xlsx@0.18.5 exceljs@4.4.0 mammoth@1.9.0 tesseract.js@5.1.1 pdfjs-dist@4.8.69 @napi-rs/canvas@0.1.65 --omit=dev --no-audit --no-fund
 COPY backend/server.js /app/server.js
 COPY backend/sessionPolicy.js /app/sessionPolicy.js
 COPY backend/uploadHandler.js /app/uploadHandler.js
@@ -20,12 +21,23 @@ COPY backend/middleware/licenseGuard.js /app/middleware/licenseGuard.js
 COPY backend/routes/sessionRoutes.js /app/routes/sessionRoutes.js
 COPY backend/routes/reportRoutes.js /app/routes/reportRoutes.js
 COPY backend/routes/reportRoutes.register.js /app/routes/reportRoutes.register.js
+COPY backend/routes/analyticsRoutes.js /app/routes/analyticsRoutes.js
+COPY backend/routes/reanalyzeRoutes.js /app/routes/reanalyzeRoutes.js
+COPY backend/routes/auditRoutes.js /app/routes/auditRoutes.js
+COPY backend/services/reanalysisClaim.js /app/services/reanalysisClaim.js
+COPY backend/services/auditScore.js /app/services/auditScore.js
+COPY backend/services/audioStorage.js /app/services/audioStorage.js
 COPY backend/routes/miscRoutes.js /app/routes/miscRoutes.js
 COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
 COPY backend/services/redisClient.js /app/services/redisClient.js
 COPY backend/services/cacheService.js /app/services/cacheService.js
+COPY backend/services/qualityReportCache.js /app/services/qualityReportCache.js
 COPY backend/services/rateLimitStore.js /app/services/rateLimitStore.js
 COPY backend/services/reportHelpers.js /app/services/reportHelpers.js
+COPY backend/services/dashboardDrilldown.js /app/services/dashboardDrilldown.js
+COPY backend/services/ptpQuality.js /app/services/ptpQuality.js
+COPY backend/services/capacityExportHelpers.js /app/services/capacityExportHelpers.js
+COPY backend/services/collectionsReport.js /app/services/collectionsReport.js
 COPY backend/services/uploadQueue.js /app/services/uploadQueue.js
 COPY backend/websocket/wsHub.js /app/websocket/wsHub.js
 COPY backend/agentController.js /app/agentController.js
@@ -33,19 +45,57 @@ COPY backend/agentHelper.js /app/agentHelper.js
 COPY backend/testConnection.js /app/testConnection.js
 COPY backend/routes/bankSettingsRoutes.js /app/routes/bankSettingsRoutes.js
 COPY backend/routes/queryCategoryRoutes.js /app/routes/queryCategoryRoutes.js
+COPY backend/routes/centerConfigPackRoutes.js /app/routes/centerConfigPackRoutes.js
+COPY backend/routes/rubricRoutes.js /app/routes/rubricRoutes.js
 COPY backend/services/bankSettingsService.js /app/services/bankSettingsService.js
 COPY backend/services/bankSettingsDefaults.js /app/services/bankSettingsDefaults.js
 COPY backend/services/queryCategoryService.js /app/services/queryCategoryService.js
 COPY backend/services/queryCategoryDefaults.js /app/services/queryCategoryDefaults.js
+COPY backend/services/centerConfigPackService.js /app/services/centerConfigPackService.js
+COPY backend/services/rubricService.js /app/services/rubricService.js
+COPY backend/services/profilesService.js /app/services/profilesService.js
+COPY backend/routes/profileRoutes.js /app/routes/profileRoutes.js
+COPY backend/profiles/ /app/profiles/
 COPY backend/services/dbMigrate.js /app/services/dbMigrate.js
+# Org-level multi-tenancy (master DB + database-per-org). Gated by ORG_TENANCY_ENABLED.
+COPY backend/dbConnection.js /app/dbConnection.js
+COPY backend/db.js /app/db.js
+COPY backend/services/dbPools.js /app/services/dbPools.js
+COPY backend/services/masterSchema.js /app/services/masterSchema.js
+COPY backend/services/orgRegistryService.js /app/services/orgRegistryService.js
+COPY backend/services/licenseSync.js /app/services/licenseSync.js
+COPY backend/services/tenancy.js /app/services/tenancy.js
+COPY backend/services/orgProvisioner.js /app/services/orgProvisioner.js
+COPY backend/services/platformAuthService.js /app/services/platformAuthService.js
+COPY backend/services/maintenanceGate.js /app/services/maintenanceGate.js
+COPY backend/services/orgSwitchService.js /app/services/orgSwitchService.js
+COPY backend/routes/platformRoutes.js /app/routes/platformRoutes.js
+COPY backend/routes/buddyRoutes.js /app/routes/buddyRoutes.js
+COPY backend/routes/buddyAssignmentRoutes.js /app/routes/buddyAssignmentRoutes.js
+COPY backend/services/buddySchema.js /app/services/buddySchema.js
+COPY backend/services/buddyPermissions.js /app/services/buddyPermissions.js
+COPY backend/services/securityPolicy.js /app/services/securityPolicy.js
+COPY backend/services/buddySearch.js /app/services/buddySearch.js
+COPY backend/services/buddyBm25.js /app/services/buddyBm25.js
+COPY backend/services/buddyIndex.js /app/services/buddyIndex.js
+COPY backend/services/buddyIngest.js /app/services/buddyIngest.js
+COPY backend/services/buddyExport.js /app/services/buddyExport.js
+COPY backend/services/buddyContent.js /app/services/buddyContent.js
+COPY backend/migrations/007_buddy_full_parity.sql /app/migrations/007_buddy_full_parity.sql
+COPY backend/services/agentDashboardMetrics.js /app/services/agentDashboardMetrics.js
+COPY backend/services/toneNormalize.js /app/services/toneNormalize.js
+COPY backend/services/gpuMetrics.js /app/services/gpuMetrics.js
+COPY backend/services/hostMemory.js /app/services/hostMemory.js
 COPY backend/services/callProcessingLog.js /app/services/callProcessingLog.js
 COPY backend/pythonScriptHandler.js /app/pythonScriptHandler.js
 COPY backend/services/autoUploadService.js /app/services/autoUploadService.js
 COPY backend/config/secrets.js /app/config/secrets.js
+COPY backend/config/installSecrets.js /app/config/installSecrets.js
 COPY backend/services/timeGuard.js /app/services/timeGuard.js
 COPY backend/services/aiEntitlement.js /app/services/aiEntitlement.js
 COPY backend/services/seatCounter.js /app/services/seatCounter.js
 COPY backend/services/aiWorkToken.js /app/services/aiWorkToken.js
+COPY backend/services/aiJobSlots.js /app/services/aiJobSlots.js
 # Sprint 4 — license tamper-resistance modules + offline/vendor tools
 COPY backend/services/licenseCodec.js /app/services/licenseCodec.js
 COPY backend/services/licenseSecurity.js /app/services/licenseSecurity.js
@@ -53,12 +103,18 @@ COPY backend/services/licenseAudit.js /app/services/licenseAudit.js
 # Sprint 5 — asymmetric (Ed25519) v3 licenses + runtime server fingerprint
 COPY backend/services/licenseV3.js /app/services/licenseV3.js
 COPY backend/services/hardwareId.js /app/services/hardwareId.js
+# Sprint 7 — multi-point key fingerprint + verify loader (native/bytenode hooks)
+COPY backend/services/licenseKeyGuard.js /app/services/licenseKeyGuard.js
+COPY backend/services/licenseVerifyLoader.js /app/services/licenseVerifyLoader.js
 # Vendor Ed25519 PUBLIC key — baked in (verify-only; cannot forge). Integrity-locked.
 COPY backend/keys/vendor-root-public.pem /app/keys/vendor-root-public.pem
 ENV LICENSE_PUBLIC_KEY_PATH=/app/keys/vendor-root-public.pem
 COPY backend/tools/ /app/tools/
 COPY production-build/docker/license-entrypoint.sh /app/license-entrypoint.sh
 RUN chmod +x /app/license-entrypoint.sh /app/tools/*.js 2>/dev/null || true
-# Build the startup integrity manifest from the freshly-copied source (fail build if empty).
-RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
-  && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)"
+# Sprint 7.4: bake ≥3 fingerprint anchors, then integrity-manifest (includes anchors).
+# Strip any accidental source maps from the image (Sprint 7.5).
+RUN node /app/tools/bake-key-fingerprints.js /app \
+  && node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
+  && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)" \
+  && find /app -type f -name '*.map' -delete 2>/dev/null || true
