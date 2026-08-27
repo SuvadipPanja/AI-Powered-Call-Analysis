@@ -83,9 +83,39 @@ describe("ReportsDownloadTab", () => {
       />,
     );
     await waitFor(() => expect(downloadCollectionsQualityReport).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByText(/Official workbook is ready/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: /Download \.xlsx/i })).toBeEnabled());
     await userEvent.click(screen.getByRole("button", { name: /Download \.xlsx/i }));
     expect(triggerBlobDownload).toHaveBeenCalledTimes(1);
     expect(downloadCollectionsQualityReport).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: /Download \.xlsx/i }));
+    expect(triggerBlobDownload).toHaveBeenCalledTimes(2);
+    expect(downloadCollectionsQualityReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a busy Download button and no preview or marketing copy", async () => {
+    let resolveWorkbook;
+    downloadCollectionsQualityReport.mockReturnValue(
+      new Promise((resolve) => { resolveWorkbook = resolve; }),
+    );
+
+    render(
+      <ReportsDownloadTab
+        filters={filters}
+        isCollections
+        periodLabel="2026-07-21 to 2026-08-21"
+        buildBulkExportBody={() => ({})}
+      />,
+    );
+
+    const busyButton = await screen.findByRole("button", { name: /Preparing workbook/i });
+    expect(busyButton).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Preview sheets/i })).not.toBeInTheDocument();
+
+    resolveWorkbook(new Blob(["official-xlsx"]));
+
+    const ready = await screen.findByRole("button", { name: /Download \.xlsx/i });
+    expect(ready).toBeEnabled();
+    expect(screen.queryByText(/download is instant/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Same one-click Excel download as before/i)).not.toBeInTheDocument();
   });
 });

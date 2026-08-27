@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Button } from "../../ui";
+import { Button, Spinner } from "../../ui";
 import { LuDownload, LuTriangleAlert } from "../../../icons";
 import { useAuth } from "../../../context/AuthContext";
 import { triggerBlobDownload } from "../../../utils/reportPreviewParse";
-import { downloadOfficialQualityWorkbook, listReportCards, previewQualityWorkbook, qualityReportQuery } from "./reportCatalog";
+import { downloadOfficialQualityWorkbook, listReportCards, previewQualityWorkbook, qualityReportFilename, qualityReportQuery } from "./reportCatalog";
+import { peekQualityWorkbook, qualityWorkbookCacheKey } from "../../../utils/qualityWorkbookCache";
 import ReportPreviewModal from "./ReportPreviewModal";
 
 function DownloadCard({ title, format, description, periodLabel, onPreview, busy, error }) {
@@ -35,13 +36,12 @@ function QualityWorkbookCard({
   description,
   periodLabel,
   status,
+  hasBlob,
   busy,
   error,
   onDownload,
-  onPreview,
 }) {
-  const ready = status === "ready";
-  const preparing = status === "loading" && !busy;
+  const preparing = busy || (status === "loading" && !hasBlob);
   return (
     <article className="analytics-dl-card">
       <header className="analytics-dl-card__head">
@@ -50,15 +50,11 @@ function QualityWorkbookCard({
       </header>
       <p className="analytics-dl-card__desc">{description}</p>
       <p className="analytics-dl-card__period">{periodLabel}</p>
-      <p className={`analytics-dl-card__status${ready ? " analytics-dl-card__status--ready" : ""}`}>
-        {ready
-          ? "Official workbook is ready — download is instant."
-          : preparing
-            ? "Preparing official workbook in the background…"
-            : busy
-              ? "Generating official workbook…"
-              : "Same one-click Excel download as before."}
-      </p>
+      {preparing && (
+        <p className="analytics-dl-card__status" aria-live="polite">
+          Gathering call data and building sheets…
+        </p>
+      )}
       {error && (
         <p className="analytics-dl-card__error">
           <LuTriangleAlert aria-hidden size={14} />
@@ -66,12 +62,23 @@ function QualityWorkbookCard({
         </p>
       )}
       <div className="analytics-dl-card__actions">
-        <Button variant="primary" onClick={onDownload} disabled={busy}>
-          <LuDownload aria-hidden style={{ verticalAlign: "-2px", marginRight: 6 }} />
-          {busy ? "Generating…" : "Download .xlsx"}
-        </Button>
-        <Button variant="secondary" onClick={onPreview} disabled={busy}>
-          Preview sheets
+        <Button
+          variant="primary"
+          onClick={onDownload}
+          disabled={preparing}
+          aria-busy={preparing}
+        >
+          {preparing ? (
+            <>
+              <Spinner decorative className="analytics-dl-card__spinner" />
+              Preparing workbook…
+            </>
+          ) : (
+            <>
+              <LuDownload aria-hidden style={{ verticalAlign: "-2px", marginRight: 6 }} />
+              Download .xlsx
+            </>
+          )}
         </Button>
       </div>
     </article>
@@ -98,7 +105,12 @@ export default function ReportsDownloadTab({
   useEffect(() => {
     if (!isCollections) return undefined;
     let cancelled = false;
-    setQualityState({ status: "loading", blob: null, error: "" });
+    const cached = peekQualityWorkbook(qualityWorkbookCacheKey("", qualityReportQuery(filters)));
+    if (cached) {
+      setQualityState({ status: "ready", blob: cached, error: "" });
+      return undefined;
+    }
+    setQualityState((prev) => ({ status: "loading", blob: prev.blob, error: "" }));
     downloadOfficialQualityWorkbook(filters, username)
       .then((result) => {
         if (!cancelled) setQualityState({ status: "ready", blob: result.blob, error: "" });
@@ -115,10 +127,16 @@ export default function ReportsDownloadTab({
         });
       });
     return () => { cancelled = true; };
-  }, [isCollections, username, qualityPrefetchKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isCollections, qualityPrefetchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const downloadQuality = async () => {
     setErrors((prev) => ({ ...prev, quality: "" }));
+    const params = qualityReportQuery(filters);
+    const filename = qualityReportFilename(params.fromDate, params.toDate);
+    if (qualityState.blob) {
+      triggerBlobDownload(qualityState.blob, filename);
+      return;
+    }
     setBusyKey("quality");
     try {
       const result = await downloadOfficialQualityWorkbook(filters, username);
@@ -177,8 +195,8 @@ export default function ReportsDownloadTab({
       <div className="reports-section__head">
         <h2>Report center</h2>
         <p>
-          The official Quality workbook uses one-click Excel download. Other extracts for {periodLabel}
-          can be previewed, then saved as Excel, CSV, or PDF.
+          The Quality workbook downloads directly as Excel. Other extracts for{" "}
+          {periodLabel} can be previewed, then saved as Excel, CSV, or PDF.
         </p>
       </div>
       <div className="analytics-dl-grid">
@@ -191,10 +209,10 @@ export default function ReportsDownloadTab({
               description={card.description}
               periodLabel={periodLabel}
               status={qualityState.status}
+              hasBlob={Boolean(qualityState.blob)}
               busy={busyKey === "quality"}
               error={errors.quality || (qualityState.status === "error" ? qualityState.error : "")}
               onDownload={downloadQuality}
-              onPreview={() => openPreview(card)}
             />
           ) : (
             <DownloadCard
@@ -220,6 +238,7 @@ export default function ReportsDownloadTab({
         preview={preview?.key === "quality"
           ? { ...preview.data, rawBlob: qualityState.blob || preview.data?.rawBlob }
           : preview?.data}
+        officialBlob={preview?.key === "quality" ? qualityState.blob : undefined}
         prefetchStatus={preview?.key === "quality" ? qualityState.status : undefined}
         prefetchError={preview?.key === "quality" ? qualityState.error : undefined}
         onFetchOfficial={preview?.key === "quality"
