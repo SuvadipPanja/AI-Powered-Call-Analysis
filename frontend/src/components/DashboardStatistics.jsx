@@ -17,6 +17,7 @@ import {
 } from "../services/reportsService";
 
 import { buildDashboardQueryParams, DEFAULT_DASHBOARD_FILTERS } from "../utils/dashboardFilters";
+import { resolveScoreTone } from "../utils/dashboardKpiUtils";
 
 import KpiCard from "./shared/KpiCard";
 
@@ -50,13 +51,14 @@ function TopScorerCard({ type, scorer, delay }) {
 
   const isInbound = type === "inbound";
 
-  const label = isInbound ? "Inbound top scorer" : "Outbound top scorer";
+  const label = isInbound ? "Highest inbound score" : "Highest outbound score";
 
   const agent = scorer?.agentName && scorer.agentName !== "—" ? scorer.agentName : "No data yet";
 
   const score = scorer?.avgScore ?? "—";
 
   const calls = scorer?.callCount ?? 0;
+  const scoreTone = resolveScoreTone(score);
 
 
 
@@ -64,11 +66,11 @@ function TopScorerCard({ type, scorer, delay }) {
 
     <KpiCard
 
-      className="dashboard-stats__scorer-kpi"
+      className={`dashboard-stats__scorer-kpi dashboard-stats__scorer-kpi--${scoreTone}`}
 
       style={{ animationDelay: `${delay}s` }}
 
-      accent={isInbound ? "teal" : "amber"}
+      accent={isInbound ? "teal" : "cyan"}
 
       label={label}
 
@@ -82,7 +84,9 @@ function TopScorerCard({ type, scorer, delay }) {
 
       <p className="reports-kpi__sub">
 
-        {calls > 0 ? `${calls} call${calls === 1 ? "" : "s"} in period` : "Top AI score in selected period"}
+        {calls > 0
+          ? `${calls < 3 ? "Limited sample · " : ""}${calls} call${calls === 1 ? "" : "s"} in period`
+          : "No scored calls in selected period"}
 
       </p>
 
@@ -124,7 +128,7 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
 
       const qs = buildDashboardQueryParams(filters);
 
-      const [vol, dur, top] = await Promise.all([
+      const [volRes, durRes, topRes] = await Promise.allSettled([
 
         getInboundOutboundWeek(qs),
 
@@ -136,13 +140,33 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
 
 
 
-      if (!vol?.success || !dur?.success || !top?.success) {
+      const ok = (settled) =>
 
-        throw new Error(
+        settled.status === "fulfilled" && settled.value?.success ? settled.value : null;
 
-          vol?.message || dur?.message || top?.message || "Statistics could not be loaded."
+      const vol = ok(volRes);
 
-        );
+      const dur = ok(durRes);
+
+      const top = ok(topRes);
+
+
+
+      // Only a total outage blocks the section. One failing panel — usually the
+
+      // top scorers on sparse data — still leaves the charts worth showing.
+
+      if (!vol && !dur && !top) {
+
+        setFetchError("Trends could not be loaded right now. Please retry.");
+
+        setCallVolume({ labels: EMPTY_WEEK, inbound: [], outbound: [] });
+
+        setDuration({ labels: EMPTY_WEEK, inbound: [], outbound: [] });
+
+        setTopScorers({ inbound: null, outbound: null });
+
+        return;
 
       }
 
@@ -150,31 +174,31 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
 
       setCallVolume({
 
-        labels: vol.labels || EMPTY_WEEK,
+        labels: vol?.labels || EMPTY_WEEK,
 
-        inbound: vol.inbound || [],
+        inbound: vol?.inbound || [],
 
-        outbound: vol.outbound || [],
+        outbound: vol?.outbound || [],
 
       });
 
       setDuration({
 
-        labels: dur.labels || EMPTY_WEEK,
+        labels: dur?.labels || EMPTY_WEEK,
 
-        inbound: dur.inbound || [],
+        inbound: dur?.inbound || [],
 
-        outbound: dur.outbound || [],
+        outbound: dur?.outbound || [],
 
       });
 
-      setTopScorers({ inbound: top.inbound, outbound: top.outbound });
+      setTopScorers({ inbound: top?.inbound || null, outbound: top?.outbound || null });
 
     } catch (err) {
 
       console.error("Failed to fetch dashboard statistics:", err);
 
-      setFetchError(err.message || "Failed to load statistics. Please try again.");
+      setFetchError("Trends could not be loaded right now. Please retry.");
 
       setCallVolume({ labels: EMPTY_WEEK, inbound: [], outbound: [] });
 
@@ -256,9 +280,9 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
 
       <div className="reports-section__head">
 
-        <h2>Statistics</h2>
+        <h2>Trends</h2>
 
-        <p>Inbound vs outbound — volume, duration & top performers · {periodSubtitle}</p>
+        <p>Inbound/outbound volume, duration & top scorers · {periodSubtitle}</p>
 
       </div>
 
@@ -290,11 +314,12 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
 
           icon={<LuInbox aria-hidden />}
 
-          title="No call statistics for this period"
+          title="No call trends for this period yet"
 
         >
 
-          Try widening the date range (e.g. All time) or upload calls to see volume and duration charts here.
+          Trends appear once calls are processed across more than one day, agent, or direction.
+          Try a wider date range, or process more calls.
 
         </EmptyState>
 
@@ -350,7 +375,7 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
 
               icon={LuClock}
 
-              title="Daily Duration — Inbound vs Outbound"
+              title="Daily call duration"
 
               subtitle={periodSubtitle}
 
@@ -383,5 +408,3 @@ export default function DashboardStatistics({ filters = DEFAULT_DASHBOARD_FILTER
   );
 
 }
-
-
