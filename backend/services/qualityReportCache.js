@@ -28,7 +28,7 @@ function buildQualityCacheKey({
   rubricKeys,
 }) {
   const raw = [
-    "quality-report-v2",
+    "quality-report-v5",
     String(role || ""),
     String(fromDate || ""),
     String(toDate || ""),

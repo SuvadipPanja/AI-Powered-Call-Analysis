@@ -13,6 +13,7 @@
  * change here.
  */
 const ExcelJS = require("exceljs");
+const { classifyPtpQuality } = require("./ptpQuality");
 
 // ---- palette (matches the client's blue-header look) ----------------------
 const HEADER_FILL = "FF1F4E79"; // dark blue
@@ -264,10 +265,14 @@ function buildRagBlock(ws, calls) {
 // ===========================================================================
 function buildAssociateSheet(wb, calls) {
   const ws = wb.addWorksheet("Associate Wise Performance", { views: [{ showGridLines: false }] });
-  [6, 14, 26, 22, 12, 12, 12, 14, 8].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  [6, 14, 26, 22, 12, 12, 12, 10, 12, 14, 8, 10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  titleCell(ws, "Associate Wise Quality Performance", 9, { fill: HEADER_FILL });
-  headerRow(ws, ["Sr. No.", "Emp ID", "Associate Name", "TL Name", "Audit Count", "Fatal Count", "Quality Score", "Grade", "Weeks"]);
+  titleCell(ws, "Associate Wise Quality Performance", 12, { fill: HEADER_FILL });
+  headerRow(ws, [
+    "Sr. No.", "Emp ID", "Associate Name", "TL Name",
+    "Audit Count", "Fatal Count", "Red Alert", "PTP", "Strong PTP",
+    "Quality Score", "Grade", "Weeks",
+  ]);
 
   const byAgent = new Map();
   for (const r of calls) {
@@ -281,12 +286,24 @@ function buildAssociateSheet(wb, calls) {
     const empId = (rows.find((r) => r.AgentID)?.AgentID) || "";
     const tl = (rows.find((r) => r.AgentSupervisor)?.AgentSupervisor) || "";
     const fatal = rows.filter(isFatalCall).length;
+    const red = rows.filter(isRedAlert).length;
+    const ptp = rows.filter((r) => classifyPtpQuality({
+      present: r.AI_PTP_Present,
+      genuineness: r.AI_PTP_Genuineness,
+    })).length;
+    const strong = rows.filter((r) => classifyPtpQuality({
+      present: r.AI_PTP_Present,
+      genuineness: r.AI_PTP_Genuineness,
+    }) === "strong").length;
     const scorePct = avg(rows.map((r) => num(r.AI_Coll_Score)));
     const weeks = new Set(rows.map((r) => weekOfMonth(callDate(r))).filter(Boolean)).size;
-    const row = ws.addRow([sr, empId, name, tl, rows.length, fatal, frac(scorePct), grade(scorePct), weeks]);
-    row.getCell(7).numFmt = "0.00%";
+    const row = ws.addRow([
+      sr, empId, name, tl, rows.length, fatal, red, ptp, strong,
+      frac(scorePct), grade(scorePct), weeks,
+    ]);
+    row.getCell(10).numFmt = "0.00%";
     const f = gradeFill(scorePct);
-    if (f) { setFill(row.getCell(7), f); setFill(row.getCell(8), f); }
+    if (f) { setFill(row.getCell(10), f); setFill(row.getCell(11), f); }
     row.eachCell((c) => { c.border = thinBorder(); c.alignment = { horizontal: "center" }; });
     row.getCell(3).alignment = { horizontal: "left" };
     row.getCell(4).alignment = { horizontal: "left" };

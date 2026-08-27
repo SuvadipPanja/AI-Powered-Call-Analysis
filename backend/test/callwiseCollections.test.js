@@ -15,3 +15,8 @@ test("collections call-wise asks for collections columns and scored-call scope",
   assert.match(src, /AI_ZTP_Violation/);
   assert.match(src, /collectionsWhere/);
 });
+
+test("escalation and hold summaries honor collections=1", () => {
+  assert.match(src, /req\.query\.collections === ['\"]1['\"]/);
+  assert.match(src, /collectionsWhere/);
+});

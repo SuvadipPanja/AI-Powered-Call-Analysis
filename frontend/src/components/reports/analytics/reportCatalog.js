@@ -104,8 +104,11 @@ export async function fetchAuditSheet(filters) {
   return previewFromCsvBlob(await exportTeamAudits(auditQuery(filters).toString()));
 }
 
-export async function fetchEscalations(filters) {
-  const result = await getEscalationSummary(reportQuery(filters));
+export async function fetchEscalations(filters, _build, { collections = false } = {}) {
+  const result = await getEscalationSummary({
+    ...reportQuery(filters),
+    ...(collections ? { collections: "1" } : {}),
+  });
   const totals = result?.data?.totals || result?.totals || {};
   const byCategory = result?.data?.byCategory || result?.byCategory || [];
   const rows = [
@@ -118,8 +121,11 @@ export async function fetchEscalations(filters) {
   return recordsFromObjects(rows);
 }
 
-export async function fetchHoldTime(filters) {
-  const result = await getHoldSummary(reportQuery(filters));
+export async function fetchHoldTime(filters, _build, { collections = false } = {}) {
+  const result = await getHoldSummary({
+    ...reportQuery(filters),
+    ...(collections ? { collections: "1" } : {}),
+  });
   const data = result?.data?.totals || result?.data || result || {};
   return recordsFromObjects([{
     TotalHoldSec: data.totalHoldSec ?? data.totalHold ?? "",
@@ -220,14 +226,14 @@ export function listReportCards({ isCollections }) {
       title: "Escalations",
       format: "CSV",
       description: "Senior requests, actioned, not actioned, and category mix.",
-      fetch: (filters) => fetchEscalations(filters),
+      fetch: (filters) => fetchEscalations(filters, null, { collections: isCollections }),
     },
     {
       key: "hold",
       title: "Hold time",
       format: "CSV",
       description: "Hold totals, averages, and calls with hold in this range.",
-      fetch: (filters) => fetchHoldTime(filters),
+      fetch: (filters) => fetchHoldTime(filters, null, { collections: isCollections }),
     },
     !isCollections && {
       key: "query",

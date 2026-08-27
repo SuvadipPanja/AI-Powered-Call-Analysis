@@ -2084,11 +2084,21 @@ router.get("/api/reports/escalation-summary", async (req, res) => {
     const pool = await connectToDatabase();
     const params = { location, supervisor, tl, callType, agent };
     const request = pool.request();
-    const dateClause = intelDateClause(request, fromDate, toDate);
     const extra = consolidatedReportExtraFilters(params);
     bindReportFilters(request, params);
-
-    const baseWhere = ` FROM [dbo].[Consolidated_Audio_Analysis] WHERE Status = 'Success'` + dateClause + extra;
+    const isCollections = String(req.query.collections || "") === "1" || req.query.collections === "1";
+    let baseWhere;
+    if (isCollections) {
+      const hasRange = !!(fromDate && toDate);
+      if (hasRange) {
+        request.input("fromDate", sql.Date, fromDate);
+        request.input("toDate", sql.Date, toDate);
+      }
+      baseWhere = ` FROM [dbo].[Consolidated_Audio_Analysis] ${collectionsWhere({ hasRange })}` + extra;
+    } else {
+      const dateClause = intelDateClause(request, fromDate, toDate);
+      baseWhere = ` FROM [dbo].[Consolidated_Audio_Analysis] WHERE Status = 'Success'` + dateClause + extra;
+    }
 
     const query = `
       SELECT
@@ -2181,11 +2191,21 @@ router.get("/api/reports/hold-summary", async (req, res) => {
     const pool = await connectToDatabase();
     const params = { location, supervisor, tl, callType, agent };
     const request = pool.request();
-    const dateClause = intelDateClause(request, fromDate, toDate);
     const extra = consolidatedReportExtraFilters(params);
     bindReportFilters(request, params);
-
-    const baseWhere = ` FROM [dbo].[Consolidated_Audio_Analysis] WHERE Status = 'Success'` + dateClause + extra;
+    const isCollections = String(req.query.collections || "") === "1" || req.query.collections === "1";
+    let baseWhere;
+    if (isCollections) {
+      const hasRange = !!(fromDate && toDate);
+      if (hasRange) {
+        request.input("fromDate", sql.Date, fromDate);
+        request.input("toDate", sql.Date, toDate);
+      }
+      baseWhere = ` FROM [dbo].[Consolidated_Audio_Analysis] ${collectionsWhere({ hasRange })}` + extra;
+    } else {
+      const dateClause = intelDateClause(request, fromDate, toDate);
+      baseWhere = ` FROM [dbo].[Consolidated_Audio_Analysis] WHERE Status = 'Success'` + dateClause + extra;
+    }
 
     const query = `
       SELECT

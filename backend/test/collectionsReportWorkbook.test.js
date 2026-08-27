@@ -26,6 +26,8 @@ function sampleCalls() {
       AI_Coll_Fatal_Triggered: "Yes",
       AI_Coll_Fatal_Reason: "RPC verification failed (fatal to the call)",
       AI_Red_Alert: "No",
+      AI_PTP_Present: "Yes",
+      AI_PTP_Genuineness: "Genuine",
     },
     {
       AgentName: "Test2",
@@ -164,4 +166,19 @@ test("Summary uses one head-count row and honest pass/fail labels", async () => 
   assert.ok(labels.includes("Failed (fatal or score <80)"));
   assert.ok(!labels.includes("Active Head Count"));
   assert.ok(!labels.includes("Passed Audits Count"));
+});
+
+test("Associate Wise exposes fatal, red-alert, and PTP counts", async () => {
+  const wb = await loadWorkbook();
+  const sheet = wb.getWorksheet("Associate Wise Performance");
+  const headers = sheet.getRow(2).values.slice(1).map(String);
+  for (const h of ["Fatal Count", "Red Alert", "PTP", "Strong PTP"]) {
+    assert.ok(headers.includes(h), h);
+  }
+  const data = sheet.getRow(3);
+  const col = (name) => headers.indexOf(name) + 1;
+  assert.equal(data.getCell(col("Fatal Count")).value, 1);
+  assert.equal(data.getCell(col("Red Alert")).value, 1);
+  assert.equal(data.getCell(col("PTP")).value, 1);
+  assert.equal(data.getCell(col("Strong PTP")).value, 1);
 });
