@@ -10,6 +10,7 @@ import {
 } from '../../icons';
 import ReportChartCard from '../reports/ReportChartCard';
 import DonutInsightChart from '../reports/DonutInsightChart';
+import LanguageMixCard from './LanguageMixCard';
 import { EmptyState, PageLoading } from '../ui/index';
 import { getCollectionsDashboard } from '../../services/reportsService';
 import { resolveDashboardDateRange } from '../../utils/dashboardFilters';
@@ -367,6 +368,9 @@ export default function CollectionsDashboardSection({ filters, onDrilldown }) {
               items={data.campaignMix}
               onDrilldown={activateRow}
               emptyLabel="No campaign labels yet — re-run AI on older calls if needed."
+            />
+            <LanguageMixCard
+              items={data.languageMix}
             />
             <RankedDistributionCard
               title="Disposition distribution"

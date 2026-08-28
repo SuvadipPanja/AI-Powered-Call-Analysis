@@ -8,9 +8,10 @@ jest.mock('../../services/reportsService', () => ({
   getCollectionsDashboard: jest.fn(),
 }));
 
-jest.mock('../reports/ReportChartCard', () => function MockReportChartCard({ title, className = '', children }) {
+jest.mock('../reports/ReportChartCard', () => function MockReportChartCard({ title, subtitle, className = '', children }) {
   return (
     <article className={`report-chart-card ${className}`.trim()}>
+      {subtitle && <span>{subtitle}</span>}
       <h3>{title}</h3>
       {children}
     </article>
@@ -37,6 +38,11 @@ describe('CollectionsDashboardSection', () => {
       },
       dispositionMix: [{ name: 'Promise to pay', count: 5 }],
       campaignMix: [{ name: 'PDM', count: 7 }],
+      languageMix: [
+        { name: 'Hindi', count: 88 },
+        { name: 'Marathi', count: 19 },
+        { name: 'Bengali', count: 3 },
+      ],
       drilldowns: {
         rag: {},
         ptp: 'token-ptp',
@@ -54,12 +60,19 @@ describe('CollectionsDashboardSection', () => {
 
     await waitFor(() => {
       const cards = container.querySelectorAll('.collections-dash__charts > .report-chart-card');
-      expect(cards).toHaveLength(3);
+      expect(cards).toHaveLength(4);
       expect(cards[0]).toHaveTextContent('Quality grade (RAG)');
       expect(cards[1]).toHaveTextContent('Campaign (AI: PDM / COLL)');
-      expect(cards[2]).toHaveTextContent('Disposition distribution');
-      expect(cards[2]).toHaveClass('collections-dash__distribution-card');
+      expect(cards[2]).toHaveTextContent('Language mix');
+      expect(cards[3]).toHaveTextContent('Disposition distribution');
+      expect(cards[3]).toHaveClass('collections-dash__distribution-card');
     });
+  });
+
+  it('renders the Language mix card inside the collections dashboard host', async () => {
+    render(<CollectionsDashboardSection filters={{}} />);
+    await screen.findByText('Language mix');
+    expect(screen.getByText('AUDIO LANGUAGE')).toBeInTheDocument();
   });
 
   it('replaces PTP conversion with Strong and Weak PTP cards', async () => {
