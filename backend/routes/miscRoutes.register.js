@@ -38,7 +38,7 @@ module.exports = function registerMiscRoutes(router, deps, H) {
     rememberQualityBuild,
   } = require("../services/qualityReportCache");
   const { fetchQualityWorkbookRows } = require("../services/qualityWorkbookData");
-  const { collectionsDateClause } = require("../services/collectionsReportScope");
+  const { collectionsDateClause, collectionsLanguageMixSelect } = require("../services/collectionsReportScope");
   const dashboardDrilldown = require("../services/dashboardDrilldown");
   const { ptpQualitySql } = require("../services/ptpQuality");
   const { getUploadQueueMetrics } = require("../services/uploadQueue");
@@ -505,6 +505,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
     },
     dispositionMix: [],
     campaignMix: [],
+    languageMix: [],
     drilldowns: {},
   };
   let pool;
@@ -570,6 +571,13 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       FROM Consolidated_Audio_Analysis
       ${where}
       GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AI_Coll_Campaign)), ''), 'Unknown')
+      ORDER BY count DESC
+    `);
+    const langRes = await buildReq().query(`
+      SELECT ${collectionsLanguageMixSelect()}
+      FROM Consolidated_Audio_Analysis
+      ${where}
+      GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), 'Unknown')
       ORDER BY count DESC
     `);
 
@@ -649,6 +657,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       },
       dispositionMix: withTokens(dispositionMix, 'disposition'),
       campaignMix: withTokens(campaignMix, 'campaign'),
+      languageMix: mapMix(langRes),
       drilldowns,
     });
   } catch (err) {

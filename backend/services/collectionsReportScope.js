@@ -16,4 +16,10 @@ function collectionsWhere({ hasRange, extraFilters = "" }) {
   return `WHERE AI_Coll_Score IS NOT NULL AND ${collectionsDateClause({ hasRange })}${extraFilters}`;
 }
 
-module.exports = { collectionsDateClause, collectionsWhere };
+/** Select + group-by expression for the collections-scoped AudioLanguage mix.
+ *  Mirrors the disposition/campaign mix shape so mapMix() can consume it. */
+function collectionsLanguageMixSelect() {
+  return `COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), 'Unknown') AS name, COUNT(*) AS count`;
+}
+
+module.exports = { collectionsDateClause, collectionsWhere, collectionsLanguageMixSelect };
