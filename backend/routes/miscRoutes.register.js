@@ -38,7 +38,7 @@ module.exports = function registerMiscRoutes(router, deps, H) {
     rememberQualityBuild,
   } = require("../services/qualityReportCache");
   const { fetchQualityWorkbookRows } = require("../services/qualityWorkbookData");
-  const { collectionsDateClause, collectionsLanguageMixSelect } = require("../services/collectionsReportScope");
+  const { collectionsDateClause, collectionsLanguageMixSelect, collectionsAuditCoverageQuery } = require("../services/collectionsReportScope");
   const dashboardDrilldown = require("../services/dashboardDrilldown");
   const { ptpQualitySql } = require("../services/ptpQuality");
   const { getUploadQueueMetrics } = require("../services/uploadQueue");
@@ -506,6 +506,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
     dispositionMix: [],
     campaignMix: [],
     languageMix: [],
+    auditCoverage: null,
     drilldowns: {},
   };
   let pool;
@@ -591,6 +592,19 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
     } catch {
       languageMix = [];
     }
+    let auditCoverage = null;
+    try {
+      const auditRes = await buildReq().query(collectionsAuditCoverageQuery(where));
+      const auditRow = auditRes.recordset[0] || {};
+      auditCoverage = {
+        aiOnly: Number(auditRow.aiOnly) || 0,
+        manualReviewed: Number(auditRow.manualReviewed) || 0,
+        avgAi: auditRow.avgAi != null ? Math.round(Number(auditRow.avgAi) * 10) / 10 : null,
+        avgManual: auditRow.avgManual != null ? Math.round(Number(auditRow.avgManual) * 10) / 10 : null,
+      };
+    } catch {
+      auditCoverage = null;
+    }
     const tokenBase = {
       filters: { fromDate, toDate, ...params },
       username: req.user.username,
@@ -639,6 +653,8 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
         amber: token('rag-amber', Number(row.ragAmber) || 0),
         red: token('rag-red', Number(row.ragRed) || 0),
       },
+      aiOnly: token("ai-only", auditCoverage ? auditCoverage.aiOnly : 0),
+      manualReviewed: token("manual-reviewed", auditCoverage ? auditCoverage.manualReviewed : 0),
     };
 
     return res.status(200).json({
@@ -663,6 +679,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       dispositionMix: withTokens(dispositionMix, 'disposition'),
       campaignMix: withTokens(campaignMix, 'campaign'),
       languageMix: withTokens(languageMix, 'language', 'Other languages'),
+      auditCoverage,
       drilldowns,
     });
   } catch (err) {

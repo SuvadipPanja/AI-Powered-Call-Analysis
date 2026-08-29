@@ -72,6 +72,20 @@ test("miscRoutes isolates languageMix so a SQL miss cannot empty the dashboard",
   );
 });
 
+test("miscRoutes isolates auditCoverage so a CallAudits miss cannot empty the dashboard", () => {
+  const src = miscRoutesSource();
+  const handler = src.match(
+    /router\.get\('\/api\/collections\/dashboard'[\s\S]*?Error in \/api\/collections\/dashboard/
+  );
+  assert.ok(handler, "collections dashboard handler not found");
+  assert.match(handler[0], /auditCoverage:\s*null/);
+  assert.match(handler[0], /collectionsAuditCoverageQuery/);
+  const nested = handler[0].match(
+    /let auditCoverage[\s\S]*?try\s*\{[\s\S]*?collectionsAuditCoverageQuery[\s\S]*?\}\s*catch/
+  );
+  assert.ok(nested, "audit coverage query must sit in its own try/catch");
+});
+
 test("miscRoutes tokenizes languageMix with language / Other languages", () => {
   const src = miscRoutesSource();
   const handler = src.match(

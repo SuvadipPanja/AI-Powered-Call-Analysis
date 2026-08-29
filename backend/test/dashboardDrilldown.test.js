@@ -422,4 +422,48 @@ describe("dashboard drill-down query normalization", () => {
     assert.doesNotMatch(capturedQuery, /Hindi/);
     assert.match(result.title, /Other languages/);
   });
+
+  it("allows ai-only and manual-reviewed collections keys", () => {
+    const ai = issueToken({ ...BASE, key: "ai-only", expectedCount: 90 });
+    const manual = issueToken({ ...BASE, key: "manual-reviewed", expectedCount: 23 });
+    assert.equal(verifyToken(ai, {
+      username: "Suvadip", tenant: "ca_icic", nowSeconds: 1010, secret: SECRET,
+    }).key, "ai-only");
+    assert.equal(verifyToken(manual, {
+      username: "Suvadip", tenant: "ca_icic", nowSeconds: 1010, secret: SECRET,
+    }).key, "manual-reviewed");
+  });
+
+  it("filters ai-only and manual-reviewed with an EXISTS on CallAudits", async () => {
+    let capturedQuery = "";
+    const request = {
+      input() { return this; },
+      async query(query) {
+        capturedQuery = query;
+        return { recordsets: [[{ total: 90 }], [{ total: 90 }], [{ callId: 1 }]] };
+      },
+    };
+    const pool = { request: () => request };
+    const sql = { Date: "Date", Int: "Int", NVarChar: "NVarChar" };
+
+    await fetchPage(pool, sql, {
+      kind: "collections",
+      key: "ai-only",
+      expectedCount: 90,
+      filters: normalizeFilters(BASE.filters),
+    }, {});
+    assert.match(capturedQuery, /NOT EXISTS/);
+    assert.match(capturedQuery, /CallAudits/);
+    assert.match(capturedQuery, /CA\.AudioFileName = CAA\.AudioFileName/);
+
+    capturedQuery = "";
+    await fetchPage(pool, sql, {
+      kind: "collections",
+      key: "manual-reviewed",
+      expectedCount: 23,
+      filters: normalizeFilters(BASE.filters),
+    }, {});
+    assert.match(capturedQuery, /EXISTS \(SELECT 1 FROM dbo\.CallAudits CA WHERE CA\.AudioFileName = CAA\.AudioFileName\)/);
+    assert.doesNotMatch(capturedQuery, /NOT EXISTS/);
+  });
 });

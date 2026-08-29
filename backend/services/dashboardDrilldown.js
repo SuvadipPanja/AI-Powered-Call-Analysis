@@ -37,6 +37,8 @@ const COLLECTION_KEYS = new Set([
   "campaign-other",
   "language",
   "language-other",
+  "ai-only",
+  "manual-reviewed",
 ]);
 
 const STATIC_META = {
@@ -53,6 +55,8 @@ const STATIC_META = {
   "collections:rag-green": ["Green quality calls", "Collections quality score is at least 85%."],
   "collections:rag-amber": ["Amber quality calls", "Collections quality score is from 80% through 84.99%."],
   "collections:rag-red": ["Red quality calls", "Collections quality score is below 80%."],
+  "collections:ai-only": ["AI scored only", "Collections-scored calls that do not have a manual audit record."],
+  "collections:manual-reviewed": ["Manually audited", "Collections-scored calls that have a completed manual audit."],
   "insight:hold-detected": ["Calls with agent hold", "Calls where the AI detected one or more hold episodes."],
   "insight:hold-longest": ["Longest-hold calls", "Call or calls tied for the longest detected hold in the selected dashboard scope."],
   "insight:escalation-requested": ["Senior escalation requested", "Calls where the customer requested a senior or supervisor escalation."],
@@ -260,6 +264,13 @@ function collectionsPredicate(claims, request, sql) {
     const excluded = claims.excludedValues || [];
     excluded.forEach((value, index) => request.input(`excluded${index}`, sql.NVarChar, value));
     return `${expression} NOT IN (${excluded.map((_, index) => `@excluded${index}`).join(", ")})`;
+  }
+
+  if (key === "ai-only") {
+    return "NOT EXISTS (SELECT 1 FROM dbo.CallAudits CA WHERE CA.AudioFileName = CAA.AudioFileName)";
+  }
+  if (key === "manual-reviewed") {
+    return "EXISTS (SELECT 1 FROM dbo.CallAudits CA WHERE CA.AudioFileName = CAA.AudioFileName)";
   }
 
   const isDisposition = key.startsWith("disposition");
