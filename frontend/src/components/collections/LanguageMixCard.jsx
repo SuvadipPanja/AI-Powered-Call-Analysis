@@ -12,8 +12,9 @@ import { languageMixColors } from "../../utils/languageMixPalette";
  * Reuses the existing ReportChartCard shell + DonutInsightChart so it matches
  * the collections dashboard design language and inherits the responsive
  * collapse. Colors come from the token-driven --viz-* palette (no hardcoded
- * reference-image hex). When there is no data (or everything is Unknown) the
- * chart is omitted and an honest empty state is shown instead.
+ * reference-image hex). Empty/zero rows omit the chart. A missing `items`
+ * array (old backend) uses a distinct upgrade message; Unknown-only still
+ * shows the donut.
  */
 export default function LanguageMixCard({
   items,
@@ -22,7 +23,7 @@ export default function LanguageMixCard({
   loading = false,
 }) {
   const chartRef = useRef(null);
-  const { rows, total, hasData } = useMemo(() => buildLanguageMixBreakdown(items), [items]);
+  const { rows, total, hasData, missing } = useMemo(() => buildLanguageMixBreakdown(items), [items]);
 
   const chartData = useMemo(() => {
     if (!hasData || !rows.length) return null;
@@ -43,7 +44,11 @@ export default function LanguageMixCard({
       subtitle={subtitle}
       stat={hasData ? `${total} call${total === 1 ? "" : "s"}` : undefined}
       empty={!chartData}
-      emptyMessage="No language data for this period."
+      emptyMessage={
+        missing
+          ? "Language mix needs the latest backend image."
+          : "No language data for this period."
+      }
       loading={loading}
       canvasWrapper={false}
       height={240}

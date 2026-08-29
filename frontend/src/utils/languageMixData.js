@@ -7,10 +7,11 @@
  *
  * @param {Array<{ name?: string, count?: number }>} items
  * @param {{ maxRows?: number }} [opts]
- * @returns {{ rows: Array<{ name: string, count: number, percent: number }>, total: number, hasData: boolean }}
+ * @returns {{ rows: Array<{ name: string, count: number, percent: number }>, total: number, hasData: boolean, missing: boolean }}
  */
 export function buildLanguageMixBreakdown(items, { maxRows = 8 } = {}) {
-  const list = Array.isArray(items) ? items : [];
+  const missing = !Array.isArray(items);
+  const list = missing ? [] : items;
   const normalized = list
     .map((row) => ({
       name: String(row?.name ?? "").trim() || "Unknown",
@@ -20,11 +21,8 @@ export function buildLanguageMixBreakdown(items, { maxRows = 8 } = {}) {
     .sort((a, b) => b.count - a.count);
 
   const total = normalized.reduce((sum, row) => sum + row.count, 0);
-  const hasKnown = normalized.some((row) => row.name.toLowerCase() !== "unknown");
-  const hasData = total > 0 && hasKnown;
+  const hasData = total > 0;
 
-  // Bucket tail rows into "Other languages" so the donut stays readable when
-  // many languages are present (mirrors the collections dashboard cap of 8).
   let normalizedCapped = normalized;
   if (normalized.length > maxRows) {
     const visible = normalized.slice(0, maxRows - 1);
@@ -40,5 +38,5 @@ export function buildLanguageMixBreakdown(items, { maxRows = 8 } = {}) {
     percent: total > 0 ? Math.round((row.count / total) * 100) : 0,
   }));
 
-  return { rows, total, hasData };
+  return { rows, total, hasData, missing };
 }

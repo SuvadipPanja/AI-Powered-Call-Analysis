@@ -59,8 +59,22 @@ describe("LanguageMixCard", () => {
 
   it("omits the donut when every language is Unknown", () => {
     render(<LanguageMixCard items={[{ name: "Unknown", count: 40 }]} />);
+    expect(screen.getByTestId("stub-doughnut")).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.getAllByText("40").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/No language data/i)).not.toBeInTheDocument();
+  });
+
+  it("uses a backend-upgrade message when languageMix is missing", () => {
+    render(<LanguageMixCard items={undefined} />);
     expect(screen.queryByTestId("stub-doughnut")).not.toBeInTheDocument();
-    expect(screen.getByText(/No language data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Language mix needs the latest backend/i)).toBeInTheDocument();
+  });
+
+  it("renders Unknown when that is the only tagged language", () => {
+    render(<LanguageMixCard items={[{ name: "Unknown", count: 40 }]} />);
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.getAllByText("40").length).toBeGreaterThanOrEqual(1);
   });
 
   it("applies the language-mix-card class so the responsive CSS applies", () => {

@@ -55,8 +55,18 @@ describe("buildLanguageMixBreakdown", () => {
       { name: null, count: 5 },
     ]);
     expect(total).toBe(55);
-    expect(hasData).toBe(false);
+    expect(hasData).toBe(true);
     expect(rows.map((r) => r.name)).toEqual(["Unknown", "Unknown", "Unknown"]);
+  });
+
+  it("flags a missing languageMix field from an old backend", () => {
+    const missing = buildLanguageMixBreakdown(undefined);
+    expect(missing.missing).toBe(true);
+    expect(missing.hasData).toBe(false);
+    expect(missing.rows).toEqual([]);
+    const alsoNull = buildLanguageMixBreakdown(null);
+    expect(alsoNull.missing).toBe(true);
+    expect(buildLanguageMixBreakdown([]).missing).toBe(false);
   });
 
   it("still reports hasData=true when at least one non-Unknown language exists", () => {
