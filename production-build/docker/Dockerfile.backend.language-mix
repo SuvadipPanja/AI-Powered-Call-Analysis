@@ -1,0 +1,5 @@
+FROM sp-backend:prod AS patched
+COPY backend/routes/miscRoutes.register.js /app/routes/miscRoutes.register.js
+COPY backend/services/collectionsReportScope.js /app/services/collectionsReportScope.js
+RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
+  && node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('/app/integrity-manifest.json','utf8'));if(!Object.keys(m).length)process.exit(1)"
