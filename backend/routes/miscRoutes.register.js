@@ -604,7 +604,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       excludedValues,
       expectedCount,
     });
-    const withTokens = (rows, kind) => {
+    const withTokens = (rows, kind, otherName = "Other categories") => {
       if (rows.length <= 8) {
         return rows.map((item) => ({
           ...item,
@@ -620,7 +620,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
           drilldownToken: token(kind, item.count, item.name),
         })),
         {
-          name: 'Other categories',
+          name: otherName,
           count: hiddenCount,
           drilldownToken: token(`${kind}-other`, hiddenCount, null, visible.map((item) => item.name)),
         },
@@ -662,7 +662,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       },
       dispositionMix: withTokens(dispositionMix, 'disposition'),
       campaignMix: withTokens(campaignMix, 'campaign'),
-      languageMix,
+      languageMix: withTokens(languageMix, 'language', 'Other languages'),
       drilldowns,
     });
   } catch (err) {

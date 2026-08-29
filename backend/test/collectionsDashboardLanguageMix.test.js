@@ -71,3 +71,13 @@ test("miscRoutes isolates languageMix so a SQL miss cannot empty the dashboard",
     /GROUP BY COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), 'Unknown'\)/
   );
 });
+
+test("miscRoutes tokenizes languageMix with language / Other languages", () => {
+  const src = miscRoutesSource();
+  const handler = src.match(
+    /router\.get\('\/api\/collections\/dashboard'[\s\S]*?Error in \/api\/collections\/dashboard/
+  );
+  assert.ok(handler, "collections dashboard handler not found");
+  assert.match(handler[0], /withTokens\(languageMix,\s*'language'/);
+  assert.match(handler[0], /Other languages/);
+});
