@@ -35,6 +35,8 @@ const COLLECTION_KEYS = new Set([
   "disposition-other",
   "campaign",
   "campaign-other",
+  "language",
+  "language-other",
 ]);
 
 const STATIC_META = {
@@ -116,10 +118,10 @@ function validateDefinition({ kind, key, value, excludedValues }) {
   if (kind !== "collections" || !COLLECTION_KEYS.has(key)) {
     throw new Error("Unsupported dashboard drill-down definition.");
   }
-  if (["disposition", "campaign"].includes(key) && !safeString(value)) {
+  if (["disposition", "campaign", "language"].includes(key) && !safeString(value)) {
     throw new Error("A category value is required for this drill-down.");
   }
-  if (["disposition-other", "campaign-other"].includes(key)) {
+  if (["disposition-other", "campaign-other", "language-other"].includes(key)) {
     if (!Array.isArray(excludedValues) || !excludedValues.length || excludedValues.length > 12) {
       throw new Error("The grouped category definition is invalid.");
     }
@@ -248,6 +250,17 @@ function collectionsPredicate(claims, request, sql) {
   if (key === "rag-green") return "CAA.AI_Coll_Score >= 85";
   if (key === "rag-amber") return "CAA.AI_Coll_Score >= 80 AND CAA.AI_Coll_Score < 85";
   if (key === "rag-red") return "CAA.AI_Coll_Score < 80";
+
+  if (key === "language" || key === "language-other") {
+    const expression = "COALESCE(NULLIF(LTRIM(RTRIM(CAA.AudioLanguage)), ''), 'Unknown')";
+    if (key === "language") {
+      request.input("categoryValue", sql.NVarChar, claims.value);
+      return `${expression} = @categoryValue`;
+    }
+    const excluded = claims.excludedValues || [];
+    excluded.forEach((value, index) => request.input(`excluded${index}`, sql.NVarChar, value));
+    return `${expression} NOT IN (${excluded.map((_, index) => `@excluded${index}`).join(", ")})`;
+  }
 
   const isDisposition = key.startsWith("disposition");
   const expression = isDisposition
@@ -434,6 +447,12 @@ function metaFor(claims) {
   }
   if (claims.key === "campaign-other") {
     return { title: "Other campaigns", description: "Calls in the less frequent campaign categories grouped by the dashboard." };
+  }
+  if (claims.key === "language") {
+    return { title: `Language: ${claims.value}`, description: "Calls tagged with this audio language." };
+  }
+  if (claims.key === "language-other") {
+    return { title: "Other languages", description: "Calls in the less frequent audio-language categories grouped by the dashboard." };
   }
   if (claims.kind === "insight" && claims.key === "query-type") {
     return {

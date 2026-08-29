@@ -127,6 +127,32 @@ describe("dashboard drill-down security contract", () => {
       filters: { ...BASE.filters, fromDate: "not-a-date" },
     }), /date range/i);
   });
+
+  it("allows language and language-other collections keys and rejects a language value-less token", () => {
+    const hindi = issueToken({
+      ...BASE,
+      key: "language",
+      value: "Hindi",
+      expectedCount: 88,
+    });
+    const claims = verifyToken(hindi, {
+      username: "Suvadip", tenant: "ca_icic", nowSeconds: 1010, secret: SECRET,
+    });
+    assert.equal(claims.key, "language");
+    assert.equal(claims.value, "Hindi");
+    assert.throws(() => issueToken({ ...BASE, key: "language", value: "" }), /required/i);
+    assert.throws(() => issueToken({ ...BASE, key: "language-hack" }), /Unsupported/);
+    const other = issueToken({
+      ...BASE,
+      key: "language-other",
+      excludedValues: ["Hindi", "Marathi"],
+      expectedCount: 6,
+    });
+    assert.deepEqual(verifyToken(other, {
+      username: "Suvadip", tenant: "ca_icic", nowSeconds: 1010, secret: SECRET,
+    }).excludedValues, ["Hindi", "Marathi"]);
+    assert.throws(() => issueToken({ ...BASE, key: "language-other", excludedValues: [] }), /grouped category/i);
+  });
 });
 
 describe("dashboard drill-down query normalization", () => {
@@ -333,5 +359,67 @@ describe("dashboard drill-down query normalization", () => {
     assert.match(capturedQuery, /AI_PTP_Present/);
     assert.match(capturedQuery, /NOT \(/);
     assert.match(result.title, /Weak PTP/i);
+  });
+
+  it("filters language drill-down on AudioLanguage with a bound category value", async () => {
+    let capturedQuery = "";
+    const inputs = {};
+    const request = {
+      input(name, _type, value) { inputs[name] = value; return this; },
+      async query(query) {
+        capturedQuery = query;
+        return {
+          recordsets: [
+            [{ total: 88 }],
+            [{ total: 1 }],
+            [{ callId: 42, audioFileName: "call-42.wav", agentName: "Agent A" }],
+          ],
+        };
+      },
+    };
+    const pool = { request: () => request };
+    const sql = { Date: "Date", Int: "Int", NVarChar: "NVarChar" };
+    const result = await fetchPage(pool, sql, {
+      kind: "collections",
+      key: "language",
+      value: "Hindi",
+      expectedCount: 88,
+      filters: normalizeFilters(BASE.filters),
+    }, { search: "call-42", pageSize: 25 });
+
+    assert.equal(inputs.categoryValue, "Hindi");
+    assert.match(capturedQuery, /CAA\.AudioLanguage/);
+    assert.match(capturedQuery, /= @categoryValue/);
+    assert.doesNotMatch(capturedQuery, /Hindi/);
+    assert.match(result.title, /Language: Hindi/);
+    assert.equal(result.currentCount, 88);
+  });
+
+  it("filters language-other with parameterized excluded language names", async () => {
+    let capturedQuery = "";
+    const inputs = {};
+    const request = {
+      input(name, _type, value) { inputs[name] = value; return this; },
+      async query(query) {
+        capturedQuery = query;
+        return { recordsets: [[{ total: 6 }], [{ total: 6 }], [{ callId: 7 }]] };
+      },
+    };
+    const pool = { request: () => request };
+    const sql = { Date: "Date", Int: "Int", NVarChar: "NVarChar" };
+    const result = await fetchPage(pool, sql, {
+      kind: "collections",
+      key: "language-other",
+      excludedValues: ["Hindi", "Marathi"],
+      expectedCount: 6,
+      filters: normalizeFilters(BASE.filters),
+    }, {});
+
+    assert.equal(inputs.excluded0, "Hindi");
+    assert.equal(inputs.excluded1, "Marathi");
+    assert.match(capturedQuery, /AudioLanguage/);
+    assert.match(capturedQuery, /NOT IN \(@excluded0, @excluded1\)/);
+    assert.doesNotMatch(capturedQuery, /Hindi/);
+    assert.match(result.title, /Other languages/);
   });
 });
