@@ -7,7 +7,7 @@ const { collectionsLanguageMixSelect, collectionsWhere } = require("../services/
 test("collectionsLanguageMixSelect groups by AudioLanguage and aliases name/count", () => {
   const select = collectionsLanguageMixSelect();
   assert.match(select, /AudioLanguage/);
-  assert.match(select, /COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), 'Unknown'\)/);
+  assert.match(select, /COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), NULLIF\(LTRIM\(RTRIM\(OriginalLanguage\)\), ''\), 'Unknown'\)/);
   assert.match(select, /AS name/);
   assert.match(select, /COUNT\(\*\) AS count/);
 });
@@ -32,4 +32,25 @@ test("miscRoutes.register.js wires languageMix empty payload and collectionsLang
   assert.ok(emptyBlock, "dashboard handler empty payload not found");
   assert.match(emptyBlock[0], /languageMix:\s*\[\]/);
   assert.match(src, /collectionsLanguageMixSelect/);
+});
+
+test("collectionsLanguageMixSelect falls back to OriginalLanguage", () => {
+  const select = collectionsLanguageMixSelect();
+  assert.match(select, /OriginalLanguage/);
+  assert.match(
+    select,
+    /COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), NULLIF\(LTRIM\(RTRIM\(OriginalLanguage\)\), ''\), 'Unknown'\)/,
+  );
+});
+
+test("miscRoutes language mix GROUP BY matches the COALESCE expression", () => {
+  const src = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "../routes/miscRoutes.register.js"),
+    "utf8",
+  );
+  assert.match(src, /languageMix:\s*mapMix\(langRes\)/);
+  assert.match(
+    src,
+    /GROUP BY COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), NULLIF\(LTRIM\(RTRIM\(OriginalLanguage\)\), ''\), 'Unknown'\)/,
+  );
 });

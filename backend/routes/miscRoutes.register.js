@@ -577,7 +577,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       SELECT ${collectionsLanguageMixSelect()}
       FROM Consolidated_Audio_Analysis
       ${where}
-      GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), 'Unknown')
+      GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), NULLIF(LTRIM(RTRIM(OriginalLanguage)), ''), 'Unknown')
       ORDER BY count DESC
     `);
 

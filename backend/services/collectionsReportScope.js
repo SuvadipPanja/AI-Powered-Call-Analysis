@@ -19,7 +19,7 @@ function collectionsWhere({ hasRange, extraFilters = "" }) {
 /** Select + group-by expression for the collections-scoped AudioLanguage mix.
  *  Mirrors the disposition/campaign mix shape so mapMix() can consume it. */
 function collectionsLanguageMixSelect() {
-  return `COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), 'Unknown') AS name, COUNT(*) AS count`;
+  return `COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), NULLIF(LTRIM(RTRIM(OriginalLanguage)), ''), 'Unknown') AS name, COUNT(*) AS count`;
 }
 
 module.exports = { collectionsDateClause, collectionsWhere, collectionsLanguageMixSelect };
