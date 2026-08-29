@@ -12,11 +12,11 @@ describe("buildLanguageMixBreakdown", () => {
     ]);
     expect(total).toBe(113);
     expect(hasData).toBe(true);
-    expect(rows[0]).toEqual({ name: "Hindi", count: 88, percent: 78 });
-    expect(rows[1]).toEqual({ name: "Marathi", count: 19, percent: 17 });
-    expect(rows[2]).toEqual({ name: "Bengali", count: 3, percent: 3 });
-    expect(rows[3]).toEqual({ name: "Kannada", count: 2, percent: 2 });
-    expect(rows[4]).toEqual({ name: "Tamil", count: 1, percent: 1 });
+    expect(rows[0]).toEqual({ name: "Hindi", count: 88, percent: 78, drilldownToken: null });
+    expect(rows[1]).toEqual({ name: "Marathi", count: 19, percent: 17, drilldownToken: null });
+    expect(rows[2]).toEqual({ name: "Bengali", count: 3, percent: 3, drilldownToken: null });
+    expect(rows[3]).toEqual({ name: "Kannada", count: 2, percent: 2, drilldownToken: null });
+    expect(rows[4]).toEqual({ name: "Tamil", count: 1, percent: 1, drilldownToken: null });
     expect(rows.find((r) => r.name === "Empty")).toBeUndefined();
   });
 
@@ -95,5 +95,34 @@ describe("buildLanguageMixBreakdown", () => {
     expect(rows[7].name).toBe("Other languages");
     // counts-equal-total identity holds after bucketing
     expect(rows.reduce((s, r) => s + r.count, 0)).toBe(total);
+  });
+
+  it("preserves drilldownToken on each visible row", () => {
+    const { rows } = buildLanguageMixBreakdown([
+      { name: "Hindi", count: 88, drilldownToken: "tok-hi" },
+      { name: "Marathi", count: 19, drilldownToken: "tok-mr" },
+    ]);
+    expect(rows[0]).toEqual({
+      name: "Hindi",
+      count: 88,
+      percent: 82,
+      drilldownToken: "tok-hi",
+    });
+    expect(rows[1].drilldownToken).toBe("tok-mr");
+  });
+
+  it("does not re-bucket a backend-capped 8-row tokenized mix", () => {
+    const items = [
+      ...Array.from({ length: 7 }, (_, i) => ({
+        name: `Lang${i + 1}`,
+        count: 10 - i,
+        drilldownToken: `tok-${i}`,
+      })),
+      { name: "Other languages", count: 1, drilldownToken: "tok-other" },
+    ];
+    const { rows } = buildLanguageMixBreakdown(items);
+    expect(rows).toHaveLength(8);
+    expect(rows[7].name).toBe("Other languages");
+    expect(rows[7].drilldownToken).toBe("tok-other");
   });
 });

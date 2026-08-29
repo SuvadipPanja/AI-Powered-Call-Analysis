@@ -21,6 +21,7 @@ export default function LanguageMixCard({
   subtitle = "AUDIO LANGUAGE",
   periodLabel,
   loading = false,
+  onDrilldown,
 }) {
   const chartRef = useRef(null);
   const { rows, total, hasData, missing } = useMemo(() => buildLanguageMixBreakdown(items), [items]);
@@ -61,6 +62,7 @@ export default function LanguageMixCard({
           centerValue={total}
           centerLabel="Calls"
           height={168}
+          onItemActivate={onDrilldown ? (index) => onDrilldown(rows[index]) : undefined}
         />
       )}
     </ReportChartCard>

@@ -371,6 +371,7 @@ export default function CollectionsDashboardSection({ filters, onDrilldown }) {
             />
             <LanguageMixCard
               items={data.languageMix}
+              onDrilldown={activateRow}
             />
             <RankedDistributionCard
               title="Disposition distribution"

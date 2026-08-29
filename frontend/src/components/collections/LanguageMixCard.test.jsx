@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import LanguageMixCard from "./LanguageMixCard";
 
@@ -80,5 +81,31 @@ describe("LanguageMixCard", () => {
   it("applies the language-mix-card class so the responsive CSS applies", () => {
     const { container } = render(<LanguageMixCard items={SAMPLE} />);
     expect(container.querySelector(".language-mix-card")).not.toBeNull();
+  });
+
+  it("makes every language row clickable and reports that row on click", async () => {
+    const user = userEvent.setup();
+    const onDrilldown = jest.fn();
+    const items = SAMPLE.map((row) => ({ ...row, drilldownToken: `tok-${row.name}` }));
+    render(<LanguageMixCard items={items} onDrilldown={onDrilldown} />);
+    for (const row of items) {
+      expect(screen.getByRole("button", { name: new RegExp(`View ${row.count} calls for ${row.name}`) })).toBeInTheDocument();
+    }
+    await user.click(screen.getByRole("button", { name: /View 19 calls for Marathi/i }));
+    expect(onDrilldown).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Marathi",
+      count: 19,
+      drilldownToken: "tok-Marathi",
+    }));
+    await user.click(screen.getByRole("button", { name: /View 1 calls for Tamil/i }));
+    expect(onDrilldown).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Tamil",
+      drilldownToken: "tok-Tamil",
+    }));
+  });
+
+  it("does not render clickable legend buttons when onDrilldown is omitted", () => {
+    render(<LanguageMixCard items={SAMPLE} />);
+    expect(screen.queryByRole("button", { name: /View 88 calls for Hindi/i })).not.toBeInTheDocument();
   });
 });
