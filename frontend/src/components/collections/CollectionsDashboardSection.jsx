@@ -11,6 +11,7 @@ import {
 import ReportChartCard from '../reports/ReportChartCard';
 import DonutInsightChart from '../reports/DonutInsightChart';
 import LanguageMixCard from './LanguageMixCard';
+import AiVsManualCard from './AiVsManualCard';
 import { EmptyState, PageLoading } from '../ui/index';
 import { getCollectionsDashboard } from '../../services/reportsService';
 import { resolveDashboardDateRange } from '../../utils/dashboardFilters';
@@ -371,6 +372,14 @@ export default function CollectionsDashboardSection({ filters, onDrilldown }) {
             />
             <LanguageMixCard
               items={data.languageMix}
+              onDrilldown={activateRow}
+            />
+            <AiVsManualCard
+              coverage={data.auditCoverage}
+              tokens={{
+                aiOnly: data?.drilldowns?.aiOnly,
+                manualReviewed: data?.drilldowns?.manualReviewed,
+              }}
               onDrilldown={activateRow}
             />
             <RankedDistributionCard

@@ -43,11 +43,14 @@ describe('CollectionsDashboardSection', () => {
         { name: 'Marathi', count: 19 },
         { name: 'Bengali', count: 3 },
       ],
+      auditCoverage: { aiOnly: 90, manualReviewed: 23, avgAi: 82.4, avgManual: 79.1 },
       drilldowns: {
         rag: {},
         ptp: 'token-ptp',
         ptpStrong: 'token-strong',
         ptpWeak: 'token-weak',
+        aiOnly: 'token-ai',
+        manualReviewed: 'token-man',
       },
     });
   });
@@ -60,12 +63,13 @@ describe('CollectionsDashboardSection', () => {
 
     await waitFor(() => {
       const cards = container.querySelectorAll('.collections-dash__charts > .report-chart-card');
-      expect(cards).toHaveLength(4);
+      expect(cards).toHaveLength(5);
       expect(cards[0]).toHaveTextContent('Quality grade (RAG)');
       expect(cards[1]).toHaveTextContent('Campaign (AI: PDM / COLL)');
       expect(cards[2]).toHaveTextContent('Language mix');
-      expect(cards[3]).toHaveTextContent('Disposition distribution');
-      expect(cards[3]).toHaveClass('collections-dash__distribution-card');
+      expect(cards[3]).toHaveTextContent('AI vs Manual');
+      expect(cards[4]).toHaveTextContent('Disposition distribution');
+      expect(cards[4]).toHaveClass('collections-dash__distribution-card');
     });
   });
 
@@ -73,6 +77,12 @@ describe('CollectionsDashboardSection', () => {
     render(<CollectionsDashboardSection filters={{}} />);
     await screen.findByText('Language mix');
     expect(screen.getByText('AUDIO LANGUAGE')).toBeInTheDocument();
+  });
+
+  it('renders the AI vs Manual card beside Language mix', async () => {
+    render(<CollectionsDashboardSection filters={{}} />);
+    await screen.findByText('AI vs Manual');
+    expect(screen.getByText('AUDIT COVERAGE')).toBeInTheDocument();
   });
 
   it('replaces PTP conversion with Strong and Weak PTP cards', async () => {
