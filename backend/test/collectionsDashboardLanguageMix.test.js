@@ -4,10 +4,19 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { collectionsLanguageMixSelect, collectionsWhere } = require("../services/collectionsReportScope");
 
+const AUDIO_LANG_COALESCE = /COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), 'Unknown'\)/;
+
+function miscRoutesSource() {
+  return fs.readFileSync(
+    path.join(__dirname, "../routes/miscRoutes.register.js"),
+    "utf8"
+  );
+}
+
 test("collectionsLanguageMixSelect groups by AudioLanguage and aliases name/count", () => {
   const select = collectionsLanguageMixSelect();
   assert.match(select, /AudioLanguage/);
-  assert.match(select, /COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), NULLIF\(LTRIM\(RTRIM\(OriginalLanguage\)\), ''\), 'Unknown'\)/);
+  assert.match(select, AUDIO_LANG_COALESCE);
   assert.match(select, /AS name/);
   assert.match(select, /COUNT\(\*\) AS count/);
 });
@@ -24,33 +33,41 @@ test("the language mix query is collections-scoped (AI_Coll_Score IS NOT NULL)",
 });
 
 test("miscRoutes.register.js wires languageMix empty payload and collectionsLanguageMixSelect", () => {
-  const src = fs.readFileSync(
-    path.join(__dirname, "../routes/miscRoutes.register.js"),
-    "utf8"
-  );
+  const src = miscRoutesSource();
   const emptyBlock = src.match(/router\.get\('\/api\/collections\/dashboard'[\s\S]*?const empty = \{[\s\S]*?\};/);
   assert.ok(emptyBlock, "dashboard handler empty payload not found");
   assert.match(emptyBlock[0], /languageMix:\s*\[\]/);
   assert.match(src, /collectionsLanguageMixSelect/);
 });
 
-test("collectionsLanguageMixSelect falls back to OriginalLanguage", () => {
+test("collectionsLanguageMixSelect does not reference OriginalLanguage", () => {
   const select = collectionsLanguageMixSelect();
-  assert.match(select, /OriginalLanguage/);
-  assert.match(
-    select,
-    /COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), NULLIF\(LTRIM\(RTRIM\(OriginalLanguage\)\), ''\), 'Unknown'\)/,
-  );
+  assert.equal(select.includes("OriginalLanguage"), false);
+  assert.match(select, AUDIO_LANG_COALESCE);
 });
 
-test("miscRoutes language mix GROUP BY matches the COALESCE expression", () => {
-  const src = require("node:fs").readFileSync(
-    require("node:path").join(__dirname, "../routes/miscRoutes.register.js"),
-    "utf8",
+test("miscRoutes isolates languageMix so a SQL miss cannot empty the dashboard", () => {
+  const src = miscRoutesSource();
+  const handler = src.match(
+    /router\.get\('\/api\/collections\/dashboard'[\s\S]*?Error in \/api\/collections\/dashboard/
   );
-  assert.match(src, /languageMix:\s*mapMix\(langRes\)/);
+  assert.ok(handler, "collections dashboard handler not found");
+  const body = handler[0];
+
   assert.match(
-    src,
-    /GROUP BY COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), NULLIF\(LTRIM\(RTRIM\(OriginalLanguage\)\), ''\), 'Unknown'\)/,
+    body,
+    /languageMix:\s*mapMix|languageMix\s*=\s*mapMix/,
+    "languageMix must be assigned from mapMix"
+  );
+
+  // Nested try after campRes: only the lang query lives here, separate from the outer handler try.
+  const nestedLangTry = body.match(
+    /campRes[\s\S]*?try\s*\{[\s\S]*?collectionsLanguageMixSelect[\s\S]*?\}\s*catch/
+  );
+  assert.ok(nestedLangTry, "language mix query must sit in a nested try after campRes");
+  assert.match(nestedLangTry[0], /collectionsLanguageMixSelect/);
+  assert.match(
+    body,
+    /GROUP BY COALESCE\(NULLIF\(LTRIM\(RTRIM\(AudioLanguage\)\), ''\), 'Unknown'\)/
   );
 });

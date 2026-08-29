@@ -573,19 +573,24 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AI_Coll_Campaign)), ''), 'Unknown')
       ORDER BY count DESC
     `);
-    const langRes = await buildReq().query(`
-      SELECT ${collectionsLanguageMixSelect()}
-      FROM Consolidated_Audio_Analysis
-      ${where}
-      GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), NULLIF(LTRIM(RTRIM(OriginalLanguage)), ''), 'Unknown')
-      ORDER BY count DESC
-    `);
-
     const mapMix = (rs) => (rs.recordset || [])
       .map((r) => ({ name: (r.name == null || String(r.name).trim() === '') ? 'Unknown' : String(r.name).trim(), count: Number(r.count) || 0 }))
       .filter((r) => r.count > 0);
     const dispositionMix = mapMix(dispRes);
     const campaignMix = mapMix(campRes);
+    let languageMix = [];
+    try {
+      const langRes = await buildReq().query(`
+        SELECT ${collectionsLanguageMixSelect()}
+        FROM Consolidated_Audio_Analysis
+        ${where}
+        GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(AudioLanguage)), ''), 'Unknown')
+        ORDER BY count DESC
+      `);
+      languageMix = mapMix(langRes);
+    } catch {
+      languageMix = [];
+    }
     const tokenBase = {
       filters: { fromDate, toDate, ...params },
       username: req.user.username,
@@ -657,7 +662,7 @@ router.get('/api/collections/dashboard', requireCollectionsDashboardAccess, asyn
       },
       dispositionMix: withTokens(dispositionMix, 'disposition'),
       campaignMix: withTokens(campaignMix, 'campaign'),
-      languageMix: mapMix(langRes),
+      languageMix,
       drilldowns,
     });
   } catch (err) {
