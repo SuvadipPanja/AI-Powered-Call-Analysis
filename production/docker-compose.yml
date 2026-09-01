@@ -25,6 +25,8 @@ x-gpu-reservation: &gpu-reservation
 
 x-gpu-environment: &gpu-environment
   NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-1}
+  EXPECTED_HOST_GPU_ID: ${GPU_DEVICE_ID:-1}
+  GPU_IDENTITY_ASSERT: "true"
   NVIDIA_DRIVER_CAPABILITIES: compute,utility
 
 x-logging: &json-logging
@@ -75,6 +77,8 @@ services:
       - db_password
     volumes:
       - dbdata:/var/opt/mssql
+      # Host-visible DB backups (mssql uid 10001 must be able to write here)
+      - ${BACKUP_HOST_PATH:-./volumes/backups}:/var/opt/mssql/backups
     healthcheck:
       test: ["CMD-SHELL", "SQLCMDPASSWORD=\"$$(cat /run/secrets/db_password)\" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -h -1 -W -Q \"SET NOCOUNT ON; IF DB_ID('call_analysis_db') IS NULL RAISERROR('nodb',16,1)\" || exit 1"]
       interval: 10s
@@ -147,6 +151,9 @@ services:
       GPU_METRICS_URL: ${GPU_METRICS_URL:-http://gpu-metrics:9101/gpus}
       LICENSE_FILE_PATH: ./license/license.lic
       AUDIO_UPLOAD_DIR: /app/data/Sample_Audio
+      # Read-only fallback for historical auto-upload recordings whose working
+      # copy was removed after processing. Resolution is exact-name/date only.
+      AUDIO_ARCHIVE_DIRS: /app/data/batch_audio
       PROJECT_ROOT: /app
       BACKEND_LOG_DIR: /app/logs
       DETAILS_LOG_DIR: /app/logs/details
@@ -159,8 +166,11 @@ services:
       ACTION_LOG_DIR: /app/logs
       ACTION_LOG_FILE: action.log
       # Shared-GPU prod: cap concurrent AI dispatches (0 = license only)
-      UPLOAD_QUEUE_CONCURRENCY: ${UPLOAD_QUEUE_CONCURRENCY:-1}
-      AI_MAX_CONCURRENT_JOBS: ${AI_MAX_CONCURRENT_JOBS:-1}
+      UPLOAD_QUEUE_CONCURRENCY: ${UPLOAD_QUEUE_CONCURRENCY:-2}
+      UPLOAD_QUEUE_CAPACITY_ATTEMPTS: ${UPLOAD_QUEUE_CAPACITY_ATTEMPTS:-100000}
+      UPLOAD_QUEUE_CAPACITY_BACKOFF_MS: ${UPLOAD_QUEUE_CAPACITY_BACKOFF_MS:-5000}
+      AI_DISPATCH_LOCK_TIMEOUT_MS: ${AI_DISPATCH_LOCK_TIMEOUT_MS:-10000}
+      AI_MAX_CONCURRENT_JOBS: ${AI_MAX_CONCURRENT_JOBS:-2}
     secrets:
       - license_secret_key
       - orchestrator_secret
@@ -205,7 +215,7 @@ services:
     restart: unless-stopped
 
   # ===========================================================================
-  #  LLM — Qwen3-14B-AWQ via vLLM (48 GB safe default util 0.42; Qwen3-8B in .env)
+  #  LLM — Qwen3-14B-AWQ via vLLM (shared-GPU bounded profile)
   #  Alias "llm" keeps OPENAI_BASE_URL=http://llm:8001/v1.
   # ===========================================================================
   llm:
@@ -229,6 +239,10 @@ services:
       - "${LLM_MAX_MODEL_LEN:-8192}"
       - --gpu-memory-utilization
       - "${LLM_GPU_MEMORY_UTIL:-0.35}"
+      - --max-num-seqs
+      - "${LLM_MAX_NUM_SEQS:-2}"
+      - --max-num-batched-tokens
+      - "${LLM_MAX_NUM_BATCHED_TOKENS:-8192}"
       - --tensor-parallel-size
       - "1"
       - --quantization
@@ -240,7 +254,7 @@ services:
     shm_size: "2gb"
     ipc: host
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/v1/models', timeout=5)\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,torch,urllib.request; assert os.environ.get('NVIDIA_VISIBLE_DEVICES') == os.environ.get('EXPECTED_HOST_GPU_ID'); assert torch.cuda.device_count() == 1; urllib.request.urlopen('http://127.0.0.1:8001/v1/models', timeout=5)\""]
       interval: 20s
       timeout: 15s
       retries: 30
@@ -274,6 +288,7 @@ services:
       # GPU default (WHISPER_LANG_DEVICE=cuda); set cpu in .env only if VRAM is tight.
       # Same Whisper-large-v3 model — cpu frees ~3 GB VRAM for vLLM at cost of LID latency.
       WHISPER_LANG_DEVICE: ${WHISPER_LANG_DEVICE:-cuda}
+      GPU_PROCESS_MEMORY_FRACTION: ${WHISPER_LANG_GPU_MEMORY_FRACTION:-0.14}
       # Old AI/ pipeline energy-ranked multi-window voting on top of language_worker.
       # OFF for wordmatch — it samples first-2 agent + customer chunks itself.
       AI_LANG_MULTI_CHUNK: ${AI_LANG_MULTI_CHUNK:-false}
@@ -342,6 +357,30 @@ services:
       LANG_SILENCE_RMS: ${LANG_SILENCE_RMS:-0.004}
       LANG_CALL_CENTER_MODE: ${LANG_CALL_CENTER_MODE:-true}
       LANG_PRIMARY_LANGUAGES: ${LANG_PRIMARY_LANGUAGES:-Hindi,Bengali,English}
+      # Permanent word-independent Indic acoustic verifier. Both local CPU
+      # models are baked into sp-ai-whisper-lang; production makes no downloads.
+      # Shadow mode keeps the already-proven Marathi and Tamil lanes active.
+      LANG_INDIC_ACOUSTIC_ENABLED: ${LANG_INDIC_ACOUSTIC_ENABLED:-true}
+      LANG_INDIC_ACOUSTIC_MODE: ${LANG_INDIC_ACOUSTIC_MODE:-shadow}
+      LANG_INDIC_ACOUSTIC_CORE_MODEL_PATH: /opt/models/vakgyata-base
+      LANG_INDIC_ACOUSTIC_ECAPA_MODEL_PATH: /opt/models/voxlingua107-ecapa
+      LANG_INDIC_ACOUSTIC_DEVICE: ${LANG_INDIC_ACOUSTIC_DEVICE:-cpu}
+      LANG_INDIC_ACOUSTIC_WINDOW_SEC: ${LANG_INDIC_ACOUSTIC_WINDOW_SEC:-8}
+      LANG_INDIC_ACOUSTIC_WINDOWS_PER_CHANNEL: ${LANG_INDIC_ACOUSTIC_WINDOWS_PER_CHANNEL:-3}
+      LANG_INDIC_ACOUSTIC_LANGUAGES: ${LANG_INDIC_ACOUSTIC_LANGUAGES:-English,Hindi,Bengali,Marathi,Assamese,Gujarati,Kannada,Malayalam,Odia,Punjabi,Tamil,Telugu,Urdu,Nepali,Sanskrit,Sindhi}
+      LANG_INDIC_ACOUSTIC_PRIMARY_LANGUAGES: ${LANG_INDIC_ACOUSTIC_PRIMARY_LANGUAGES:-English,Hindi,Bengali}
+      LANG_INDIC_ACOUSTIC_PROVEN_APPLY_LANGUAGES: ${LANG_INDIC_ACOUSTIC_PROVEN_APPLY_LANGUAGES:-Marathi,Tamil}
+      LANG_INDIC_ACOUSTIC_MIN_WINDOW_CONFIDENCE: ${LANG_INDIC_ACOUSTIC_MIN_WINDOW_CONFIDENCE:-0.60}
+      LANG_INDIC_ACOUSTIC_MIN_VOTES: ${LANG_INDIC_ACOUSTIC_MIN_VOTES:-2}
+      LANG_INDIC_ACOUSTIC_MIN_VOTE_RATIO: ${LANG_INDIC_ACOUSTIC_MIN_VOTE_RATIO:-0.67}
+      LANG_INDIC_ACOUSTIC_MIN_MARGIN: ${LANG_INDIC_ACOUSTIC_MIN_MARGIN:-0.10}
+      LANG_INDIC_ACOUSTIC_STRICT_MIN_CONFIDENCE: ${LANG_INDIC_ACOUSTIC_STRICT_MIN_CONFIDENCE:-0.72}
+      LANG_INDIC_ACOUSTIC_STRICT_MIN_VOTE_RATIO: ${LANG_INDIC_ACOUSTIC_STRICT_MIN_VOTE_RATIO:-0.75}
+      LANG_INDIC_ACOUSTIC_STRICT_MIN_MARGIN: ${LANG_INDIC_ACOUSTIC_STRICT_MIN_MARGIN:-0.18}
+      LANG_INDIC_ACOUSTIC_EXTENDED_MIN_CONFIDENCE: ${LANG_INDIC_ACOUSTIC_EXTENDED_MIN_CONFIDENCE:-0.80}
+      LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTES: ${LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTES:-3}
+      LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTE_RATIO: ${LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTE_RATIO:-0.80}
+      LANG_INDIC_ACOUSTIC_EXTENDED_MIN_MARGIN: ${LANG_INDIC_ACOUSTIC_EXTENDED_MIN_MARGIN:-0.25}
       # Whisper often mislabels Hindi as Urdu/Nepali — re-probe those as Hindi.
       LANG_HINDI_CONFUSABLE_CODES: ${LANG_HINDI_CONFUSABLE_CODES:-ur,ne}
       LANG_MIN_SCRIPT_CHARS: ${LANG_MIN_SCRIPT_CHARS:-12}
@@ -390,6 +429,7 @@ services:
       ENGLISH_NEMO_MODEL_PATH: ${ENGLISH_NEMO_MODEL_PATH:-/models/nemo/parakeet-rnnt-1.1b.nemo}
       HINDI_NEMO_MODEL_PATH: ${HINDI_NEMO_MODEL_PATH:-/models/nemo/stt_hi_conformer_ctc_medium.nemo}
       NEMO_DEVICE: ${NEMO_DEVICE:-cuda}
+      GPU_PROCESS_MEMORY_FRACTION: ${NEMO_GPU_MEMORY_FRACTION:-0.13}
       NEMO_DECODER: ${NEMO_DECODER:-rnnt}
       NEMO_DUAL_DECODER: ${NEMO_DUAL_DECODER:-true}
       NEMO_DUAL_DECODER_LANGUAGES: ${NEMO_DUAL_DECODER_LANGUAGES:-Bengali,Hindi,Assamese}
@@ -397,6 +437,8 @@ services:
       AI_NEMO_PRELOAD_LANGUAGES: ${AI_NEMO_PRELOAD_LANGUAGES:-English}
       AI_NEMO_REQUIRED_LANGUAGES: ${AI_NEMO_REQUIRED_LANGUAGES:-English}
       TRANSCRIPTION_RETRY_EMPTY: ${TRANSCRIPTION_RETRY_EMPTY:-true}
+      ASR_MICROBATCH_MAX_ITEMS: ${ASR_MICROBATCH_MAX_ITEMS:-2}
+      ASR_MICROBATCH_MAX_AUDIO_SEC: ${ASR_MICROBATCH_MAX_AUDIO_SEC:-30}
     expose:
       - "8020"
     volumes:
@@ -433,7 +475,10 @@ services:
       SEAMLESS_M4T_ENABLED: ${SEAMLESS_M4T_ENABLED:-true}
       SEAMLESS_M4T_MODEL_PATH: ${SEAMLESS_M4T_MODEL_PATH:-/models/seamless-m4t-v2-large}
       SEAMLESS_M4T_DEVICE: ${SEAMLESS_M4T_DEVICE:-cuda}
+      GPU_PROCESS_MEMORY_FRACTION: ${SEAMLESS_GPU_MEMORY_FRACTION:-0.28}
       TRANSCRIPTION_RETRY_EMPTY: ${TRANSCRIPTION_RETRY_EMPTY:-true}
+      ASR_MICROBATCH_MAX_ITEMS: ${ASR_MICROBATCH_MAX_ITEMS:-2}
+      ASR_MICROBATCH_MAX_AUDIO_SEC: ${ASR_MICROBATCH_MAX_AUDIO_SEC:-30}
     expose:
       - "8030"
     volumes:
@@ -478,7 +523,7 @@ services:
       DIAR_PYANNOTE_EXCLUSIVE: ${DIAR_PYANNOTE_EXCLUSIVE:-true}
       PYANNOTE_MODEL_PATH: ${PYANNOTE_MODEL_PATH:-/models/pyannote/speaker-diarization-3.1}
       PYANNOTE_DEVICE: ${PYANNOTE_DEVICE:-cuda}
-      SILERO_VAD_DEVICE: ${SILERO_VAD_DEVICE:-cuda}
+      SILERO_VAD_DEVICE: ${SILERO_VAD_DEVICE:-cpu}
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
       AGENT_CHANNEL_INDEX: ${AGENT_CHANNEL_INDEX:-0}
       CUSTOMER_CHANNEL_INDEX: ${CUSTOMER_CHANNEL_INDEX:-1}
@@ -508,27 +553,59 @@ services:
   # ===========================================================================
   #  AI controller — full pipeline orchestrator (:8000)
   #  Network alias "ai" keeps backend AI_MAIN_URL=http://ai:8000 working.
-  #  Keeps the GPU reservation: local model FALLBACKS (faster-whisper, and the
-  #  full worker set when AI_DISTRIBUTED=false) still run in this container.
+  #  Distributed production controller is CPU orchestration only. Dedicated
+  #  services own all CUDA model inference and fail closed on service outage.
   # ===========================================================================
   ai-controller:
     image: sp-ai-controller:prod
     container_name: sp_ai_controller
     logging: *json-logging
     environment:
-      <<: [*gpu-environment, *ai-logging-env]
+      <<: *ai-logging-env
+      # Explicitly hide CUDA from the orchestration container. This does not
+      # affect the four dedicated model services, which retain GPU1 reservations.
+      NVIDIA_VISIBLE_DEVICES: void
+      EXPECTED_HOST_GPU_ID: ${GPU_DEVICE_ID:-1}
+      GPU_IDENTITY_ASSERT: "true"
       PORT: "8000"
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:5000}
       AI_ENTITLEMENT_POLL_SEC: ${AI_ENTITLEMENT_POLL_SEC:-90}
       # --- Distributed AI stack (docs/AI-STACK-SPEC.md §5) ---
       AI_DISTRIBUTED: ${AI_DISTRIBUTED:-true}
+      AI_REMOTE_FAIL_CLOSED: ${AI_REMOTE_FAIL_CLOSED:-true}
       AI_LANG_SERVICE_URL: ${AI_LANG_SERVICE_URL:-http://ai-whisper-lang:8010}
       AI_NEMO_SERVICE_URL: ${AI_NEMO_SERVICE_URL:-http://ai-nemo:8020}
       AI_SEAMLESS_SERVICE_URL: ${AI_SEAMLESS_SERVICE_URL:-http://ai-seamless:8030}
       AI_LANG_SERVICE_TIMEOUT_SEC: ${AI_LANG_SERVICE_TIMEOUT_SEC:-180}
       AI_ASR_SERVICE_TIMEOUT_SEC: ${AI_ASR_SERVICE_TIMEOUT_SEC:-300}
+      # --- Offline Whisper referee (CPU, CTranslate2). Advisory only: it never
+      # becomes the primary ASR lane, which stays Seamless/NeMo. ---
+      WHISPER_REFEREE_ENABLED: ${WHISPER_REFEREE_ENABLED:-true}
+      FASTER_WHISPER_MODEL_PATH: ${FASTER_WHISPER_MODEL_PATH:-/models/faster-whisper-large-v3}
+      FASTER_WHISPER_OFFLINE_ONLY: ${FASTER_WHISPER_OFFLINE_ONLY:-true}
+      FASTER_WHISPER_DEVICE: ${FASTER_WHISPER_DEVICE:-cpu}
+      FASTER_WHISPER_COMPUTE_TYPE: ${FASTER_WHISPER_COMPUTE_TYPE:-int8}
+      FASTER_WHISPER_CPU_THREADS: ${FASTER_WHISPER_CPU_THREADS:-4}
+      ASR_REFEREE_BEAM_SIZE: ${ASR_REFEREE_BEAM_SIZE:-1}
+      ASR_REFEREE_MAX_WINDOWS: ${ASR_REFEREE_MAX_WINDOWS:-4}
+      ASR_REFEREE_BUDGET_SEC: ${ASR_REFEREE_BUDGET_SEC:-120}
+      ASR_MAX_WORDS_PER_SEC: ${ASR_MAX_WORDS_PER_SEC:-4.5}
       ASR_CHUNK_PARALLELISM: ${ASR_CHUNK_PARALLELISM:-1}
-      AI_MAX_CONCURRENT_JOBS: ${AI_MAX_CONCURRENT_JOBS:-1}
+      AI_MAX_CONCURRENT_JOBS: ${AI_MAX_CONCURRENT_JOBS:-2}
+      CPU_STAGE_WORKERS: ${CPU_STAGE_WORKERS:-4}
+      CPU_STAGE_PARALLEL_ENABLED: ${CPU_STAGE_PARALLEL_ENABLED:-true}
+      GPU_STAGE_SCHEDULER_ENABLED: ${GPU_STAGE_SCHEDULER_ENABLED:-true}
+      GPU_ASR_CONCURRENCY: ${GPU_ASR_CONCURRENCY:-1}
+      GPU_LLM_CONCURRENCY: ${GPU_LLM_CONCURRENCY:-2}
+      GPU_VRAM_ADMISSION_ENABLED: ${GPU_VRAM_ADMISSION_ENABLED:-true}
+      GPU_VRAM_METRICS_URL: ${GPU_VRAM_METRICS_URL:-http://gpu-metrics:9101/gpus}
+      GPU_DEVICE_ID: ${GPU_DEVICE_ID:-1}
+      GPU_VRAM_ADMISSION_MAX_PCT: ${GPU_VRAM_ADMISSION_MAX_PCT:-90}
+      GPU_VRAM_ADMISSION_POLL_SEC: ${GPU_VRAM_ADMISSION_POLL_SEC:-0.5}
+      GPU_VRAM_ADMISSION_TIMEOUT_SEC: ${GPU_VRAM_ADMISSION_TIMEOUT_SEC:-300}
+      ASR_MICROBATCH_ENABLED: ${ASR_MICROBATCH_ENABLED:-true}
+      ASR_MICROBATCH_MAX_ITEMS: ${ASR_MICROBATCH_MAX_ITEMS:-2}
+      ASR_MICROBATCH_MAX_AUDIO_SEC: ${ASR_MICROBATCH_MAX_AUDIO_SEC:-30}
       # --- Database ---
       DB_SERVER: ${DB_SERVER:-db}
       DB_PORT: ${DB_PORT:-1433}
@@ -557,8 +634,9 @@ services:
       CUSTOMER_ENHANCE_ENABLED: ${CUSTOMER_ENHANCE_ENABLED:-false}
       # --- Sentiment / tone / query-type accuracy upgrades (2026-07) ---
       # Sentiment: "llm" rates each utterance with the Qwen model (banking-aware,
-      # code-switch tolerant); auto-falls back to the HF transformers path.
+      # code-switch tolerant); production fallback is zero-model keyword mode.
       SENTIMENT_BACKEND: ${SENTIMENT_BACKEND:-transformers}
+      SENTIMENT_LLM_FALLBACK: ${SENTIMENT_LLM_FALLBACK:-keyword}
       SENTIMENT_LLM_BATCH_SIZE: ${SENTIMENT_LLM_BATCH_SIZE:-40}
       # Tone: emotion2vec+ speech-emotion model merged with librosa levels;
       # falls back to librosa-only when the model dir is missing.
@@ -574,7 +652,6 @@ services:
       TRANSCRIBE_BACKEND: ${TRANSCRIBE_BACKEND:-nemo}
       NEMO_ASR_LANGUAGES: ${NEMO_ASR_LANGUAGES:-English}
       FASTER_WHISPER_ASR_LANGUAGES: ${FASTER_WHISPER_ASR_LANGUAGES:-}
-      QWEN_ASR_LANGUAGES: ${QWEN_ASR_LANGUAGES:-}
       SEAMLESS_M4T_ENABLED: ${SEAMLESS_M4T_ENABLED:-true}
       SEAMLESS_M4T_MODEL_PATH: ${SEAMLESS_M4T_MODEL_PATH:-/models/seamless-m4t-v2-large}
       SEAMLESS_M4T_DEVICE: ${SEAMLESS_M4T_DEVICE:-cuda}
@@ -592,7 +669,7 @@ services:
       HINDI_NEMO_MODEL_PATH: ${HINDI_NEMO_MODEL_PATH:-/models/nemo/stt_hi_conformer_ctc_medium.nemo}
       BENGALI_MULTILINGUAL_FALLBACK: ${BENGALI_MULTILINGUAL_FALLBACK:-true}
       BENGALI_ASR_EXTRA_PADDING_SEC: ${BENGALI_ASR_EXTRA_PADDING_SEC:-0.5}
-      # --- faster-whisper (controller-local fallback ASR, lazy-loaded) ---
+      # --- controller-local fallback ASR (legacy monolith only) ---
       FASTER_WHISPER_DOWNLOAD_ROOT: ${FASTER_WHISPER_DOWNLOAD_ROOT:-/models}
       FASTER_WHISPER_DEVICE: ${FASTER_WHISPER_DEVICE:-cuda}
       FASTER_WHISPER_COMPUTE_TYPE: ${FASTER_WHISPER_COMPUTE_TYPE:-float16}
@@ -601,6 +678,10 @@ services:
       FASTER_WHISPER_BEAM_SIZE: ${FASTER_WHISPER_BEAM_SIZE:-8}
       # --- Chunking / diarization ---
       ASR_INDIC_MIN_CHUNK_SEC: ${ASR_INDIC_MIN_CHUNK_SEC:-1.2}
+      # Evidence-only contextual decode of the isolated agent opening. This
+      # recovers borrower names/disclaimers lost by short Indic ASR chunks.
+      ASR_COMPLIANCE_OPENING_ENABLED: ${ASR_COMPLIANCE_OPENING_ENABLED:-true}
+      ASR_COMPLIANCE_OPENING_SEC: ${ASR_COMPLIANCE_OPENING_SEC:-20}
       MIN_CHUNK_DURATION_SEC: ${MIN_CHUNK_DURATION_SEC:-0.8}
       CHUNK_PADDING_SEC: ${CHUNK_PADDING_SEC:-0.3}
       CHUNK_BOUNDARY_PAD_SEC: ${CHUNK_BOUNDARY_PAD_SEC:-0.2}
@@ -613,7 +694,7 @@ services:
       DIAR_BACKEND: ${DIAR_BACKEND:-stereo}
       DIAR_PYANNOTE_ENABLED: ${DIAR_PYANNOTE_ENABLED:-false}
       DIAR_PYANNOTE_NUM_SPEAKERS: ${DIAR_PYANNOTE_NUM_SPEAKERS:-2}
-      SILERO_VAD_DEVICE: ${SILERO_VAD_DEVICE:-cuda}
+      SILERO_VAD_DEVICE: ${SILERO_VAD_DEVICE:-cpu}
       PYANNOTE_MODEL_PATH: ${PYANNOTE_MODEL_PATH:-/models/pyannote/speaker-diarization-3.1}
       AI_DIAR_SERVICE_URL: ${AI_DIAR_SERVICE_URL:-http://ai-diarization:8040}
       DIARIZATION_REMOTE_ENABLED: ${DIARIZATION_REMOTE_ENABLED:-false}
@@ -737,11 +818,9 @@ services:
       timeout: 10s
       retries: 60
       start_period: 300s
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - <<: *gpu-reservation
+    # The distributed controller owns no model and gets no GPU device. This is
+    # deliberate: all LID/ASR/LLM inference runs in the dedicated CUDA services.
+    # AI_REMOTE_FAIL_CLOSED prevents a remote outage from loading a duplicate.
     depends_on:
       db:
         condition: service_healthy
@@ -752,6 +831,8 @@ services:
       ai-nemo:
         condition: service_started
       ai-seamless:
+        condition: service_started
+      gpu-metrics:
         condition: service_started
     networks:
       app-net:

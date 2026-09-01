@@ -41,6 +41,8 @@ call_analysis_db_*.bak
 production/docker-images/*.tar
 production/images/*.tar
 production/model-bundles/*.tar
+production/model-bundles/*.tar.gz
+production/model-bundles/faster-whisper-large-v3/
 
 # License files (machine-bound — generate per server, never commit)
 *.lic
@@ -52,8 +54,14 @@ production/model-bundles/*.tar
 vendor-keys/
 **/vendor-root-private.pem
 
-# Offline license generator (vendor-only tool; may hold signing material — never push)
-license-generator/
+# Offline license generator source is versioned; generated material is not.
+license-generator/node_modules/
+license-generator/generated/
+license-generator/.license-generator.lock
+license-generator/*.lic
+license-generator/*.pem
+license-generator/local-config.json
+license-generator/audit.log
 
 # Sprint 4 — license signing keys & generated artifacts (never commit private keys)
 license-keys/
@@ -84,6 +92,7 @@ data/
 
 # Optional: local ML model weights (keep source in ai-mvp/)
 models/
+production-build/model-cache/
 
 # Large Python wheels (download in CI/prod build)
 production-build/sp-nemo/wheels/*.whl

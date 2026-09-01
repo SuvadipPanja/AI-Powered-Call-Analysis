@@ -4,19 +4,30 @@
 .env.secrets
 .env.backend
 .env.bak.*
+# Keep templates / examples
+!.env.example
+!.env.production.template
 license/*.lic
 docker-images/*.tar
 docker-images/*.tar.gz
 images/*.tar
 images/*.tar.gz
 model-bundles/*.tar
+model-bundles/*.tar.gz
+model-bundles/faster-whisper-large-v3/
 hub-cache-seed.tar.gz
 volumes/
 backup/
 backup-*/
+rollbacks/
 secrets/*
 !secrets/README.md
 
 # Real customer call audio — never commit (PII)
 Sample Calls/
 sample-calls/
+
+# Capacity benchmark manifests/results may contain customer filenames/transcripts
+benchmarks/*.json
+benchmarks/*.jsonl
+benchmarks/*.txt
