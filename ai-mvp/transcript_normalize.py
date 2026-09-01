@@ -33,7 +33,79 @@ _FILLER_TOKENS = frozenset({
     "mm", "mmm", "mmmm", "mhm", "mhmm", "mm-hmm", "mmhmm", "hmm", "hmmm", "hmmmm",
     "hm", "uh", "uhh", "uhhh", "uh-huh", "uhhuh", "um", "umm", "ummm", "uhm",
     "er", "err", "erm", "ah", "ahh", "ahem", "eh", "huh", "hmp", "mhh",
+    # Devanagari hesitations emitted by Indic ASR on noisy telephony audio.
+    "अह", "उह", "उम", "अम", "हम्म", "हम्मम", "ह्म्म", "अं", "आं", "एह",
 })
+
+# ---------------------------------------------------------------------------
+# ASR artifact scrubbing — non-speech event tags and unintelligible markers.
+#
+# Noisy telephony audio makes Whisper-family models hallucinate bracketed
+# event tags ("[गुर्राते हुए]", "[music]") and makes SeamlessM4T emit "(())"
+# unintelligible markers. None of these are speech; left in place they pollute
+# the UI transcript AND downstream detectors (RPC/ZTP/foul). Tags are removed
+# only when their content matches a known non-speech vocabulary so legitimate
+# bracketed text like "[EMI amount]" or "[No speech detected]" is never touched.
+# ---------------------------------------------------------------------------
+
+# SeamlessM4T unintelligible markers: "(())", "(( ... ))".
+_UNINTELLIGIBLE_RE = re.compile(r"\(\(\s*[^()]*\s*\)\)")
+
+# Candidate bracketed tags (short, single-line).
+_BRACKET_TAG_RE = re.compile(r"\[[^\[\]\n]{1,60}\]")
+
+# Non-speech vocabulary (substring match, lowercased): English + Devanagari.
+_NOISE_TAG_WORDS = (
+    "music", "संगीत", "म्यूज़िक", "म्यूजिक",
+    "laugh", "हंसते", "हँसते", "हंसी", "हँसी",
+    "cough", "खांसते", "खाँसते", "खांसी", "खाँसी",
+    "growl", "snarl", "गुर्राते", "गुर्राहट",
+    "noise", "शोर", "आवाज़ें", "static",
+    "inaudible", "unintelligible", "अस्पष्ट", "अश्रव्य",
+    "silence", "मौन", "खामोशी",
+    "background", "बैकग्राउंड",
+    "breathing", "साँस", "सांस",
+    "crying", "sobbing", "रोते",
+    "applause", "clapping", "ताली",
+    "sigh", "आह भरते",
+    "beep", "बीप", "ringing", "घंटी",
+    "humming", "गुनगुना",
+    "murmur", "बड़बड़",
+    "whisper", "फुसफुस",
+    "speaking in", "foreign language",
+)
+
+
+def _is_noise_tag(tag: str) -> bool:
+    inner = tag[1:-1].strip().lower()
+    if not inner:
+        return True  # empty "[]" is never speech
+    return any(word in inner for word in _NOISE_TAG_WORDS)
+
+
+# Seamless echoes the diarization speaker label into the text it returns. The
+# transcript row already carries "(Agent):" structurally, so an inline copy is
+# pure noise that leaks into evidence quotes and coaching text.
+_INLINE_SPEAKER_TAG_RE = re.compile(r"\[\s*(?:agent|customer)\s*\]", re.I)
+
+
+def scrub_asr_artifacts(text: str) -> str:
+    """Remove hallucinated non-speech tags and unintelligible markers.
+
+    Safe for every language lane: only whole markers are removed, real words
+    are never rewritten. Used on transcript turns and on the compliance
+    opening evidence before detectors read them.
+    """
+    if not text:
+        return text
+    cleaned = _UNINTELLIGIBLE_RE.sub(" ", text)
+    cleaned = _INLINE_SPEAKER_TAG_RE.sub(" ", cleaned)
+    cleaned = _BRACKET_TAG_RE.sub(
+        lambda m: " " if _is_noise_tag(m.group(0)) else m.group(0),
+        cleaned,
+    )
+    cleaned = cleaned.replace("♪", " ").replace("♫", " ")
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 # ASCII/Indic sentence punctuation stripped from token EDGES to build the
 # comparison key. Fixed list on purpose: a Unicode \W class would also strip
@@ -95,6 +167,7 @@ def normalize_transcript(transcript: str) -> str:
             continue
 
         prefix, speech = match.group(1), match.group(2).strip()
+        speech = scrub_asr_artifacts(speech)
         cleaned = _strip_fillers_and_repeats(speech)
 
         if not cleaned or not _has_content(cleaned):
