@@ -40,6 +40,19 @@ CUSTOMER_GAIN_DB = float(os.getenv("CUSTOMER_GAIN_DB", "5"))
 AGENT_CHANNEL_INDEX = int(os.getenv("AGENT_CHANNEL_INDEX", "0"))
 CUSTOMER_CHANNEL_INDEX = int(os.getenv("CUSTOMER_CHANNEL_INDEX", "1"))
 CUSTOMER_ENHANCE_ENABLED = os.getenv("CUSTOMER_ENHANCE_ENABLED", "true").lower() == "true"
+# Agent channel gets the same noise reduction, but only on the wavs exported to
+# ASR — VAD/crosstalk heuristics keep running on the raw channel so diarization
+# boundaries are unchanged. No gain by default (agent leg is usually louder).
+AGENT_ENHANCE_ENABLED = os.getenv("AGENT_ENHANCE_ENABLED", "true").lower() == "true"
+AGENT_GAIN_DB = float(os.getenv("AGENT_GAIN_DB", "0"))
+# Spectral NR (noisereduce) destroyed Seamless consonants on Audio_113.
+# Keep the import path for an emergency rollback, default OFF.
+ASR_SPECTRAL_NR_ENABLED = os.getenv("ASR_SPECTRAL_NR_ENABLED", "false").lower() == "true"
+# PSTN-safe band for every channel ASR hears.
+ASR_TELEPHONY_HIGHPASS_HZ = float(os.getenv("ASR_TELEPHONY_HIGHPASS_HZ", "120"))
+ASR_TELEPHONY_LOWPASS_HZ = float(os.getenv("ASR_TELEPHONY_LOWPASS_HZ", "3800"))
+# Lift quiet legs toward this RMS; never peak-normalize to 1.0.
+ASR_RMS_TARGET_DBFS = float(os.getenv("ASR_RMS_TARGET_DBFS", "-20"))
 # Only drop very short, very quiet customer hits (not normal "ok"/"haan" replies).
 MIN_CUSTOMER_SPEECH_DURATION_SEC = float(os.getenv("MIN_CUSTOMER_SPEECH_DURATION_SEC", "0.25"))
 CUSTOMER_CROSSTALK_SUPPRESS = os.getenv("CUSTOMER_CROSSTALK_SUPPRESS", "true").lower() == "true"
@@ -133,7 +146,7 @@ NEMO_DUAL_DECODER_LANGUAGES = {
 }
 BENGALI_MULTILINGUAL_FALLBACK = os.getenv("BENGALI_MULTILINGUAL_FALLBACK", "true").lower() == "true"
 BENGALI_ASR_EXTRA_PADDING_SEC = float(os.getenv("BENGALI_ASR_EXTRA_PADDING_SEC", "0.45"))
-ASR_INDIC_MIN_CHUNK_SEC = float(os.getenv("ASR_INDIC_MIN_CHUNK_SEC", "1.2"))
+ASR_INDIC_MIN_CHUNK_SEC = float(os.getenv("ASR_INDIC_MIN_CHUNK_SEC", "2.5"))
 
 # Trim leading/trailing dead air from each ASR chunk. Whisper/SeamlessM4T tend to
 # "continue" a short real phrase into a fluent HALLUCINATION when fed trailing
@@ -208,6 +221,14 @@ FASTER_WHISPER_BEAM_SIZE = int(os.getenv("FASTER_WHISPER_BEAM_SIZE", "5"))
 FASTER_WHISPER_USE_LANG_HINT = os.getenv("FASTER_WHISPER_USE_LANG_HINT", "true").lower() == "true"
 FASTER_WHISPER_VAD_FILTER = os.getenv("FASTER_WHISPER_VAD_FILTER", "false").lower() == "true"
 WHISPER_NO_SPEECH_THRESHOLD = float(os.getenv("WHISPER_NO_SPEECH_THRESHOLD", "0.28"))
+# Air-gapped prod must never attempt a HuggingFace download. When true, a bare
+# model name is refused and only an on-disk FASTER_WHISPER_MODEL_PATH is used.
+FASTER_WHISPER_OFFLINE_ONLY = (
+    os.getenv("FASTER_WHISPER_OFFLINE_ONLY", "true").lower() == "true"
+)
+# The controller is CPU-only (NVIDIA_VISIBLE_DEVICES=void). Cap CTranslate2
+# threads so a referee decode cannot starve CPU_STAGE_WORKERS.
+FASTER_WHISPER_CPU_THREADS = int(os.getenv("FASTER_WHISPER_CPU_THREADS", "4"))
 
 # Language detection mode:
 #   enhanced       — Whisper-native LID + guards/verification layers (default)
@@ -362,6 +383,161 @@ LANG_DRAVIDIAN_CONFUSABLE_CODES = {
     if x.strip()
 }
 
+# --- Permanent word-independent Indic spoken-language verifier -------------
+# Local CPU classifiers consume raw audio only:
+#   * Vakgyata Wav2Vec2: 12 India-specific core languages, including Odia.
+#   * VoxLingua ECAPA: proven Hindi↔Marathi gate + Nepali/Sanskrit/Sindhi/Urdu.
+#   * Vaani Whisper LID: narrow Kannada rescue when the stable upstream result is
+#     Bengali and both existing acoustic classifiers abstain.
+# The existing Whisper/wordmatch result remains the safe fallback.  New regional
+# labels are promoted only after a consistent multi-window acoustic majority.
+LANG_INDIC_ACOUSTIC_ENABLED = (
+    os.getenv(
+        "LANG_INDIC_ACOUSTIC_ENABLED",
+        os.getenv("LANG_HI_MR_ACOUSTIC_ENABLED", "true"),
+    ).lower() == "true"
+)
+LANG_INDIC_ACOUSTIC_MODE = os.getenv(
+    "LANG_INDIC_ACOUSTIC_MODE", "shadow"
+).strip().lower()
+if LANG_INDIC_ACOUSTIC_MODE not in {"shadow", "apply"}:
+    LANG_INDIC_ACOUSTIC_MODE = "shadow"
+LANG_INDIC_ACOUSTIC_ECAPA_MODEL_PATH = Path(
+    os.getenv(
+        "LANG_INDIC_ACOUSTIC_ECAPA_MODEL_PATH",
+        os.getenv(
+            "LANG_HI_MR_ACOUSTIC_MODEL_PATH",
+            "/opt/models/voxlingua107-ecapa",
+        ),
+    )
+)
+LANG_INDIC_ACOUSTIC_CORE_MODEL_PATH = Path(
+    os.getenv(
+        "LANG_INDIC_ACOUSTIC_CORE_MODEL_PATH",
+        "/opt/models/vakgyata-base",
+    )
+)
+LANG_INDIC_ACOUSTIC_VAANI_MODEL_PATH = Path(
+    os.getenv(
+        "LANG_INDIC_ACOUSTIC_VAANI_MODEL_PATH",
+        "/opt/models/vaani-lid",
+    )
+)
+LANG_INDIC_ACOUSTIC_KANNADA_RESCUE_ENABLED = (
+    os.getenv("LANG_INDIC_ACOUSTIC_KANNADA_RESCUE_ENABLED", "true").lower()
+    == "true"
+)
+LANG_INDIC_ACOUSTIC_KANNADA_RESCUE_UPSTREAM_LANGUAGES = {
+    x.strip()
+    for x in os.getenv(
+        "LANG_INDIC_ACOUSTIC_KANNADA_RESCUE_UPSTREAM_LANGUAGES",
+        "Bengali",
+    ).split(",")
+    if x.strip()
+}
+LANG_INDIC_ACOUSTIC_KANNADA_MIN_CONFIDENCE = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_KANNADA_MIN_CONFIDENCE", "0.25")
+)
+LANG_INDIC_ACOUSTIC_KANNADA_MIN_WINNER_VOTES = int(
+    os.getenv("LANG_INDIC_ACOUSTIC_KANNADA_MIN_WINNER_VOTES", "2")
+)
+LANG_INDIC_ACOUSTIC_KANNADA_MIN_TOP2_SUPPORT = int(
+    os.getenv("LANG_INDIC_ACOUSTIC_KANNADA_MIN_TOP2_SUPPORT", "2")
+)
+LANG_INDIC_ACOUSTIC_KANNADA_MIN_MEAN_PROBABILITY = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_KANNADA_MIN_MEAN_PROBABILITY", "0.20")
+)
+# CPU avoids taking VRAM from Whisper/Seamless/vLLM.
+LANG_INDIC_ACOUSTIC_DEVICE = os.getenv(
+    "LANG_INDIC_ACOUSTIC_DEVICE",
+    os.getenv("LANG_HI_MR_ACOUSTIC_DEVICE", "cpu"),
+).strip().lower()
+LANG_INDIC_ACOUSTIC_WINDOW_SEC = float(
+    os.getenv(
+        "LANG_INDIC_ACOUSTIC_WINDOW_SEC",
+        os.getenv("LANG_HI_MR_ACOUSTIC_WINDOW_SEC", "8"),
+    )
+)
+LANG_INDIC_ACOUSTIC_WINDOWS_PER_CHANNEL = int(
+    os.getenv(
+        "LANG_INDIC_ACOUSTIC_WINDOWS_PER_CHANNEL",
+        os.getenv("LANG_HI_MR_ACOUSTIC_WINDOWS_PER_CHANNEL", "3"),
+    )
+)
+LANG_INDIC_ACOUSTIC_LANGUAGES = {
+    x.strip()
+    for x in os.getenv(
+        "LANG_INDIC_ACOUSTIC_LANGUAGES",
+        "English,Hindi,Bengali,Marathi,Assamese,Gujarati,Kannada,Malayalam,"
+        "Odia,Punjabi,Tamil,Telugu,Urdu,Nepali,Sanskrit,Sindhi",
+    ).split(",")
+    if x.strip()
+}
+LANG_INDIC_ACOUSTIC_PRIMARY_LANGUAGES = {
+    x.strip()
+    for x in os.getenv(
+        "LANG_INDIC_ACOUSTIC_PRIMARY_LANGUAGES",
+        "English,Hindi,Bengali",
+    ).split(",")
+    if x.strip()
+}
+# Proven labels remain active while newly added languages run in shadow mode.
+LANG_INDIC_ACOUSTIC_PROVEN_APPLY_LANGUAGES = {
+    x.strip()
+    for x in os.getenv(
+        "LANG_INDIC_ACOUSTIC_PROVEN_APPLY_LANGUAGES",
+        "Marathi,Tamil,Kannada",
+    ).split(",")
+    if x.strip()
+}
+LANG_INDIC_ACOUSTIC_MIN_WINDOW_CONFIDENCE = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_MIN_WINDOW_CONFIDENCE", "0.60")
+)
+LANG_INDIC_ACOUSTIC_MIN_VOTES = int(
+    os.getenv("LANG_INDIC_ACOUSTIC_MIN_VOTES", "2")
+)
+LANG_INDIC_ACOUSTIC_MIN_VOTE_RATIO = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_MIN_VOTE_RATIO", "0.67")
+)
+LANG_INDIC_ACOUSTIC_MIN_MARGIN = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_MIN_MARGIN", "0.10")
+)
+# Confusable sibling groups require stronger agreement than ordinary languages.
+LANG_INDIC_ACOUSTIC_STRICT_MIN_CONFIDENCE = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_STRICT_MIN_CONFIDENCE", "0.72")
+)
+LANG_INDIC_ACOUSTIC_STRICT_MIN_VOTE_RATIO = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_STRICT_MIN_VOTE_RATIO", "0.75")
+)
+LANG_INDIC_ACOUSTIC_STRICT_MIN_MARGIN = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_STRICT_MIN_MARGIN", "0.18")
+)
+# Extended ECAPA-only labels are promoted only on overwhelming evidence.
+LANG_INDIC_ACOUSTIC_EXTENDED_MIN_CONFIDENCE = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_EXTENDED_MIN_CONFIDENCE", "0.80")
+)
+LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTES = int(
+    os.getenv("LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTES", "3")
+)
+LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTE_RATIO = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_EXTENDED_MIN_VOTE_RATIO", "0.80")
+)
+LANG_INDIC_ACOUSTIC_EXTENDED_MIN_MARGIN = float(
+    os.getenv("LANG_INDIC_ACOUSTIC_EXTENDED_MIN_MARGIN", "0.25")
+)
+
+# Backward-compatible aliases for older deployment env files and focused tests.
+LANG_HI_MR_ACOUSTIC_ENABLED = LANG_INDIC_ACOUSTIC_ENABLED
+LANG_HI_MR_ACOUSTIC_MODEL_PATH = LANG_INDIC_ACOUSTIC_ECAPA_MODEL_PATH
+LANG_HI_MR_ACOUSTIC_DEVICE = LANG_INDIC_ACOUSTIC_DEVICE
+LANG_HI_MR_ACOUSTIC_WINDOW_SEC = LANG_INDIC_ACOUSTIC_WINDOW_SEC
+LANG_HI_MR_ACOUSTIC_WINDOWS_PER_CHANNEL = LANG_INDIC_ACOUSTIC_WINDOWS_PER_CHANNEL
+LANG_HI_MR_ACOUSTIC_MIN_WINDOW_CONFIDENCE = (
+    LANG_INDIC_ACOUSTIC_MIN_WINDOW_CONFIDENCE
+)
+LANG_HI_MR_ACOUSTIC_MIN_VOTES = LANG_INDIC_ACOUSTIC_MIN_VOTES
+LANG_HI_MR_ACOUSTIC_MIN_MR_RATIO = LANG_INDIC_ACOUSTIC_MIN_VOTE_RATIO
+
 # LLM post-correction of the native ASR transcript (fix misheard/broken words
 # in-script, before translation). Conservative; falls back to raw ASR on failure.
 TRANSCRIPT_CLEANUP_ENABLED = os.getenv("TRANSCRIPT_CLEANUP_ENABLED", "true").lower() == "true"
@@ -481,6 +657,12 @@ TRANSCRIBE_BACKEND = os.getenv("TRANSCRIBE_BACKEND", "auto").lower()
 # WPM/duration, LLM tasks, DB writes, enrichment and taboo in-process.
 # Code default is FALSE (legacy in-process pipeline); prod compose sets true.
 AI_DISTRIBUTED = os.getenv("AI_DISTRIBUTED", "false").lower() == "true"
+# In production distributed mode, never load duplicate controller-local CUDA
+# models when a remote GPU service is unavailable. Fail/retry the job instead
+# of risking a host-wide CUDA OOM. Development keeps the legacy fallback.
+AI_REMOTE_FAIL_CLOSED = (
+    os.getenv("AI_REMOTE_FAIL_CLOSED", "false").lower() == "true"
+)
 # sp-ai-whisper-lang — remote Whisper-V3 language detection service
 AI_LANG_SERVICE_URL = os.getenv("AI_LANG_SERVICE_URL", "http://ai-whisper-lang:8010").rstrip("/")
 AI_LANG_SERVICE_TIMEOUT_SEC = float(os.getenv("AI_LANG_SERVICE_TIMEOUT_SEC", "180"))
@@ -491,10 +673,75 @@ AI_ASR_SERVICE_TIMEOUT_SEC = float(os.getenv("AI_ASR_SERVICE_TIMEOUT_SEC", "300"
 # Remote-mode per-chunk ASR fan-out width (ThreadPoolExecutor max_workers).
 # 1 = sequential like legacy mode; >1 only applies when AI_DISTRIBUTED=true.
 ASR_CHUNK_PARALLELISM = int(os.getenv("ASR_CHUNK_PARALLELISM", "2"))
+# Same-call, same-model micro-batches. Cross-call ASR remains serialized by the
+# controller GPU stage gate and service model locks.
+ASR_MICROBATCH_ENABLED = os.getenv("ASR_MICROBATCH_ENABLED", "false").lower() == "true"
+ASR_MICROBATCH_MAX_ITEMS = max(1, int(os.getenv("ASR_MICROBATCH_MAX_ITEMS", "2")))
+ASR_MICROBATCH_MAX_AUDIO_SEC = max(
+    1.0,
+    float(os.getenv("ASR_MICROBATCH_MAX_AUDIO_SEC", "30")),
+)
+CPU_STAGE_WORKERS = max(1, int(os.getenv("CPU_STAGE_WORKERS", "4")))
+CPU_STAGE_PARALLEL_ENABLED = (
+    os.getenv("CPU_STAGE_PARALLEL_ENABLED", "false").lower() == "true"
+)
 # Retry with alternate ASR when diarized chunks exist but almost all lines are empty.
 ASR_SPARSE_FALLBACK_ENABLED = os.getenv("ASR_SPARSE_FALLBACK_ENABLED", "true").lower() == "true"
 ASR_SPARSE_MIN_LINE_RATIO = float(os.getenv("ASR_SPARSE_MIN_LINE_RATIO", "0.15"))
 MIN_USABLE_TRANSCRIPT_WORDS = int(os.getenv("MIN_USABLE_TRANSCRIPT_WORDS", "10"))
+# Compliance phrases at the beginning of a call are often split into very short
+# diarization chunks.  Indic ASR can lose a borrower name in those chunks even
+# though it is clear when the same agent channel is decoded with more context.
+# This extra decode is evidence-only: it never replaces the user-visible
+# transcript and it never weakens the RPC/name detector.
+ASR_COMPLIANCE_OPENING_ENABLED = (
+    os.getenv("ASR_COMPLIANCE_OPENING_ENABLED", "true").lower() == "true"
+)
+ASR_COMPLIANCE_OPENING_SEC = max(
+    8.0,
+    min(30.0, float(os.getenv("ASR_COMPLIANCE_OPENING_SEC", "20"))),
+)
+# Domain biasing for the opening decode. Only takes effect when the routed
+# backend is faster-whisper (Whisper honours initial_prompt); Seamless/NeMo
+# have no biasing interface, so the flag is inert there by design.
+ASR_OPENING_PROMPT_ENABLED = (
+    os.getenv("ASR_OPENING_PROMPT_ENABLED", "true").lower() == "true"
+)
+ASR_OPENING_PROMPT = os.getenv(
+    "ASR_OPENING_PROMPT",
+    "Good morning, I am calling from ICICI Home Finance. "
+    "Am I speaking with the borrower? "
+    "क्या मेरी बात ग्राहक से हो रही है? यह कॉल रिकॉर्ड की जा रही है। "
+    "This call is being recorded. EMI, loan account number, bounce charges, "
+    "payment link, due date.",
+)
+ASR_OPENING_SPLICE_ENABLED = (
+    os.getenv("ASR_OPENING_SPLICE_ENABLED", "true").lower() == "true"
+)
+# Short Indic fragments are the other half of Audio_113. Give Seamless more
+# channel context on every language, not only Bengali.
+HINDI_ASR_EXTRA_PADDING_SEC = float(os.getenv("HINDI_ASR_EXTRA_PADDING_SEC", "1.0"))
+
+# Whisper second pass — only weak openings / conflicting entity windows.
+# Never changes FASTER_WHISPER_ASR_LANGUAGES (primary stack stays Seamless/NeMo).
+ASR_SECOND_PASS_ENABLED = (
+    os.getenv("ASR_SECOND_PASS_ENABLED", "true").lower() == "true"
+)
+ASR_SECOND_PASS_OPENING = (
+    os.getenv("ASR_SECOND_PASS_OPENING", "true").lower() == "true"
+)
+WHISPER_REFEREE_ENABLED = (
+    os.getenv("WHISPER_REFEREE_ENABLED", "true").lower() == "true"
+)
+# Greedy decoding for referee windows: beam 5 is ~5x slower on CPU for a
+# quality gain that the adjudicator cannot exploit.
+ASR_REFEREE_BEAM_SIZE = int(os.getenv("ASR_REFEREE_BEAM_SIZE", "1"))
+# Hard ceilings so a bad call cannot stall the queue on CPU inference.
+ASR_REFEREE_MAX_WINDOWS = int(os.getenv("ASR_REFEREE_MAX_WINDOWS", "4"))
+ASR_REFEREE_BUDGET_SEC = float(os.getenv("ASR_REFEREE_BUDGET_SEC", "120"))
+# Above this speaking rate a row is physically implausible and is treated as an
+# ASR hallucination on a micro-turn. Conversational Hindi runs ~3 words/sec.
+ASR_MAX_WORDS_PER_SEC = float(os.getenv("ASR_MAX_WORDS_PER_SEC", "4.5"))
 
 # Phase 2b — Ollama call scoring
 SCORING_ENABLED = os.getenv("SCORING_ENABLED", "true").lower() == "true"
@@ -549,8 +796,15 @@ SCRIPT_MODEL_LOCAL = Path(_script_local) if _script_local else None
 #                  falls back to the transformers path on any failure.
 # "transformers" — HF pipelines only (previous behavior).
 SENTIMENT_BACKEND = os.getenv("SENTIMENT_BACKEND", "llm").strip().lower()
+# "transformers" preserves the legacy model fallback; "keyword" is the
+# zero-model emergency fallback used by the tight production GPU profile.
+SENTIMENT_LLM_FALLBACK = os.getenv(
+    "SENTIMENT_LLM_FALLBACK", "transformers"
+).strip().lower()
 # Utterances per LLM request (bounds prompt size on long calls).
 SENTIMENT_LLM_BATCH_SIZE = int(os.getenv("SENTIMENT_LLM_BATCH_SIZE", "40"))
+# HF transformers sentiment device: cuda | cpu (ignored when SENTIMENT_BACKEND=llm).
+SENTIMENT_DEVICE = os.getenv("SENTIMENT_DEVICE", "cuda").strip().lower()
 
 # --- Tone backend ---
 # "emotion2vec" — real speech-emotion model (angry/happy/neutral/sad/...) per
@@ -561,7 +815,13 @@ TONE_BACKEND = os.getenv("TONE_BACKEND", "emotion2vec").strip().lower()
 EMOTION2VEC_MODEL_PATH = os.getenv(
     "EMOTION2VEC_MODEL_PATH", "/models/emotion2vec_plus_large"
 ).strip()
-EMOTION2VEC_DEVICE = os.getenv("EMOTION2VEC_DEVICE", "cpu").strip().lower()
+# cuda preferred for speed; set cpu only if VRAM is tight with ASR+LLM.
+EMOTION2VEC_DEVICE = os.getenv("EMOTION2VEC_DEVICE", "cuda").strip().lower()
+# Emotion confidence below this → treat as uncertain/neutral for rollups.
+TONE_EMOTION_MIN_CONF = float(os.getenv("TONE_EMOTION_MIN_CONF", "0.45"))
+# Skip / down-weight ultra-short diarized chunks for emotion rollups.
+TONE_MIN_CHUNK_SEC = float(os.getenv("TONE_MIN_CHUNK_SEC", "0.4"))
+
 
 # Second LLM pass that re-checks Primary_Query_Type against keyword-candidate
 # categories with quoted evidence (fixes balance vs mini-statement mixups).

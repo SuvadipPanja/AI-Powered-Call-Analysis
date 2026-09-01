@@ -13,10 +13,12 @@ import torch
 from config import (
     FASTER_WHISPER_BEAM_SIZE,
     FASTER_WHISPER_COMPUTE_TYPE,
+    FASTER_WHISPER_CPU_THREADS,
     FASTER_WHISPER_DEVICE,
     FASTER_WHISPER_DOWNLOAD_ROOT,
     FASTER_WHISPER_MODEL_PATH,
     FASTER_WHISPER_MODEL_SIZE,
+    FASTER_WHISPER_OFFLINE_ONLY,
     FASTER_WHISPER_USE_LANG_HINT,
     FASTER_WHISPER_VAD_FILTER,
     TRANSCRIPTION_RETRY_EMPTY,
@@ -60,8 +62,25 @@ def _resolve_compute_type(device: str) -> str:
 
 
 def _model_id() -> str:
-    if FASTER_WHISPER_MODEL_PATH and Path(FASTER_WHISPER_MODEL_PATH).is_dir():
-        return str(FASTER_WHISPER_MODEL_PATH)
+    """Resolve the model to load, refusing anything that implies a download.
+
+    A bare size string makes CTranslate2 reach out to HuggingFace. On the
+    air-gapped prod host that blocks for minutes and then fails, which is how
+    a missing model previously turned into a silent no-op referee.
+    """
+    if FASTER_WHISPER_MODEL_PATH:
+        if Path(FASTER_WHISPER_MODEL_PATH).is_dir():
+            return str(FASTER_WHISPER_MODEL_PATH)
+        raise RuntimeError(
+            f"FASTER_WHISPER_MODEL_PATH={FASTER_WHISPER_MODEL_PATH!r} is not a "
+            "directory; refusing to fall back to a HuggingFace download. "
+            "Extract the CTranslate2 bundle into volumes/models/."
+        )
+    if FASTER_WHISPER_OFFLINE_ONLY:
+        raise RuntimeError(
+            "FASTER_WHISPER_MODEL_PATH is unset and FASTER_WHISPER_OFFLINE_ONLY "
+            "is true; refusing to download the model at runtime."
+        )
     return FASTER_WHISPER_MODEL_SIZE
 
 
@@ -76,11 +95,20 @@ def _load():
 
         device = _resolve_device()
         compute_type = _resolve_compute_type(device)
-        _model = WhisperModel(
+        kwargs: dict = {
+            "device": device,
+            "compute_type": compute_type,
+            "download_root": str(FASTER_WHISPER_DOWNLOAD_ROOT),
+        }
+        if device == "cpu" and FASTER_WHISPER_CPU_THREADS > 0:
+            kwargs["cpu_threads"] = FASTER_WHISPER_CPU_THREADS
+        _model = WhisperModel(_model_id(), **kwargs)
+        logger.info(
+            "faster-whisper loaded: model=%s device=%s compute=%s threads=%s",
             _model_id(),
-            device=device,
-            compute_type=compute_type,
-            download_root=str(FASTER_WHISPER_DOWNLOAD_ROOT),
+            device,
+            compute_type,
+            kwargs.get("cpu_threads", "default"),
         )
         return _model
     except Exception as exc:
@@ -100,22 +128,30 @@ def _run_transcribe(
     *,
     no_speech_threshold: float,
     vad_filter: bool,
+    initial_prompt: Optional[str] = None,
+    beam_size: Optional[int] = None,
 ) -> tuple[str, str]:
     """Run faster-whisper transcription; returns (text, detected_language)."""
     segments, info = model.transcribe(
         str(wav_path),
         language=lang,
-        beam_size=FASTER_WHISPER_BEAM_SIZE,
+        beam_size=beam_size if beam_size else FASTER_WHISPER_BEAM_SIZE,
         vad_filter=vad_filter,
         no_speech_threshold=no_speech_threshold,
         condition_on_previous_text=False,
+        initial_prompt=initial_prompt,
     )
     text = " ".join(seg.text.strip() for seg in segments).strip()
     detected = info.language or lang or "auto"
     return text, detected
 
 
-def transcribe_chunk(wav_path: Path, language: str) -> tuple[str, str]:
+def transcribe_chunk(
+    wav_path: Path,
+    language: str,
+    initial_prompt: Optional[str] = None,
+    beam_size: Optional[int] = None,
+) -> tuple[str, str]:
     model = _load()
     device = _resolve_device()
     compute_type = _resolve_compute_type(device)
@@ -128,6 +164,8 @@ def transcribe_chunk(wav_path: Path, language: str) -> tuple[str, str]:
         model, wav_path, lang,
         no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
         vad_filter=FASTER_WHISPER_VAD_FILTER,
+        initial_prompt=initial_prompt,
+        beam_size=beam_size,
     )
 
     if not text and TRANSCRIPTION_RETRY_EMPTY:
@@ -136,6 +174,8 @@ def transcribe_chunk(wav_path: Path, language: str) -> tuple[str, str]:
             model, wav_path, lang,
             no_speech_threshold=max(0.1, WHISPER_NO_SPEECH_THRESHOLD - 0.2),
             vad_filter=False,
+            initial_prompt=initial_prompt,
+            beam_size=beam_size,
         )
 
     if not text and TRANSCRIPTION_RETRY_EMPTY:
@@ -144,6 +184,8 @@ def transcribe_chunk(wav_path: Path, language: str) -> tuple[str, str]:
             model, wav_path, None,
             no_speech_threshold=0.1,
             vad_filter=False,
+            initial_prompt=initial_prompt,
+            beam_size=beam_size,
         )
 
     if not text:
