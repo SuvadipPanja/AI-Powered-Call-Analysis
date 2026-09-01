@@ -701,11 +701,17 @@ ASR_COMPLIANCE_OPENING_SEC = max(
     8.0,
     min(30.0, float(os.getenv("ASR_COMPLIANCE_OPENING_SEC", "20"))),
 )
-# Domain biasing for the opening decode. Only takes effect when the routed
-# backend is faster-whisper (Whisper honours initial_prompt); Seamless/NeMo
-# have no biasing interface, so the flag is inert there by design.
+# DISABLED BY DEFAULT — DO NOT RE-ENABLE WITHOUT READING THIS.
+# Whisper parrots initial_prompt content verbatim. A control bench on
+# Audio_113 fed a deliberately wrong bank name ("HDFC Bank Kotak Mahindra")
+# and got it back word-for-word in the transcript. The prompt below names
+# ICICI Home Finance and the recording disclosure — exactly what the
+# compliance and RPC detectors look for — so enabling it would manufacture
+# passing compliance evidence on calls that never contained it.
+# Kept only so the string is documented and an operator can bias a
+# NON-evidentiary decode deliberately.
 ASR_OPENING_PROMPT_ENABLED = (
-    os.getenv("ASR_OPENING_PROMPT_ENABLED", "true").lower() == "true"
+    os.getenv("ASR_OPENING_PROMPT_ENABLED", "false").lower() == "true"
 )
 ASR_OPENING_PROMPT = os.getenv(
     "ASR_OPENING_PROMPT",

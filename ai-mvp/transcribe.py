@@ -8,14 +8,22 @@ Phase 2a pipeline:
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ContextManager
 
 import logging
 
-from asr_client import asr_service_health, transcribe_remote
+from asr_client import (
+    asr_service_health,
+    transcribe_remote,
+    transcribe_remote_batch,
+)
+from asr_microbatch import batch_chunks_by_duration
 from audio_utils import (
     format_duration,
     prepare_mono_wav,
@@ -24,21 +32,39 @@ from audio_utils import (
 )
 from config import (
     AI_DISTRIBUTED,
+    AI_REMOTE_FAIL_CLOSED,
+    ASR_COMPLIANCE_OPENING_ENABLED,
+    ASR_COMPLIANCE_OPENING_SEC,
+    ASR_OPENING_PROMPT,
+    ASR_OPENING_PROMPT_ENABLED,
+    ASR_OPENING_SPLICE_ENABLED,
+    ASR_SECOND_PASS_ENABLED,
+    ASR_SECOND_PASS_OPENING,
+    ASR_MAX_WORDS_PER_SEC,
+    ASR_REFEREE_BEAM_SIZE,
+    ASR_REFEREE_BUDGET_SEC,
+    ASR_REFEREE_MAX_WINDOWS,
     ASR_CHUNK_PARALLELISM,
     ASR_CHUNK_TRIM_SILENCE,
     ASR_INDIC_MIN_CHUNK_SEC,
+    ASR_MICROBATCH_ENABLED,
+    ASR_MICROBATCH_MAX_AUDIO_SEC,
+    ASR_MICROBATCH_MAX_ITEMS,
     ASR_SPARSE_FALLBACK_ENABLED,
     ASR_SPARSE_MIN_LINE_RATIO,
     BENGALI_ASR_EXTRA_PADDING_SEC,
+    HINDI_ASR_EXTRA_PADDING_SEC,
     FASTER_WHISPER_ASR_LANGUAGES,
     HIDE_EMPTY_TRANSCRIPT_SEGMENTS,
     MIN_USABLE_TRANSCRIPT_WORDS,
     NEMO_ASR_LANGUAGES,
     SEAMLESS_M4T_ENABLED,
     TRANSCRIBE_BACKEND,
+    WHISPER_REFEREE_ENABLED,
 )
 from diarization_worker import diarize, diarization_health
 from faster_whisper_worker import faster_whisper_health, transcribe_chunk as fw_transcribe_chunk
+from transcript_normalize import scrub_asr_artifacts
 from lang_client import detect_language_remote, lang_service_health
 from language_worker import detect_language, language_health
 from nemo_worker import nemo_health, transcribe_with_nemo
@@ -84,6 +110,10 @@ class TranscriptionResult:
     asr_engine: str
     diarization_status: str
     chunk_count: int
+    # A longer, agent-channel-only decode of the call opening.  This is used by
+    # compliance detectors to recover names/disclaimers lost by short ASR
+    # chunks, but is intentionally not rendered as another transcript turn.
+    compliance_opening_evidence: str = ""
 
 
 def _normalize_backend(name: str) -> str:
@@ -119,7 +149,7 @@ def _pick_backend() -> str:
 
 
 def _resolve_asr_backend(language: str, configured_backend: str) -> str:
-    """Route Hindi/English → NeMo; all other languages → SeamlessM4T when enabled.
+    """Route configured NeMo languages there; all others use SeamlessM4T.
 
     A per-language override (FASTER_WHISPER_ASR_LANGUAGES) takes priority and
     forces faster-whisper large-v3 — best for code-mixed Hindi bank calls.
@@ -156,6 +186,7 @@ def _indic_languages() -> set[str]:
     return {
         "Bengali", "Hindi", "Assamese", "Tamil", "Telugu", "Marathi",
         "Gujarati", "Kannada", "Malayalam", "Punjabi", "Odia", "Urdu",
+        "Nepali", "Sanskrit", "Sindhi",
     }
 
 
@@ -185,6 +216,8 @@ def _chunk_wav_for_asr(
         pad = BENGALI_ASR_EXTRA_PADDING_SEC
         if language == "Bengali":
             pad = max(pad, 0.5)
+        if language == "Hindi":
+            pad = max(pad, HINDI_ASR_EXTRA_PADDING_SEC)
         try:
             base_path = reexport_stereo_chunk_with_padding(
                 audio_path,
@@ -262,7 +295,9 @@ def _transcribe_file_local(wav_path: Path, language: str, backend: str) -> tuple
 
 
 def _remote_service_disabled(service: str) -> bool:
-    return _NEMO_REMOTE_DISABLED if service == "nemo" else _SEAMLESS_REMOTE_DISABLED
+    if service == "nemo":
+        return _NEMO_REMOTE_DISABLED
+    return _SEAMLESS_REMOTE_DISABLED
 
 
 def _latch_remote_service_off(service: str, language: str, exc: Exception) -> None:
@@ -297,6 +332,11 @@ def _transcribe_file_distributed(wav_path: Path, language: str, backend: str) ->
             return _transcribe_file_local(wav_path, language, backend)
 
     if _remote_service_disabled(service):
+        if AI_REMOTE_FAIL_CLOSED:
+            raise RuntimeError(
+                f"{service} GPU ASR service is latched unavailable; local model "
+                "fallback is disabled by AI_REMOTE_FAIL_CLOSED"
+            )
         with _local_asr_lock:
             return fw_transcribe_chunk(wav_path, language)
 
@@ -304,6 +344,11 @@ def _transcribe_file_distributed(wav_path: Path, language: str, backend: str) ->
         return transcribe_remote(wav_path, language, service)
     except RuntimeError as exc:
         _latch_remote_service_off(service, language, exc)
+        if AI_REMOTE_FAIL_CLOSED:
+            raise RuntimeError(
+                f"{service} GPU ASR service unavailable; local model fallback is "
+                "disabled by AI_REMOTE_FAIL_CLOSED"
+            ) from exc
         with _local_asr_lock:
             if faster_whisper_health().get("ready"):
                 return fw_transcribe_chunk(wav_path, language)
@@ -329,10 +374,13 @@ def _detect_language_any(audio_path: Path) -> str:
         try:
             return detect_language_remote(audio_path)
         except RuntimeError as exc:
-            logger.warning(
-                "Remote language detection failed (%s) — falling back to local detection",
-                exc,
-            )
+            logger.warning("Remote language detection failed (%s)", exc)
+            if AI_REMOTE_FAIL_CLOSED:
+                raise RuntimeError(
+                    "GPU language service unavailable; local model fallback is "
+                    "disabled by AI_REMOTE_FAIL_CLOSED"
+                ) from exc
+            logger.warning("Falling back to controller-local language detection")
             with _local_asr_lock:
                 return detect_language(audio_path)
     return detect_language(audio_path)
@@ -407,6 +455,91 @@ def _transcribe_one_chunk(
     return line, chunk.end_sec, engine
 
 
+def _format_chunk_result(chunk, text: str, engine: str) -> tuple[str | None, float, str]:
+    is_empty = not text or text == "[No speech detected]"
+    if is_empty and HIDE_EMPTY_TRANSCRIPT_SEGMENTS:
+        logger.info(
+            "Omitting empty segment %s %.1f-%.1f from transcript",
+            chunk.speaker,
+            chunk.start_sec,
+            chunk.end_sec,
+        )
+        return None, 0.0, engine
+    line = f"{chunk.start_sec:.1f} - {chunk.end_sec:.1f} ({chunk.speaker}): {text}"
+    return line, chunk.end_sec, engine
+
+
+def _transcribe_chunk_batch(
+    audio_path: Path,
+    chunks: list,
+    language: str,
+    asr_backend: str,
+) -> list[tuple[str | None, float, str]]:
+    service = {"nemo": "nemo", "seamless-m4t": "seamless"}.get(asr_backend)
+    if not service:
+        return [
+            _transcribe_one_chunk(audio_path, chunk, language, asr_backend)
+            for chunk in chunks
+        ]
+    prepared: list[tuple[object, Path]] = []
+    temporary: list[Path] = []
+    results: list[tuple[str | None, float, str] | None] = [None] * len(chunks)
+    try:
+        for index, chunk in enumerate(chunks):
+            wav_path, is_temp = _chunk_wav_for_asr(
+                audio_path,
+                chunk,
+                language,
+                asr_backend,
+            )
+            if wav_path is None:
+                results[index] = (None, 0.0, "")
+                continue
+            prepared.append((index, wav_path))
+            if is_temp:
+                temporary.append(wav_path)
+        if prepared:
+            paths = [path for _, path in prepared]
+            try:
+                batch_results = transcribe_remote_batch(
+                    paths,
+                    language,
+                    service,
+                    audio_id=audio_path.name,
+                )
+            except RuntimeError as exc:
+                # An older service, rejected duration, OOM, or malformed response
+                # must preserve output semantics by retrying each chunk singly.
+                logger.warning(
+                    "Remote %s micro-batch failed (%s); retrying ordered singles",
+                    service,
+                    exc,
+                )
+                batch_results = [
+                    _transcribe_file_distributed(path, language, asr_backend)
+                    for path in paths
+                ]
+            if len(batch_results) != len(prepared):
+                raise RuntimeError(
+                    f"{service} micro-batch returned {len(batch_results)} "
+                    f"results for {len(prepared)} prepared chunks"
+                )
+            for (index, _), (text, engine) in zip(prepared, batch_results):
+                results[index] = _format_chunk_result(
+                    chunks[index],
+                    text,
+                    engine,
+                )
+        return [
+            result if result is not None else (None, 0.0, "")
+            for result in results
+        ]
+    finally:
+        for path in temporary:
+            if path.exists():
+                path.unlink(missing_ok=True)
+
+
 def _run_chunks_in_order(worker, chunks, max_workers: int) -> list:
     """Fan chunks out to a thread pool; return results strictly in input order."""
     results: dict[int, tuple] = {}
@@ -425,8 +558,39 @@ def _collect_transcript_lines(
 ) -> tuple[list[str], float, str]:
     """Transcribe all diarized chunks; return (lines, max_end_sec, engine)."""
     sorted_chunks = sorted(chunks, key=lambda c: c.start_sec)
+    use_microbatch = (
+        AI_DISTRIBUTED
+        and ASR_MICROBATCH_ENABLED
+        and asr_backend in {"nemo", "seamless-m4t"}
+        and len(sorted_chunks) > 1
+    )
     use_parallel = AI_DISTRIBUTED and ASR_CHUNK_PARALLELISM > 1 and len(sorted_chunks) > 1
-    if use_parallel:
+    if use_microbatch:
+        groups = batch_chunks_by_duration(
+            sorted_chunks,
+            max_items=ASR_MICROBATCH_MAX_ITEMS,
+            max_audio_sec=ASR_MICROBATCH_MAX_AUDIO_SEC,
+        )
+        _asr_log(
+            "ASR micro-batch: %d chunks in %d ordered batches (%s → %s; max=%d/%.0fs)",
+            len(sorted_chunks),
+            len(groups),
+            language,
+            asr_backend,
+            ASR_MICROBATCH_MAX_ITEMS,
+            ASR_MICROBATCH_MAX_AUDIO_SEC,
+        )
+        chunk_results = []
+        for group in groups:
+            chunk_results.extend(
+                _transcribe_chunk_batch(
+                    audio_path,
+                    group,
+                    language,
+                    asr_backend,
+                )
+            )
+    elif use_parallel:
         _asr_log(
             "Distributed ASR fan-out: %d chunks across %d workers (%s → %s)",
             len(sorted_chunks),
@@ -458,11 +622,287 @@ def _collect_transcript_lines(
     return lines, max_end, engine
 
 
+def _transcribe_compliance_opening(
+    audio_path: Path,
+    chunks: list,
+    language: str,
+    asr_backend: str,
+) -> str:
+    """Decode one contextual opening window from the isolated agent channel.
+
+    Short turn-by-turn decoding is retained as the authoritative transcript.
+    The contextual result is a separate evidence lane, preventing duplicated
+    UI turns and preventing customer speech from being attributed to the agent.
+    Any failure is non-fatal because the primary transcript has already run.
+    """
+    if not ASR_COMPLIANCE_OPENING_ENABLED or not chunks:
+        return ""
+    agent_chunks = [
+        chunk for chunk in chunks
+        if chunk.speaker == "Agent" and chunk.start_sec < ASR_COMPLIANCE_OPENING_SEC
+    ]
+    if not agent_chunks:
+        return ""
+    end_sec = min(
+        ASR_COMPLIANCE_OPENING_SEC,
+        max(float(chunk.end_sec) for chunk in chunks),
+    )
+    if end_sec <= 0:
+        return ""
+
+    opening_path: Path | None = None
+    try:
+        opening_path = reexport_stereo_chunk_with_padding(
+            audio_path,
+            speaker="Agent",
+            start_sec=0.0,
+            end_sec=end_sec,
+            pad_sec=0.0,
+        )
+        text: str | None = None
+        engine: str | None = None
+        # Whisper honours initial_prompt: bias the opening decode with the
+        # campaign script (org name, RPC ask, disclaimer) so compliance
+        # phrases survive noisy telephony audio. Only when faster-whisper is
+        # already the routed backend — never force-load an extra local model.
+        if ASR_OPENING_PROMPT_ENABLED and asr_backend == "faster-whisper":
+            try:
+                with _local_asr_lock:
+                    text, engine = fw_transcribe_chunk(
+                        opening_path, language, initial_prompt=ASR_OPENING_PROMPT
+                    )
+            except Exception as exc:  # noqa: BLE001 - fall back to plain decode
+                logger.warning("Biased opening decode failed: %s", exc)
+                text = None
+        if not text:
+            text, engine = _transcribe_file(opening_path, language, asr_backend)
+        value = scrub_asr_artifacts(str(text or "").strip())
+        if not value or value == "[No speech detected]":
+            return ""
+        _asr_log(
+            "Compliance opening recovered: %.1fs agent channel via %s (%d chars)",
+            end_sec,
+            engine or asr_backend,
+            len(value),
+        )
+        return value
+    except Exception as exc:  # noqa: BLE001 - primary transcript remains valid
+        logger.warning("Compliance opening decode failed for %s: %s", audio_path.name, exc)
+        return ""
+    finally:
+        if opening_path is not None and opening_path.exists():
+            opening_path.unlink(missing_ok=True)
+
+
+def _referee_ready() -> tuple[bool, str]:
+    """(ready, reason). The reason is always logged so a dead referee is visible."""
+    if not (ASR_SECOND_PASS_ENABLED and WHISPER_REFEREE_ENABLED):
+        return False, "referee disabled by config"
+    try:
+        health = faster_whisper_health()
+    except Exception as exc:  # noqa: BLE001
+        return False, f"faster-whisper probe raised: {exc}"
+    if health.get("ready"):
+        return True, f"faster-whisper {health.get('compute_type')} on {health.get('device')}"
+    return False, str(health.get("error") or "faster-whisper not ready")
+
+
+def _referee_health_report() -> dict:
+    """Status for /health. Never loads the model — a probe would defeat the split."""
+    if not (ASR_SECOND_PASS_ENABLED and WHISPER_REFEREE_ENABLED):
+        return {"ready": False, "detail": "referee disabled by config"}
+    from config import FASTER_WHISPER_MODEL_PATH
+
+    if FASTER_WHISPER_MODEL_PATH and Path(FASTER_WHISPER_MODEL_PATH).is_dir():
+        return {
+            "ready": True,
+            "detail": f"model present at {FASTER_WHISPER_MODEL_PATH}",
+        }
+    return {
+        "ready": False,
+        "detail": (
+            f"FASTER_WHISPER_MODEL_PATH={FASTER_WHISPER_MODEL_PATH!r} "
+            "is not a directory"
+        ),
+    }
+
+
+def _referee_decode(
+    audio_path: Path,
+    speaker: str,
+    start_sec: float,
+    end_sec: float,
+    language: str,
+    prompt: str = "",
+) -> str:
+    """Second opinion on one window. Empty string on any failure."""
+    ready, reason = _referee_ready()
+    if not ready:
+        _asr_log("[REFEREE] skipped %.1f-%.1fs: %s", start_sec, end_sec, reason)
+        return ""
+
+    window_path = None
+    try:
+        window_path = reexport_stereo_chunk_with_padding(
+            audio_path,
+            speaker=speaker,
+            start_sec=start_sec,
+            end_sec=end_sec,
+            pad_sec=0.0,
+        )
+        started = time.monotonic()
+        with _local_asr_lock:
+            text, engine = fw_transcribe_chunk(
+                window_path,
+                language,
+                initial_prompt=prompt or None,
+                beam_size=ASR_REFEREE_BEAM_SIZE,
+            )
+        value = scrub_asr_artifacts(str(text or "").strip())
+        if not value or value == "[No speech detected]":
+            _asr_log(
+                "[REFEREE] %.1f-%.1fs returned nothing after %.1fs",
+                start_sec,
+                end_sec,
+                time.monotonic() - started,
+            )
+            return ""
+        _asr_log(
+            "[REFEREE] %.1f-%.1fs %s via %s -> %d chars in %.1fs",
+            start_sec,
+            end_sec,
+            speaker,
+            engine,
+            len(value),
+            time.monotonic() - started,
+        )
+        return value
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[REFEREE] decode failed for %s %.1f-%.1fs: %s",
+            audio_path.name,
+            start_sec,
+            end_sec,
+            exc,
+        )
+        return ""
+    finally:
+        if window_path is not None and window_path.exists():
+            window_path.unlink(missing_ok=True)
+
+
+def _apply_second_pass_opening(
+    lines: list[str],
+    audio_path: Path,
+    language: str,
+    compliance_opening_evidence: str,
+) -> tuple[list[str], str]:
+    """Referee-splice a Whisper opening when the primary opening is weak."""
+    if ASR_SECOND_PASS_ENABLED and ASR_SECOND_PASS_OPENING:
+        from asr_second_pass import (
+            opening_is_weak,
+            pick_opening,
+            splice_second_pass_opening,
+        )
+
+        agent_open = " ".join(
+            line.split("): ", 1)[-1]
+            for line in lines
+            if " (Agent):" in line
+            and float(line.split(" - ", 1)[0]) < ASR_COMPLIANCE_OPENING_SEC
+        )
+        if opening_is_weak(agent_open) or opening_is_weak(compliance_opening_evidence):
+            # No prompt: Whisper parrots initial_prompt verbatim. A fact-bearing
+            # prompt would fabricate the compliance phrases we are trying to detect.
+            whisper_open = _referee_decode(
+                audio_path,
+                "Agent",
+                0.0,
+                ASR_COMPLIANCE_OPENING_SEC,
+                language,
+                ASR_OPENING_PROMPT if ASR_OPENING_PROMPT_ENABLED else "",
+            )
+            if whisper_open:
+                spliced2 = splice_second_pass_opening(
+                    lines, whisper_open, ASR_COMPLIANCE_OPENING_SEC
+                )
+                if spliced2 != lines:
+                    _asr_log(
+                        "Second-pass opening accepted (%d chars)",
+                        len(whisper_open),
+                    )
+                    lines = spliced2
+                chosen = pick_opening(compliance_opening_evidence, whisper_open)
+                if chosen == " ".join(whisper_open.split()):
+                    compliance_opening_evidence = whisper_open
+    return lines, compliance_opening_evidence
+
+
+def _apply_referee_windows(
+    lines: list[str],
+    audio_path: Path,
+    language: str,
+) -> list[str]:
+    """Re-decode implausible rows anywhere in the call, not just the opening.
+
+    CPU inference is not free, so this is bounded twice: by window count and
+    by a wall-clock budget. A window is only replaced when the referee returns
+    text; otherwise the primary decode stands.
+    """
+    if not (ASR_SECOND_PASS_ENABLED and WHISPER_REFEREE_ENABLED):
+        return lines
+
+    from asr_second_pass import implausible_windows, splice_window
+
+    windows = implausible_windows(
+        lines, ASR_MAX_WORDS_PER_SEC, ASR_REFEREE_MAX_WINDOWS
+    )
+    if not windows:
+        return lines
+    _asr_log(
+        "[REFEREE] %d implausible window(s) in %s", len(windows), audio_path.name
+    )
+
+    deadline = time.monotonic() + ASR_REFEREE_BUDGET_SEC
+    for start_sec, end_sec, speaker in windows:
+        if time.monotonic() >= deadline:
+            _asr_log(
+                "[REFEREE] budget of %.0fs exhausted — %s keeps its primary decode",
+                ASR_REFEREE_BUDGET_SEC,
+                audio_path.name,
+            )
+            break
+        refereed = _referee_decode(
+            audio_path, speaker, start_sec, end_sec, language
+        )
+        if not refereed:
+            continue
+        spliced = splice_window(lines, start_sec, end_sec, speaker, refereed)
+        if spliced != lines:
+            _asr_log(
+                "[REFEREE] accepted %.1f-%.1fs %s (%d chars)",
+                start_sec,
+                end_sec,
+                speaker,
+                len(refereed),
+            )
+            lines = spliced
+    return lines
+
+
 def _pick_sparse_fallback_backend(current: str) -> str | None:
     """Alternate ASR backend when the primary returns almost no text."""
-    if current != "faster-whisper" and faster_whisper_health().get("ready"):
+    if (
+        not (AI_DISTRIBUTED and AI_REMOTE_FAIL_CLOSED)
+        and current != "faster-whisper"
+        and faster_whisper_health().get("ready")
+    ):
         return "faster-whisper"
-    if current != "whisper-large-v3" and whisper_asr_health().get("ready"):
+    if (
+        not (AI_DISTRIBUTED and AI_REMOTE_FAIL_CLOSED)
+        and current != "whisper-large-v3"
+        and whisper_asr_health().get("ready")
+    ):
         return "whisper-large-v3"
     if current != "seamless-m4t" and SEAMLESS_M4T_ENABLED:
         seamless = asr_service_health("seamless") if AI_DISTRIBUTED else seamless_m4t_health()
@@ -490,94 +930,166 @@ def is_transcript_usable(
     return words >= 1
 
 
+@contextmanager
+def _noop_gpu_asr_slot() -> Iterator[float]:
+    """Used when the caller does not supply a GPU stage gate."""
+    yield 0.0
+
+
 def transcribe(
     audio_path: Path,
     *,
     on_progress: Callable[[str, str | None], None] | None = None,
+    gpu_asr_slot: Callable[[], ContextManager[float]] | None = None,
+    on_gpu_wait: Callable[[float], None] | None = None,
 ) -> TranscriptionResult:
+    """Run diarization on CPU, then language detection + ASR under the GPU lane.
+
+    ``gpu_asr_slot`` must be a zero-arg callable returning a context manager that
+    yields wait_ms (for example ``asr_slot`` from ``gpu_stage_scheduler``). CPU
+    Silero diarization runs *before* that slot is acquired so a second call can
+    prepare speaker chunks while another call holds GPU1 for LID/ASR.
+    """
     backend = _pick_backend()
 
+    # CPU stage — must not hold the exclusive GPU ASR lane.
     if on_progress:
-        on_progress("detecting_language", None)
-    language = _detect_language_any(audio_path)
-    if on_progress:
-        on_progress("detecting_language", language)
-
+        on_progress("diarizing", None)
     dia = diarize(audio_path)
     if on_progress:
-        on_progress("diarizing", language)
+        on_progress("diarizing", None)
 
-    if not dia.is_stereo or not dia.chunks:
-        return _transcribe_mono_fallback(audio_path, backend, on_progress=on_progress)
+    slot = gpu_asr_slot or _noop_gpu_asr_slot
+    with slot() as gpu_wait_ms:
+        if on_gpu_wait is not None:
+            on_gpu_wait(float(gpu_wait_ms or 0.0))
 
-    agent_chunks = sum(1 for c in dia.chunks if c.speaker == "Agent")
-    customer_chunks = sum(1 for c in dia.chunks if c.speaker == "Customer")
-    logger.info(
-        "Diarization produced %d chunks (%d agent, %d customer) for %s lang=%s",
-        len(dia.chunks), agent_chunks, customer_chunks, audio_path.name, language,
-    )
-    if customer_chunks == 0 and len(dia.chunks) <= 3:
-        logger.warning(
-            "Very few customer chunks for stereo call %s — check channel mapping or audio format",
-            audio_path.name,
+        if not dia.is_stereo or not dia.chunks:
+            return _transcribe_mono_fallback(
+                audio_path, backend, on_progress=on_progress
+            )
+
+        if on_progress:
+            on_progress("detecting_language", None)
+        language = _detect_language_any(audio_path)
+        if on_progress:
+            on_progress("detecting_language", language)
+
+        agent_chunks = sum(1 for c in dia.chunks if c.speaker == "Agent")
+        customer_chunks = sum(1 for c in dia.chunks if c.speaker == "Customer")
+        logger.info(
+            "Diarization produced %d chunks (%d agent, %d customer) for %s lang=%s",
+            len(dia.chunks), agent_chunks, customer_chunks, audio_path.name, language,
+        )
+        if customer_chunks == 0 and len(dia.chunks) <= 3:
+            logger.warning(
+                "Very few customer chunks for stereo call %s — check channel mapping or audio format",
+                audio_path.name,
+            )
+
+        asr_backend = _resolve_asr_backend(language, backend)
+        if on_progress:
+            on_progress("transcribing", language)
+
+        lines, max_end, engine = _collect_transcript_lines(
+            audio_path, dia.chunks, language, asr_backend
         )
 
-    asr_backend = _resolve_asr_backend(language, backend)
-    if on_progress:
-        on_progress("transcribing", language)
+        compliance_opening_evidence = _transcribe_compliance_opening(
+            audio_path,
+            dia.chunks,
+            language,
+            asr_backend,
+        )
 
-    lines, max_end, engine = _collect_transcript_lines(
-        audio_path, dia.chunks, language, asr_backend
-    )
+        if ASR_OPENING_SPLICE_ENABLED and compliance_opening_evidence:
+            from asr_opening_splice import splice_opening_into_transcript
 
-    chunk_total = len(dia.chunks)
-    line_ratio = len(lines) / max(chunk_total, 1)
-    if (
-        ASR_SPARSE_FALLBACK_ENABLED
-        and chunk_total >= 5
-        and line_ratio < ASR_SPARSE_MIN_LINE_RATIO
-    ):
-        fallback = _pick_sparse_fallback_backend(asr_backend)
-        if fallback:
-            logger.warning(
-                "Sparse ASR for %s: %d/%d lines via %s — retrying with %s",
+            spliced = splice_opening_into_transcript(
+                lines,
+                compliance_opening_evidence,
+                ASR_COMPLIANCE_OPENING_SEC,
+            )
+            if spliced != lines:
+                replaced = sum(
+                    1
+                    for line in lines
+                    if " (Agent):" in line
+                    and float(line.split(" - ", 1)[0]) < ASR_COMPLIANCE_OPENING_SEC
+                )
+                _asr_log(
+                    "Opening splice used %d-char evidence in place of %d short agent lines",
+                    len(compliance_opening_evidence),
+                    replaced,
+                )
+                lines = spliced
+
+        lines, compliance_opening_evidence = _apply_second_pass_opening(
+            lines, audio_path, language, compliance_opening_evidence
+        )
+        lines = _apply_referee_windows(lines, audio_path, language)
+
+        chunk_total = len(dia.chunks)
+        line_ratio = len(lines) / max(chunk_total, 1)
+        if (
+            ASR_SPARSE_FALLBACK_ENABLED
+            and chunk_total >= 5
+            and line_ratio < ASR_SPARSE_MIN_LINE_RATIO
+        ):
+            fallback = _pick_sparse_fallback_backend(asr_backend)
+            if fallback:
+                logger.warning(
+                    "Sparse ASR for %s: %d/%d lines via %s — retrying with %s",
+                    audio_path.name,
+                    len(lines),
+                    chunk_total,
+                    asr_backend,
+                    fallback,
+                )
+                fb_lines, fb_max, fb_engine = _collect_transcript_lines(
+                    audio_path, dia.chunks, language, fallback
+                )
+                if len(fb_lines) > len(lines):
+                    lines, max_end, engine = fb_lines, fb_max, fb_engine
+                    asr_backend = fallback
+                    if ASR_OPENING_SPLICE_ENABLED and compliance_opening_evidence:
+                        from asr_opening_splice import splice_opening_into_transcript
+
+                        lines = splice_opening_into_transcript(
+                            lines,
+                            compliance_opening_evidence,
+                            ASR_COMPLIANCE_OPENING_SEC,
+                        )
+                    lines, compliance_opening_evidence = _apply_second_pass_opening(
+                        lines, audio_path, language, compliance_opening_evidence
+                    )
+                    lines = _apply_referee_windows(lines, audio_path, language)
+
+        if not max_end and dia.chunks:
+            max_end = max(c.end_sec for c in dia.chunks)
+
+        transcript = "\n".join(lines) if lines else "[No speech detected]"
+        if not is_transcript_usable(transcript, chunk_total):
+            logger.error(
+                "Unusable transcript for %s: %d chars, %d/%d chunk lines, engine=%s lang=%s",
                 audio_path.name,
+                len(transcript),
                 len(lines),
                 chunk_total,
-                asr_backend,
-                fallback,
+                engine or asr_backend,
+                language,
             )
-            fb_lines, fb_max, fb_engine = _collect_transcript_lines(
-                audio_path, dia.chunks, language, fallback
-            )
-            if len(fb_lines) > len(lines):
-                lines, max_end, engine = fb_lines, fb_max, fb_engine
-                asr_backend = fallback
 
-    if not max_end and dia.chunks:
-        max_end = max(c.end_sec for c in dia.chunks)
-
-    transcript = "\n".join(lines) if lines else "[No speech detected]"
-    if not is_transcript_usable(transcript, chunk_total):
-        logger.error(
-            "Unusable transcript for %s: %d chars, %d/%d chunk lines, engine=%s lang=%s",
-            audio_path.name,
-            len(transcript),
-            len(lines),
-            chunk_total,
-            engine or asr_backend,
-            language,
+        return TranscriptionResult(
+            transcript=transcript,
+            language=language,
+            duration=format_duration(max_end),
+            duration_seconds=max_end,
+            asr_engine=engine or asr_backend,
+            diarization_status=dia.status,
+            chunk_count=chunk_total,
+            compliance_opening_evidence=compliance_opening_evidence,
         )
-
-    return TranscriptionResult(
-        transcript=transcript,
-        language=language,
-        duration=format_duration(max_end),
-        duration_seconds=max_end,
-        asr_engine=engine or asr_backend,
-        diarization_status=dia.status,
-        chunk_count=chunk_total,
-    )
 
 
 def transcription_health() -> dict:
@@ -602,10 +1114,21 @@ def transcription_health() -> dict:
             "nemo_service": nemo_svc,
             "seamless_service": seamless_svc,
             "chunk_parallelism": ASR_CHUNK_PARALLELISM,
-            "local_fallback": "faster-whisper (lazy — loads only if a remote ASR service fails)",
+            "microbatch": {
+                "enabled": ASR_MICROBATCH_ENABLED,
+                "max_items": ASR_MICROBATCH_MAX_ITEMS,
+                "max_audio_sec": ASR_MICROBATCH_MAX_AUDIO_SEC,
+            },
+            "local_fallback": (
+                "disabled (fail closed)"
+                if AI_REMOTE_FAIL_CLOSED
+                else "faster-whisper (lazy — loads only if a remote ASR service fails)"
+            ),
+            "whisper_referee": _referee_health_report(),
+            "remote_fail_closed": AI_REMOTE_FAIL_CLOSED,
             "pipeline": (
                 "diarize (local) + lang-detect (sp-ai-whisper-lang) + "
-                "per-chunk-asr (sp-ai-nemo hi/en, sp-ai-seamless-m4t other)"
+                "per-chunk-asr (sp-ai-nemo en, sp-ai-seamless-m4t other)"
             ),
         }
 
