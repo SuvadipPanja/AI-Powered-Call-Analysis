@@ -1,0 +1,8 @@
+# Whisper referee overlay for the production language service.
+# Adds POST /transcribe-window on the already-resident Whisper large-v3.
+FROM sp-ai-whisper-lang:prod
+
+WORKDIR /app
+
+COPY ai-mvp/whisper_window_asr.py ai-mvp/language_worker.py ./
+COPY services/sp-ai-whisper-lang/server.py ./lang_service_server.py

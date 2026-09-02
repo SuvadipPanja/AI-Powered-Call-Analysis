@@ -581,6 +581,8 @@ services:
       # --- Offline Whisper referee (CPU, CTranslate2). Advisory only: it never
       # becomes the primary ASR lane, which stays Seamless/NeMo. ---
       WHISPER_REFEREE_ENABLED: ${WHISPER_REFEREE_ENABLED:-true}
+      WHISPER_REFEREE_CPU_FALLBACK: ${WHISPER_REFEREE_CPU_FALLBACK:-false}
+      WHISPER_REFEREE_TIMEOUT_SEC: ${WHISPER_REFEREE_TIMEOUT_SEC:-45}
       FASTER_WHISPER_MODEL_PATH: ${FASTER_WHISPER_MODEL_PATH:-/models/faster-whisper-large-v3}
       FASTER_WHISPER_OFFLINE_ONLY: ${FASTER_WHISPER_OFFLINE_ONLY:-true}
       FASTER_WHISPER_DEVICE: ${FASTER_WHISPER_DEVICE:-cpu}

@@ -60,6 +60,7 @@ from config import (
     NEMO_ASR_LANGUAGES,
     SEAMLESS_M4T_ENABLED,
     TRANSCRIBE_BACKEND,
+    WHISPER_REFEREE_CPU_FALLBACK,
     WHISPER_REFEREE_ENABLED,
 )
 from diarization_worker import diarize, diarization_health
@@ -695,9 +696,23 @@ def _transcribe_compliance_opening(
 
 
 def _referee_ready() -> tuple[bool, str]:
-    """(ready, reason). The reason is always logged so a dead referee is visible."""
+    """(ready, reason). Prefers the GPU lang-service window. Never loads CPU Whisper."""
     if not (ASR_SECOND_PASS_ENABLED and WHISPER_REFEREE_ENABLED):
         return False, "referee disabled by config"
+    try:
+        from whisper_referee_client import whisper_referee_health
+
+        remote = whisper_referee_health()
+    except Exception as exc:  # noqa: BLE001
+        remote = {"ready": False, "error": str(exc)}
+    if remote.get("ready"):
+        return True, f"whisper-large-v3-window on {remote.get('device') or 'lang-service'}"
+    if not WHISPER_REFEREE_CPU_FALLBACK:
+        return False, (
+            "GPU referee not advertised on lang-service "
+            f"({remote.get('error') or 'whisper-window missing'}); "
+            "CPU fallback disabled"
+        )
     try:
         health = faster_whisper_health()
     except Exception as exc:  # noqa: BLE001
@@ -708,22 +723,23 @@ def _referee_ready() -> tuple[bool, str]:
 
 
 def _referee_health_report() -> dict:
-    """Status for /health. Never loads the model — a probe would defeat the split."""
+    """Status for /health. Never loads the local CTranslate2 model."""
     if not (ASR_SECOND_PASS_ENABLED and WHISPER_REFEREE_ENABLED):
         return {"ready": False, "detail": "referee disabled by config"}
-    from config import FASTER_WHISPER_MODEL_PATH
+    try:
+        from whisper_referee_client import whisper_referee_health
 
-    if FASTER_WHISPER_MODEL_PATH and Path(FASTER_WHISPER_MODEL_PATH).is_dir():
-        return {
-            "ready": True,
-            "detail": f"model present at {FASTER_WHISPER_MODEL_PATH}",
-        }
+        remote = whisper_referee_health()
+    except Exception as exc:  # noqa: BLE001
+        remote = {"ready": False, "error": str(exc)}
     return {
-        "ready": False,
+        "ready": bool(remote.get("ready")),
         "detail": (
-            f"FASTER_WHISPER_MODEL_PATH={FASTER_WHISPER_MODEL_PATH!r} "
-            "is not a directory"
+            f"lang-service whisper-window device={remote.get('device')}"
+            if remote.get("ready")
+            else remote.get("error") or "whisper-window not advertised"
         ),
+        "cpu_fallback": WHISPER_REFEREE_CPU_FALLBACK,
     }
 
 
@@ -751,14 +767,22 @@ def _referee_decode(
             pad_sec=0.0,
         )
         started = time.monotonic()
-        with _local_asr_lock:
-            text, engine = fw_transcribe_chunk(
-                window_path,
-                language,
-                initial_prompt=prompt or None,
-                beam_size=ASR_REFEREE_BEAM_SIZE,
-                vad_filter=False,
+        if reason.startswith("whisper-large-v3-window"):
+            from whisper_referee_client import transcribe_window_remote
+
+            text = transcribe_window_remote(
+                window_path, language, prompt, audio_path.name
             )
+            engine = "whisper-large-v3-window"
+        else:
+            with _local_asr_lock:
+                text, engine = fw_transcribe_chunk(
+                    window_path,
+                    language,
+                    initial_prompt=prompt or None,
+                    beam_size=ASR_REFEREE_BEAM_SIZE,
+                    vad_filter=False,
+                )
         value = scrub_asr_artifacts(str(text or "").strip())
         if not value or value == "[No speech detected]":
             _asr_log(

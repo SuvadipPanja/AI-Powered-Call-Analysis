@@ -741,6 +741,11 @@ ASR_SECOND_PASS_OPENING = (
 WHISPER_REFEREE_ENABLED = (
     os.getenv("WHISPER_REFEREE_ENABLED", "true").lower() == "true"
 )
+# CPU CTranslate2 is a last resort. Default off — it is too slow for prod
+# call latency. The GPU referee lives on sp-ai-whisper-lang.
+WHISPER_REFEREE_CPU_FALLBACK = (
+    os.getenv("WHISPER_REFEREE_CPU_FALLBACK", "false").lower() == "true"
+)
 # Greedy decoding for referee windows: beam 5 is ~5x slower on CPU for a
 # quality gain that the adjudicator cannot exploit.
 ASR_REFEREE_BEAM_SIZE = int(os.getenv("ASR_REFEREE_BEAM_SIZE", "1"))

@@ -23,6 +23,7 @@ from config import (
     LANG_BENGALI_PRIORITY_BONUS,
     LANG_CALL_CENTER_MODE,
     LANG_HINDI_CONFUSABLE_CODES,
+    LANG_INDIC_ACOUSTIC_ENABLED,
     LANG_MAP_URDU_TO_HINDI,
     LANG_MAP_NEPALI_TO_HINDI,
     LANG_MAP_ASSAMESE_TO_BENGALI,
@@ -749,18 +750,38 @@ def _load_transformers_whisper():
         )
 
         path = str(WHISPER_LANG_MODEL_PATH)
+        device = _tw_device()
+        dtype = torch.float16 if device == "cuda" else torch.float32
         _tw_processor = WhisperProcessor.from_pretrained(path)
-        _tw_model = WhisperForConditionalGeneration.from_pretrained(path)
-        if _tw_device() == "cpu":
-            _tw_model = _tw_model.float()
-        _tw_model = _tw_model.to(_tw_device())
+        # Loading Whisper large-v3 with its default float32 dtype consumed
+        # ~8.6 GiB on the production L40S. FP16 is native on this GPU, is faster,
+        # and cuts the persistent language-model allocation roughly in half.
+        _tw_model = WhisperForConditionalGeneration.from_pretrained(
+            path,
+            torch_dtype=dtype,
+        )
+        _tw_model = _tw_model.to(device)
         _tw_model.eval()
         _tw_tokenizer = WhisperTokenizer.from_pretrained(path)
-        logger.info("Whisper Large V3 LID loaded from %s on %s", path, _tw_device())
+        logger.info(
+            "Whisper Large V3 LID loaded from %s on %s (%s)",
+            path,
+            device,
+            dtype,
+        )
         return _tw_processor, _tw_model, _tw_tokenizer
     except Exception as exc:
         _tw_load_error = f"Failed to load Whisper Large V3: {exc}"
         raise RuntimeError(_tw_load_error) from exc
+
+
+def load_lid_whisper():
+    """Public accessor for the resident Whisper large-v3 LID model.
+
+    Returns ``(processor, model, tokenizer)``. Window decodes borrow this
+    already-loaded object and must serialize GPU access themselves.
+    """
+    return _load_transformers_whisper()
 
 
 def _input_features(processor, model, sample_path: Path):
@@ -776,7 +797,7 @@ def _input_features(processor, model, sample_path: Path):
         return_tensors="pt",
         sampling_rate=16000,
     )
-    return inputs.input_features.to(model.device)
+    return inputs.input_features.to(device=model.device, dtype=model.dtype)
 
 
 def _lang_token_id(tokenizer, lang_code: str) -> int | None:
@@ -1246,6 +1267,55 @@ def _disambiguate_hi_bn(
     return candidate
 
 
+def _verify_indic_acoustic_with_details(
+    audio_path: Path,
+    candidate: str,
+) -> tuple[str, dict]:
+    """Run the final word-independent Indic acoustic decision gate.
+
+    Whisper/wordmatch remains the primary detector.  The acoustic worker can
+    promote a regional label only on strong multi-window evidence; shadow mode,
+    mixed evidence, and model failures preserve the normalized upstream result.
+    """
+    if not LANG_INDIC_ACOUSTIC_ENABLED:
+        return candidate, {
+            "enabled": False,
+            "upstream": candidate,
+            "final": candidate,
+            "decision_source": "upstream",
+            "decision_confidence": None,
+        }
+    try:
+        from acoustic_lid_worker import verify_acoustic_language
+
+        decision, details = verify_acoustic_language(audio_path, candidate)
+        _lid_log("acoustic indic candidate=%s decision=%s details=%s",
+                 candidate, decision, details)
+        if decision:
+            return decision, details
+    except Exception as exc:
+        _lid_log("acoustic indic failed (%s) — preserving %s", exc, candidate)
+        return candidate, {
+            "enabled": True,
+            "upstream": candidate,
+            "final": candidate,
+            "decision_source": "upstream-error",
+            "decision_confidence": None,
+            "error": str(exc),
+        }
+    return candidate, {
+        "enabled": True,
+        "upstream": candidate,
+        "final": candidate,
+        "decision_source": "upstream",
+        "decision_confidence": None,
+    }
+
+
+def _verify_indic_acoustic(audio_path: Path, candidate: str) -> str:
+    return _verify_indic_acoustic_with_details(audio_path, candidate)[0]
+
+
 def _whisper_auto_transcribe_snippet(
     processor,
     model,
@@ -1562,6 +1632,7 @@ def _detect_language_fast(audio_path: Path, channel: str | None = None) -> str:
                 return "Hindi"
 
         # Fast path: confident Hindi/Bengali token — skip heavy guard transcribes.
+        # The call-level acoustic hi/mr verifier runs once at the public entry point.
         if lang_code == "hi" and probability >= LANG_FAST_PATH_HI_CONFIDENCE:
             _lid_log("fast path: confident Hindi token (p=%.3f)", probability)
             return "Hindi"
@@ -1803,7 +1874,7 @@ def _detect_language_multi_channel(audio_path: Path, *, include_mix: bool = True
 def _detect_language_ensemble_fast(audio_path: Path) -> str:
     """GPU-friendly LID: agent channel first; expand only when ambiguous."""
     agent_lang = _detect_language_fast(audio_path, channel="agent")
-    if agent_lang in ("Hindi", "Bengali"):
+    if agent_lang in ("Hindi", "Bengali", "Marathi"):
         _lid_log("fast ensemble: agent Indic → %s (skip slow probes)", agent_lang)
         return agent_lang
 
@@ -1825,14 +1896,14 @@ def _detect_language_ensemble_fast(audio_path: Path) -> str:
     else:
         whisper_lang = agent_lang
 
-    if whisper_lang in ("Hindi", "Bengali"):
+    if whisper_lang in ("Hindi", "Bengali", "Marathi"):
         _lid_log("fast ensemble: two-channel vote → %s", whisper_lang)
         return whisper_lang
     if whisper_lang in ("Urdu", "Nepali"):
         mapped = _normalize_call_center_language(whisper_lang)
         _lid_log("fast ensemble: %s → %s", whisper_lang, mapped)
         return mapped
-    if whisper_lang == "English" and agent_lang in ("Hindi", "Bengali"):
+    if whisper_lang == "English" and agent_lang in ("Hindi", "Bengali", "Marathi"):
         return agent_lang
 
     if whisper_lang not in ("Unknown", "English"):
@@ -2042,30 +2113,52 @@ def _detect_language_wordmatch(audio_path: Path) -> str:
     return _detect_language_restricted(audio_path)
 
 
-def detect_language(audio_path: Path, max_seconds: int = 30) -> str:
-    """LID entry point. LANG_DETECT_MODE + LANG_LID_BACKEND select the strategy."""
+def detect_language_upstream(audio_path: Path, max_seconds: int = 30) -> str:
+    """Run the existing Whisper/wordmatch pipeline without acoustic promotion."""
     if LANG_DETECT_MODE == "whisper-native":
-        return _normalize_call_center_language(_detect_language_whisper_native(audio_path))
-
-    backend = LANG_LID_BACKEND
-    if backend == "wordmatch":
-        result = _detect_language_wordmatch(audio_path)
-    elif backend == "restricted":
-        result = _detect_language_restricted(audio_path)
-    elif backend == "ensemble":
-        result = _detect_language_ensemble(audio_path)
-    elif backend == "seamless":
-        result = _detect_language_seamless_probe(audio_path) or _detect_language_fast(audio_path)
-    elif backend == "indiclid":
-        result = _detect_language_indiclid_first(audio_path) or _detect_language_fast(audio_path)
-    elif backend == "whisper":
-        if LANG_DETECT_MULTI_CHANNEL:
-            result = _detect_language_multi_channel(audio_path)
+        result = _detect_language_whisper_native(audio_path)
+    else:
+        backend = LANG_LID_BACKEND
+        if backend == "wordmatch":
+            result = _detect_language_wordmatch(audio_path)
+        elif backend == "restricted":
+            result = _detect_language_restricted(audio_path)
+        elif backend == "ensemble":
+            result = _detect_language_ensemble(audio_path)
+        elif backend == "seamless":
+            result = _detect_language_seamless_probe(audio_path) or _detect_language_fast(audio_path)
+        elif backend == "indiclid":
+            result = _detect_language_indiclid_first(audio_path) or _detect_language_fast(audio_path)
+        elif backend == "whisper":
+            if LANG_DETECT_MULTI_CHANNEL:
+                result = _detect_language_multi_channel(audio_path)
+            else:
+                result = _detect_language_fast(audio_path)
         else:
             result = _detect_language_fast(audio_path)
-    else:
-        result = _detect_language_fast(audio_path)
+
     return _normalize_call_center_language(result)
+
+
+def finalize_language_acoustically(audio_path: Path, candidate: str) -> str:
+    """Apply the final call-level acoustic gate without post-decision remaps."""
+    return _verify_indic_acoustic(audio_path, candidate)
+
+
+def finalize_language_acoustically_with_details(
+    audio_path: Path,
+    candidate: str,
+) -> tuple[str, dict]:
+    """Apply the final acoustic gate and return auditable decision metadata."""
+    return _verify_indic_acoustic_with_details(audio_path, candidate)
+
+
+def detect_language(audio_path: Path, max_seconds: int = 30) -> str:
+    """LID entry point with a final whole-audio Indic acoustic decision."""
+    result = detect_language_upstream(audio_path, max_seconds=max_seconds)
+    # Deliberately do not normalize again after this call.  A decisive acoustic
+    # Assamese/Nepali/Urdu winner must bypass the upstream call-center folds.
+    return finalize_language_acoustically(audio_path, result)
 
 
 def release_language_model() -> None:
@@ -2089,6 +2182,13 @@ def language_health() -> dict:
         seamless = seamless_service_health()
     except Exception as exc:
         seamless = {"ready": False, "error": str(exc)}
+
+    acoustic_indic = {}
+    try:
+        from acoustic_lid_worker import acoustic_lid_health
+        acoustic_indic = acoustic_lid_health()
+    except Exception as exc:
+        acoustic_indic = {"ready": False, "error": str(exc)}
 
     try:
         _load_transformers_whisper()
@@ -2119,10 +2219,15 @@ def language_health() -> dict:
             "device": _tw_device(),
             "indiclid": indic,
             "seamless": seamless,
+            "acoustic_indic": acoustic_indic,
+            # Temporary compatibility key for older health consumers.
+            "acoustic_hi_mr": acoustic_indic,
             "supported_languages": list(WHISPER_CODE_TO_LANGUAGE.values()),
             "script_verify": LANG_SCRIPT_VERIFY,
             "verify_always": LANG_VERIFY_ALWAYS,
             "call_center_mode": LANG_CALL_CENTER_MODE,
+            "marathi_detection": LANG_INDIC_ACOUSTIC_ENABLED,
+            "indic_acoustic_detection": LANG_INDIC_ACOUSTIC_ENABLED,
             "regional_detection": LANG_REGIONAL_DETECTION,
             "regional_languages": sorted(LANG_REGIONAL_LANGUAGES),
             "primary_languages": sorted(LANG_PRIMARY_LANGUAGES),

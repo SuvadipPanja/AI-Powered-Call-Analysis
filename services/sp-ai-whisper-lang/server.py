@@ -5,6 +5,8 @@ Thin HTTP wrapper around the CURRENT production LID pipeline in
 guard + hi/bn acoustic disambiguation + IndicLID text hints), muxed with the
 OLD ``AI/src/2nd step Language_Detection`` concept: energy-ranked multi-window
 sampling across the whole call with a majority / confidence-weighted vote.
+The resulting upstream label is then passed through one whole-call,
+word-independent Vakgyata + ECAPA Indic acoustic gate.
 
 Deployment: this file is copied into the image as ``/app/lang_service_server.py``
 next to the full ai-mvp code base, so every ai-mvp module (``language_worker``,
@@ -34,16 +36,29 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from flask import Flask, jsonify, request
+from gpu_identity import assert_expected_gpu
 
 try:
     from audio_io import load_audio, save_audio
-    from language_worker import detect_language, language_health
+    from language_worker import (
+        detect_language_upstream,
+        finalize_language_acoustically_with_details,
+        language_health,
+    )
 
     _IMPORT_ERROR: str | None = None
 except Exception as exc:  # pragma: no cover — base image always ships ai-mvp
-    load_audio = save_audio = detect_language = language_health = None  # type: ignore[assignment]
+    load_audio = save_audio = detect_language_upstream = None  # type: ignore[assignment]
+    finalize_language_acoustically_with_details = None  # type: ignore[assignment]
+    language_health = None  # type: ignore[assignment]
     _IMPORT_ERROR = f"ai-mvp modules unavailable: {exc}"
     logger.exception("Failed to import ai-mvp modules")
+
+try:
+    from whisper_window_asr import transcribe_window
+except Exception as exc:  # window decode is additive — LID must still start
+    transcribe_window = None  # type: ignore[assignment]
+    logger.warning("whisper_window_asr unavailable: %s", exc)
 
 
 # --------------------------------------------------------------------------
@@ -92,23 +107,35 @@ app = Flask(__name__)
 # --------------------------------------------------------------------------
 
 _STARTUP_ERROR: str | None = _IMPORT_ERROR
+GPU_IDENTITY = assert_expected_gpu(
+    SERVICE_NAME,
+    required=os.getenv("WHISPER_LANG_DEVICE", "auto").strip().lower() != "cpu",
+)
 
 if _IMPORT_ERROR is None:
     try:
         logger.info("Eager-loading Whisper Large V3 LID model (may take a while on first boot)...")
         _t0 = time.monotonic()
         _boot_health = language_health()
-        if _boot_health.get("ready"):
+        _boot_acoustic = _boot_health.get("acoustic_indic") or {}
+        _boot_ready = bool(_boot_health.get("ready")) and (
+            not _boot_acoustic.get("enabled") or bool(_boot_acoustic.get("ready"))
+        )
+        if _boot_ready:
             logger.info(
-                "Whisper LID model resident in %.1fs (device=%s, method=%s, multi_chunk=%s count=%d win=%.0fs)",
+                "Whisper + acoustic Indic LID resident in %.1fs (device=%s, method=%s, multi_chunk=%s count=%d win=%.0fs)",
                 time.monotonic() - _t0,
                 _boot_health.get("device"),
                 _boot_health.get("method"),
                 MULTI_CHUNK, CHUNK_COUNT, CHUNK_SEC,
             )
         else:
-            _STARTUP_ERROR = str(_boot_health.get("error") or "language model failed to load")
-            logger.error("Whisper LID eager load failed: %s", _STARTUP_ERROR)
+            _STARTUP_ERROR = str(
+                _boot_acoustic.get("error")
+                or _boot_health.get("error")
+                or "language model failed to load"
+            )
+            logger.error("Language LID eager load failed: %s", _STARTUP_ERROR)
     except Exception as exc:  # defensive — must never crash-loop the container
         _STARTUP_ERROR = str(exc)
         logger.exception("Whisper LID eager load crashed")
@@ -161,29 +188,70 @@ def _normalize_to_wav(src: Path, tmp_dir: Path) -> Path:
     return src
 
 
+def _acoustic_summary(details: dict) -> dict:
+    return {
+        key: details.get(key)
+        for key in (
+            "enabled",
+            "mode",
+            "upstream",
+            "baseline",
+            "recommendation",
+            "recommendation_source",
+            "applied",
+            "final",
+            "decision_source",
+            "decision_confidence",
+            "windows",
+            "core_decision",
+            "hi_mr_decision",
+            "extended_decision",
+            "kannada_rescue_triggered",
+            "kannada_rescue_decision",
+            "kannada_rescue",
+            "reason",
+            "error",
+        )
+        if key in details
+    }
+
+
 def _detect_single(wav_path: Path) -> dict:
-    """Current production behavior: one detect_language() pass on the whole file."""
+    """Run the upstream detector, then one whole-call acoustic finalization."""
     with _MODEL_LOCK:
-        language = detect_language(wav_path)
+        upstream = detect_language_upstream(wav_path)
+        language, acoustic = finalize_language_acoustically_with_details(
+            wav_path, upstream
+        )
+    acoustic_confidence = acoustic.get("decision_confidence")
     return {
         "language": language,
-        "confidence": 1.0,
-        "method": "whisper-v3",
-        "details": {"multi_chunk": False},
+        "confidence": (
+            float(acoustic_confidence)
+            if acoustic_confidence is not None
+            else 1.0
+        ),
+        "method": "production-lid+acoustic-indic",
+        "details": {
+            "multi_chunk": False,
+            "upstream_language": upstream,
+            "acoustic": _acoustic_summary(acoustic),
+        },
     }
 
 
 def _detect_multi_chunk(wav_path: Path, tmp_dir: Path, audio_id: str) -> dict | None:
-    """Old AI/src chunk-vote concept layered over the current detect_language().
+    """Chunk-vote the stable upstream LID, then verify the full call acoustically.
 
     Algorithm:
       1. Pick up to CHUNK_COUNT windows of CHUNK_SEC evenly spread over the call.
       2. Rank windows by RMS energy (mono mix); drop near-silent ones (legacy floor).
-      3. Run the CURRENT full detect_language() on the best-energy window and on
-         each remaining usable window (all serialized under the model lock).
+      3. Run the existing Whisper/wordmatch pipeline on each usable window
+         (all serialized under the model lock).
       4. Energy-weighted vote across window results. The highest-energy window is
          the anchor: if the vote winner differs, keep the anchor's language and
          log the disagreement loudly (unless the anchor said "Unknown").
+      5. Run one final six-window acoustic Indic gate over the original full call.
 
     Returns None when voting is not applicable (short audio / all windows silent
     / detections failed) — caller falls back to the single-pass behavior.
@@ -227,7 +295,7 @@ def _detect_multi_chunk(wav_path: Path, tmp_dir: Path, audio_id: str) -> dict | 
         start_sec = wdw["start"] / sr
         try:
             with _MODEL_LOCK:
-                lang = detect_language(wpath)
+                lang = detect_language_upstream(wpath)
         except Exception as exc:
             logger.warning("[LID-VOTE] window @%.1fs detection failed: %s", start_sec, exc)
             continue
@@ -313,10 +381,25 @@ def _detect_multi_chunk(wav_path: Path, tmp_dir: Path, audio_id: str) -> dict | 
     if len(per_window) == 1:
         confidence = 1.0
 
+    upstream_final = final
+    with _MODEL_LOCK:
+        final, acoustic = finalize_language_acoustically_with_details(
+            wav_path, upstream_final
+        )
+    if final != upstream_final:
+        logger.info(
+            "[LID-VOTE] final whole-call acoustic decision %s -> %s",
+            upstream_final,
+            final,
+        )
+        acoustic_confidence = acoustic.get("decision_confidence")
+        if acoustic_confidence is not None:
+            confidence = float(acoustic_confidence)
+
     return {
         "language": final,
         "confidence": confidence,
-        "method": "whisper-v3+chunk-vote",
+        "method": "whisper-v3+chunk-vote+acoustic-indic",
         "details": {
             "multi_chunk": True,
             "votes": dict(counts),
@@ -330,6 +413,9 @@ def _detect_multi_chunk(wav_path: Path, tmp_dir: Path, audio_id: str) -> dict | 
             "chunk_sec": CHUNK_SEC,
             "best_window_language": best["language"],
             "vote_winner": vote_winner,
+            "upstream_language": upstream_final,
+            "acoustic_final_language": final,
+            "acoustic": _acoustic_summary(acoustic),
             "unanimous": len(counts) == 1,
             "disagreement": disagreement,
         },
@@ -345,7 +431,18 @@ def health():
     ready = False
     device = _resolve_device()
     error: str | None = _STARTUP_ERROR
-    models = {"whisper-large-v3-lid": "error", "indiclid": "unavailable"}
+    models = {
+        "whisper-large-v3-lid": "error",
+        "whisper-window": "error",
+        "indiclid": "unavailable",
+        "acoustic-indic": "unavailable",
+        "acoustic-indic-core": "unavailable",
+        "acoustic-indic-ecapa": "unavailable",
+        "acoustic-indic-vaani": "unavailable",
+        # Compatibility alias for the existing deployment check.
+        "acoustic-hi-mr": "unavailable",
+    }
+    acoustic_mode = None
 
     if _IMPORT_ERROR is None:
         try:
@@ -353,6 +450,9 @@ def health():
             ready = bool(h.get("ready"))
             if ready:
                 models["whisper-large-v3-lid"] = "loaded"
+                models["whisper-window"] = (
+                    "loaded" if transcribe_window is not None else "error"
+                )
                 device = h.get("device") or device
                 error = None
             else:
@@ -360,6 +460,32 @@ def health():
             indic = h.get("indiclid") or {}
             if indic.get("ready"):
                 models["indiclid"] = "loaded"
+            acoustic = h.get("acoustic_indic") or {}
+            acoustic_mode = acoustic.get("mode")
+            if acoustic.get("ready"):
+                models["acoustic-indic"] = "loaded"
+                models["acoustic-indic-core"] = "loaded"
+                models["acoustic-indic-ecapa"] = "loaded"
+                models["acoustic-indic-vaani"] = (
+                    "loaded"
+                    if acoustic.get("vaani_ready")
+                    else "disabled"
+                )
+                models["acoustic-hi-mr"] = "loaded"
+            elif acoustic.get("enabled"):
+                ready = False
+                models["acoustic-indic"] = "error"
+                models["acoustic-indic-core"] = (
+                    "loaded" if acoustic.get("core_ready") else "error"
+                )
+                models["acoustic-indic-ecapa"] = (
+                    "loaded" if acoustic.get("ecapa_ready") else "error"
+                )
+                models["acoustic-indic-vaani"] = (
+                    "loaded" if acoustic.get("vaani_ready") else "error"
+                )
+                models["acoustic-hi-mr"] = "error"
+                error = str(acoustic.get("error") or "acoustic Indic models not ready")
         except Exception as exc:  # defensive — health must always answer
             error = str(exc)
 
@@ -367,7 +493,9 @@ def health():
         "ready": ready,
         "service": SERVICE_NAME,
         "models": models,
+        "acoustic_mode": acoustic_mode,
         "device": device,
+        "gpu_identity": GPU_IDENTITY,
         "error": error,
         "uptime_sec": round(time.monotonic() - _START_MONOTONIC, 1),
         "threads": THREADS,
@@ -415,6 +543,56 @@ def detect_language_endpoint():
         return jsonify({"success": True, **result}), 200
     except Exception as exc:
         logger.exception("detect-language failed%s", f" audio_id={audio_id}" if audio_id else "")
+        return jsonify({"success": False, "message": str(exc)}), 500
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.post("/transcribe-window")
+def transcribe_window_endpoint():
+    """Referee decode of ONE short window with the resident Whisper model."""
+    if _STARTUP_ERROR is not None or transcribe_window is None:
+        return jsonify({
+            "success": False,
+            "message": f"service not ready: {_STARTUP_ERROR or 'whisper window unavailable'}",
+        }), 503
+
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"success": False, "message": "Missing multipart 'file'"}), 400
+
+    language = (request.form.get("lang") or "").strip()
+    prompt = (request.form.get("prompt") or "").strip()
+    audio_id = (request.form.get("audio_id") or "").strip()
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="whisper-window-"))
+    t0 = time.monotonic()
+    try:
+        src = tmp_dir / f"upload{_safe_suffix(upload.filename)}"
+        upload.save(str(src))
+        wav_path = _normalize_to_wav(src, tmp_dir)
+
+        with _MODEL_LOCK:
+            text = transcribe_window(wav_path, language, prompt)
+
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "transcribe-window%s lang=%s -> %d chars (%.1fs)",
+            f" audio_id={audio_id}" if audio_id else "",
+            language or "auto",
+            len(text or ""),
+            elapsed,
+        )
+        return jsonify({
+            "success": True,
+            "text": text or "",
+            "engine": "whisper-large-v3-window",
+            "elapsed_sec": round(elapsed, 2),
+        }), 200
+    except Exception as exc:
+        logger.exception(
+            "transcribe-window failed%s", f" audio_id={audio_id}" if audio_id else ""
+        )
         return jsonify({"success": False, "message": str(exc)}), 500
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
