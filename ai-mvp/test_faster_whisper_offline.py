@@ -113,3 +113,19 @@ def test_referee_can_override_beam_size(tmp_path, monkeypatch):
         beam_size=1,
     )
     assert captured["beam_size"] == 1
+
+
+def test_cuda_request_falls_back_to_cpu_when_cuda_is_hidden(monkeypatch):
+    monkeypatch.setattr(worker, "FASTER_WHISPER_DEVICE", "cuda")
+    monkeypatch.setattr(worker, "_cuda_is_usable", lambda: False)
+    assert worker._resolve_device() == "cpu"
+
+
+def test_cpu_forced_compute_type_is_int8_even_when_compose_asks_for_float16(monkeypatch):
+    monkeypatch.setattr(worker, "FASTER_WHISPER_COMPUTE_TYPE", "float16")
+    assert worker._resolve_compute_type("cpu") == "int8"
+
+
+def test_explicit_int8_variant_is_kept_on_cpu(monkeypatch):
+    monkeypatch.setattr(worker, "FASTER_WHISPER_COMPUTE_TYPE", "int8_float32")
+    assert worker._resolve_compute_type("cpu") == "int8_float32"

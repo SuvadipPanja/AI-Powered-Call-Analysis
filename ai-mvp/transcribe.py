@@ -757,6 +757,7 @@ def _referee_decode(
                 language,
                 initial_prompt=prompt or None,
                 beam_size=ASR_REFEREE_BEAM_SIZE,
+                vad_filter=False,
             )
         value = scrub_asr_artifacts(str(text or "").strip())
         if not value or value == "[No speech detected]":

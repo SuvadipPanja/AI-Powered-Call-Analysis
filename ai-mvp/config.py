@@ -208,7 +208,9 @@ SEAMLESS_M4T_DEVICE = os.getenv("SEAMLESS_M4T_DEVICE", "auto").lower()
 
 # faster-whisper — Whisper Large v3 via CTranslate2 (recommended for Jarvis / laptop)
 FASTER_WHISPER_MODEL_SIZE = os.getenv("FASTER_WHISPER_MODEL_SIZE", "large-v3")
-FASTER_WHISPER_MODEL_PATH = os.getenv("FASTER_WHISPER_MODEL_PATH", "")
+FASTER_WHISPER_MODEL_PATH = os.getenv(
+    "FASTER_WHISPER_MODEL_PATH", "/models/faster-whisper-large-v3"
+)
 FASTER_WHISPER_DOWNLOAD_ROOT = Path(
     os.getenv(
         "FASTER_WHISPER_DOWNLOAD_ROOT",

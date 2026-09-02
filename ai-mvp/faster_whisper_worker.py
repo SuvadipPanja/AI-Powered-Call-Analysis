@@ -49,16 +49,40 @@ _LANG_CODE = {
 }
 
 
+def _cuda_is_usable() -> bool:
+    """False when CUDA is hidden (NVIDIA_VISIBLE_DEVICES=void) or missing."""
+    try:
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
 def _resolve_device() -> str:
-    if FASTER_WHISPER_DEVICE != "auto":
-        return FASTER_WHISPER_DEVICE
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    requested = (FASTER_WHISPER_DEVICE or "auto").strip().lower()
+    if requested == "cpu":
+        return "cpu"
+    if requested == "cuda" and _cuda_is_usable():
+        return "cuda"
+    if requested == "cuda" and not _cuda_is_usable():
+        logger.warning(
+            "FASTER_WHISPER_DEVICE=cuda but CUDA is not usable in this "
+            "process (NVIDIA_VISIBLE_DEVICES is probably void); using cpu"
+        )
+        return "cpu"
+    return "cuda" if _cuda_is_usable() else "cpu"
 
 
 def _resolve_compute_type(device: str) -> str:
-    if FASTER_WHISPER_COMPUTE_TYPE != "auto":
-        return FASTER_WHISPER_COMPUTE_TYPE
-    return "float16" if device == "cuda" else "int8"
+    requested = (FASTER_WHISPER_COMPUTE_TYPE or "auto").strip().lower()
+    if device == "cpu":
+        # float16/float32 on CPU CTranslate2 is unusable here; int8 is the
+        # only type we have benched. Honour an explicit int8* request.
+        if requested.startswith("int8"):
+            return requested
+        return "int8"
+    if requested != "auto":
+        return requested
+    return "float16"
 
 
 def _model_id() -> str:
@@ -151,6 +175,7 @@ def transcribe_chunk(
     language: str,
     initial_prompt: Optional[str] = None,
     beam_size: Optional[int] = None,
+    vad_filter: Optional[bool] = None,
 ) -> tuple[str, str]:
     model = _load()
     device = _resolve_device()
@@ -160,10 +185,12 @@ def transcribe_chunk(
     if FASTER_WHISPER_USE_LANG_HINT:
         lang = _LANG_CODE.get(language)
 
+    use_vad = FASTER_WHISPER_VAD_FILTER if vad_filter is None else vad_filter
+
     text, detected = _run_transcribe(
         model, wav_path, lang,
         no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
-        vad_filter=FASTER_WHISPER_VAD_FILTER,
+        vad_filter=use_vad,
         initial_prompt=initial_prompt,
         beam_size=beam_size,
     )

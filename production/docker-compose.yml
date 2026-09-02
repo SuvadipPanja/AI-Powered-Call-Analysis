@@ -669,13 +669,14 @@ services:
       HINDI_NEMO_MODEL_PATH: ${HINDI_NEMO_MODEL_PATH:-/models/nemo/stt_hi_conformer_ctc_medium.nemo}
       BENGALI_MULTILINGUAL_FALLBACK: ${BENGALI_MULTILINGUAL_FALLBACK:-true}
       BENGALI_ASR_EXTRA_PADDING_SEC: ${BENGALI_ASR_EXTRA_PADDING_SEC:-0.5}
-      # --- controller-local fallback ASR (legacy monolith only) ---
+      # --- controller-local fallback ASR ---
+      # Device/compute/path for the referee are set above (cpu / int8 /
+      # /models/faster-whisper-large-v3). Do NOT redeclare them here:
+      # YAML last-key-wins would reset DEVICE to cuda and the CPU-only
+      # controller (NVIDIA_VISIBLE_DEVICES=void) cannot load CUDA.
       FASTER_WHISPER_DOWNLOAD_ROOT: ${FASTER_WHISPER_DOWNLOAD_ROOT:-/models}
-      FASTER_WHISPER_DEVICE: ${FASTER_WHISPER_DEVICE:-cuda}
-      FASTER_WHISPER_COMPUTE_TYPE: ${FASTER_WHISPER_COMPUTE_TYPE:-float16}
-      FASTER_WHISPER_MODEL_PATH: ${FASTER_WHISPER_MODEL_PATH:-/models/faster-whisper-large-v3}
-      FASTER_WHISPER_VAD_FILTER: ${FASTER_WHISPER_VAD_FILTER:-true}
-      FASTER_WHISPER_BEAM_SIZE: ${FASTER_WHISPER_BEAM_SIZE:-8}
+      FASTER_WHISPER_VAD_FILTER: ${FASTER_WHISPER_VAD_FILTER:-false}
+      FASTER_WHISPER_BEAM_SIZE: ${FASTER_WHISPER_BEAM_SIZE:-1}
       # --- Chunking / diarization ---
       ASR_INDIC_MIN_CHUNK_SEC: ${ASR_INDIC_MIN_CHUNK_SEC:-1.2}
       # Evidence-only contextual decode of the isolated agent opening. This
