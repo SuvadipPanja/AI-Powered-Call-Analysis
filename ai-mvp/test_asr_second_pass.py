@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from asr_second_pass import (
+    due_conflict_windows,
     entities_need_second_pass,
     implausible_windows,
     opening_is_weak,
@@ -41,6 +42,31 @@ check(
     False,
 )
 check("empty opening is weak", opening_is_weak(""), True)
+
+# Real Audio_113 shapes: Seamless writes 15 fluent Devanagari words of the
+# wrong company; Whisper smears the markers into longer tokens.
+seamless_hindi_opening = (
+    "बुध मॉर्निंग मनीशा बात करें ऐसे चोव फाइनस के तरफ तेहार जी से बात हो रही मेरी"
+)
+whisper_hindi_opening = (
+    "वुद्ध वॉनिंग मनीशा बात करें ऐसे चोड़ फाइनस के तरफ ते हर जी से बात हो रही मेरी "
+    "जिस अपारिकोर्ट क्या जा रहा है कॉलिटेन ट्रेनिंग परपस के लिए"
+)
+check(
+    "fluent Devanagari opening without markers is still weak",
+    opening_is_weak(seamless_hindi_opening),
+    True,
+)
+check(
+    "smeared Devanagari recording-notice counts as a marker",
+    opening_is_weak(whisper_hindi_opening),
+    False,
+)
+check(
+    "whisper opening with recording notice beats marker-less Seamless",
+    pick_opening(seamless_hindi_opening, whisper_hindi_opening),
+    whisper_hindi_opening,
+)
 
 check(
     "conflicting due days need second pass",
@@ -94,7 +120,10 @@ check(
     "second-pass opening replaces weak agent turns only",
     got,
     [
-        "0.0 - 8.0 (Agent): Good morning, I am calling from ICICI Home Finance. Am I speaking with Manisha?",
+        # Span runs to the decode-window end (20s), not to the last replaced
+        # row, so the splice never looks like impossible speech to the
+        # implausibility referee.
+        "0.0 - 20.0 (Agent): Good morning, I am calling from ICICI Home Finance. Am I speaking with Manisha?",
         "1.0 - 2.0 (Customer): Hello",
         "8.0 - 9.0 (Customer): Yes, go ahead",
         "10.0 - 12.0 (Agent): Your loan has a last number 0382",
@@ -168,6 +197,49 @@ def test_clean_transcript_yields_no_windows():
         "6.0 - 8.0 (Customer): जी बोलिए",
     ]
     assert implausible_windows(lines, 4.5, 6) == []
+
+
+# Audio_113 row shapes: due day conflicts (20 vs 19 vs 10) across agent rows.
+AUDIO113_LINES = [
+    "0.0 - 1.0 (Agent): बुध मॉर्निंग मनीशा बात करें ऐसे चोव फाइनस के तरफ",
+    "1.0 - 2.0 (Customer): हेलो",
+    "10.0 - 26.0 (Agent): आपके जो लोन चला है लोन की लास्ट नंबर 0382 20 तारीख की डेट है",
+    "33.0 - 38.0 (Customer): नहीं 26 तारीख के पहले हो जायेगा",
+    "38.0 - 74.0 (Agent): आज 19 तारीख हो गई है 10 तारीख है ना सर टोटल अमाउंट 6005",
+    "131.0 - 137.0 (Agent): बस सर काफी लेट हो जायेगा छब्बीस तारीख आप जो बोल रहे हो",
+    "143.0 - 159.0 (Agent): पच्चीस तक की पेमेंट आज उन्नीस तारीख हो गई है सर दस तारीख का है",
+]
+
+
+def test_due_conflict_windows_picks_agent_day_rows_within_the_gpu_cap():
+    # The 36s row is skipped (GPU window cap), the customer row is never
+    # selected, day words like छब्बीस count as day mentions.
+    assert due_conflict_windows(AUDIO113_LINES, 4) == [
+        (10.0, 26.0, "Agent"),
+        (131.0, 137.0, "Agent"),
+        (143.0, 159.0, "Agent"),
+    ]
+
+
+def test_due_conflict_windows_respects_max_windows():
+    assert due_conflict_windows(AUDIO113_LINES, 1) == [(10.0, 26.0, "Agent")]
+
+
+def test_due_conflict_windows_stays_closed_without_a_day_conflict():
+    lines = [
+        "0.0 - 6.0 (Agent): गुड मॉर्निंग सर मैं आईसीआईसीआई होम फाइनेंस से बोल रही हूँ",
+        "10.0 - 16.0 (Agent): आपका ईएमआई 10 तारीख का है सर",
+        "16.0 - 18.0 (Customer): जी बोलिए",
+    ]
+    assert due_conflict_windows(lines, 4) == []
+
+
+def test_transcribe_wires_entity_windows_with_a_digit_guard():
+    import pathlib
+
+    src = pathlib.Path(__file__).with_name("transcribe.py").read_text(encoding="utf-8")
+    assert "due_conflict_windows(" in src
+    assert "no digits in referee text" in src
 
 
 def test_splice_window_replaces_every_row_of_that_speaker_in_the_span():

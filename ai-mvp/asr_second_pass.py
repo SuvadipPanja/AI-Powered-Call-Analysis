@@ -8,17 +8,17 @@ _LINE_RE = re.compile(
     r"^\s*([\d.]+)\s*-\s*([\d.]+)\s*\(([^)]+)\)\s*:\s*(.*)$"
 )
 
-_WEAK_OPENING_RE = re.compile(
-    r"\b(?:what'?s\s+up|they live together|from haji|haji\b|"
-    r"i(?:'m| am) speaking to you|"
-    r"\w+\s+is speaking)\b",
-    re.I,
-)
 _SCRIPT_HIT_RE = re.compile(
     r"\b(?:icici|home\s+finance|housing\s+finance|"
     r"calling from|speaking with|am i speaking|"
-    r"recorded|रिकॉर्ड)\b",
+    r"recorded)\b",
     re.I,
+)
+# Devanagari brand/compliance markers. No \b anchors: Whisper smears these
+# into longer tokens ("अपारिकोर्ट" = आप…रिकॉर्ड, "क्वालिटेंट" = क्वालिटी एंड)
+# and \b never fires between two Devanagari word characters.
+_SCRIPT_HIT_DEVA_RE = re.compile(
+    r"(?:आईसीआईसीआई|(?:होम|हाउसिंग)\s*फाइन|रिक[ॉो]र्[डट]|क्वालिट|कॉलिट|ट्रेनिंग)"
 )
 _DUE_DAY_RE = re.compile(
     r"\b(\d{1,2})(?:st|nd|rd|th)?\b",
@@ -35,14 +35,18 @@ def _speech_words(text: str) -> list[str]:
 
 
 def opening_is_weak(text: str) -> bool:
+    """Weak = no brand/compliance marker in either script.
+
+    Word count is no evidence of quality: Seamless happily writes 15 fluent
+    Devanagari words of the wrong company name. An opening that cannot prove
+    RPC or the recording notice is always worth a second opinion.
+    """
     blob = str(text or "").strip()
     if not blob:
         return True
-    if _SCRIPT_HIT_RE.search(blob):
-        return False
-    if _WEAK_OPENING_RE.search(blob):
-        return True
-    return len(_speech_words(blob)) < 8
+    return not (
+        _SCRIPT_HIT_RE.search(blob) or _SCRIPT_HIT_DEVA_RE.search(blob)
+    )
 
 
 def entities_need_second_pass(text: str) -> bool:
@@ -66,12 +70,20 @@ _HAJI_MANGLE_RE = re.compile(r"\b(?:haji|iti|ici)\b", re.I)
 def score_opening(text: str) -> int:
     t = text or ""
     score = 0
-    if re.search(r"\bicici\b", t, re.I):
+    if re.search(r"\bicici\b", t, re.I) or "आईसीआईसीआई" in t:
         score += 3
-    if re.search(r"\b(?:home|housing)\s+finance\b", t, re.I):
+    if re.search(r"\b(?:home|housing)\s+finance\b", t, re.I) or re.search(
+        r"(?:होम|हाउसिंग)\s*फाइन", t
+    ):
         score += 3
     if re.search(r"\b(?:am i speaking|speaking with)\b", t, re.I):
         score += 2
+    if re.search(r"\brecorded\b", t, re.I) or re.search(r"रिक[ॉो]र्[डट]", t):
+        score += 2
+    if re.search(r"क्वालिट|कॉलिट", t):
+        score += 1
+    if "ट्रेनिंग" in t:
+        score += 1
     if re.search(r"\bcalling from\b", t, re.I):
         score += 1
     if re.search(r"\bgood morning\b", t, re.I):
@@ -90,9 +102,10 @@ def pick_opening(primary: str, secondary: str) -> str:
     sec = re.sub(r"\s+", " ", str(secondary or "")).strip()
     if not sec or sec == "[No speech detected]":
         return prim
-    if (
-        opening_is_weak(prim) or _HAJI_MANGLE_RE.search(prim)
-    ) and re.search(r"\b(?:icici|home\s+finance|housing\s+finance)\b", sec, re.I):
+    if (opening_is_weak(prim) or _HAJI_MANGLE_RE.search(prim)) and (
+        re.search(r"\b(?:icici|home\s+finance|housing\s+finance)\b", sec, re.I)
+        or _SCRIPT_HIT_DEVA_RE.search(sec)
+    ):
         return sec
     if score_opening(sec) > score_opening(prim):
         return sec
@@ -139,7 +152,13 @@ def splice_second_pass_opening(
         return list(lines)
 
     win_start = min(row[0] for row in agent_in)
-    win_end = max(row[1] for row in agent_in)
+    # The secondary text covers the whole decode window, not just the short
+    # primary rows it replaces. Stamping the row with the true window span
+    # keeps the implied speech rate honest, otherwise the implausibility
+    # referee flags its own splice and re-decodes it into junk.
+    win_end = max(
+        max(row[1] for row in agent_in), float(opening_end_sec)
+    )
     spliced = f"{win_start:.1f} - {win_end:.1f} (Agent): {sec_norm}"
     out: list[str] = []
     emitted = False
@@ -213,6 +232,48 @@ def implausible_windows(
         else:
             merged.append((start, end, speaker))
     return merged[: max(0, int(max_windows))]
+
+
+# Rows that state the EMI due day. Only decoded when the call as a whole makes
+# conflicting day claims (entities_need_second_pass), so clean calls cost zero.
+_DUE_ROW_CONTEXT_RE = re.compile(r"तारीख|तारिख|due\s+(?:date|on)|ड्यू\s*डेट", re.I)
+_DUE_ROW_DAY_RE = re.compile(
+    r"\b(?:[1-9]|[12]\d|3[01])\b"
+    r"|(?:दस|पंद्रह|उन्नीस|बीस|इक्कीस|बाईस|तेईस|चौबीस|पच्चीस|छब्बीस|सत्ताईस|अट्ठाईस|उनतीस|तीस)"
+)
+
+
+def due_conflict_windows(
+    lines: list[str],
+    max_windows: int,
+    max_window_sec: float = 30.0,
+) -> list[tuple[float, float, str]]:
+    """Agent rows naming a due day, when the call's day claims conflict.
+
+    Rows longer than ``max_window_sec`` are skipped: the GPU window decoder
+    caps input at 30s and a truncated splice would silently drop the tail of
+    a long turn.
+    """
+    if max_windows <= 0:
+        return []
+    rows: list[tuple[float, float, str, str]] = []
+    for line in lines or []:
+        m = _LINE_RE.match(line)
+        if not m:
+            continue
+        rows.append(
+            (float(m.group(1)), float(m.group(2)), m.group(3).strip(), m.group(4))
+        )
+    agent_text = " ".join(text for _s, _e, spk, text in rows if spk == "Agent")
+    if not entities_need_second_pass(agent_text):
+        return []
+    windows: list[tuple[float, float, str]] = []
+    for start, end, spk, text in rows:
+        if spk != "Agent" or end <= start or end - start > max_window_sec:
+            continue
+        if _DUE_ROW_CONTEXT_RE.search(text) and _DUE_ROW_DAY_RE.search(text):
+            windows.append((start, end, spk))
+    return windows[: int(max_windows)]
 
 
 def splice_window(

@@ -7,6 +7,7 @@ Phase 2a pipeline:
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -877,19 +878,36 @@ def _apply_referee_windows(
     if not (ASR_SECOND_PASS_ENABLED and WHISPER_REFEREE_ENABLED):
         return lines
 
-    from asr_second_pass import implausible_windows, splice_window
+    from asr_second_pass import (
+        due_conflict_windows,
+        implausible_windows,
+        splice_window,
+    )
 
-    windows = implausible_windows(
+    suspect = implausible_windows(
         lines, ASR_MAX_WORDS_PER_SEC, ASR_REFEREE_MAX_WINDOWS
     )
-    if not windows:
+    entity: list[tuple[float, float, str]] = []
+    remaining = ASR_REFEREE_MAX_WINDOWS - len(suspect)
+    if remaining > 0:
+        for win in due_conflict_windows(lines, remaining):
+            overlaps = any(
+                not (win[1] <= s or win[0] >= e) for s, e, _spk in suspect
+            )
+            if not overlaps:
+                entity.append(win)
+    if not suspect and not entity:
         return lines
     _asr_log(
-        "[REFEREE] %d implausible window(s) in %s", len(windows), audio_path.name
+        "[REFEREE] %d implausible + %d due-conflict window(s) in %s",
+        len(suspect),
+        len(entity),
+        audio_path.name,
     )
 
     deadline = time.monotonic() + ASR_REFEREE_BUDGET_SEC
-    for start_sec, end_sec, speaker in windows:
+    tagged = [("implausible", w) for w in suspect] + [("entity", w) for w in entity]
+    for kind, (start_sec, end_sec, speaker) in tagged:
         if time.monotonic() >= deadline:
             _asr_log(
                 "[REFEREE] budget of %.0fs exhausted — %s keeps its primary decode",
@@ -902,10 +920,24 @@ def _apply_referee_windows(
         )
         if not refereed:
             continue
+        if kind == "entity" and not (
+            re.search(r"\d", refereed)
+            and re.search(r"तारीख|तारिख|तरीक|ड्यू|डेट|due|date", refereed, re.I)
+        ):
+            # An entity row exists to carry a due day. A referee decode that
+            # lost the digits or the due-date context must not replace a
+            # primary row that still has them.
+            _asr_log(
+                "[REFEREE] entity %.1f-%.1fs kept primary (no digits in referee text)",
+                start_sec,
+                end_sec,
+            )
+            continue
         spliced = splice_window(lines, start_sec, end_sec, speaker, refereed)
         if spliced != lines:
             _asr_log(
-                "[REFEREE] accepted %.1f-%.1fs %s (%d chars)",
+                "[REFEREE] accepted %s %.1f-%.1fs %s (%d chars)",
+                kind,
                 start_sec,
                 end_sec,
                 speaker,
