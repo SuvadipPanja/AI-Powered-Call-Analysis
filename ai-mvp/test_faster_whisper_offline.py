@@ -129,3 +129,48 @@ def test_cpu_forced_compute_type_is_int8_even_when_compose_asks_for_float16(monk
 def test_explicit_int8_variant_is_kept_on_cpu(monkeypatch):
     monkeypatch.setattr(worker, "FASTER_WHISPER_COMPUTE_TYPE", "int8_float32")
     assert worker._resolve_compute_type("cpu") == "int8_float32"
+
+
+def test_hidden_gpu_env_makes_cuda_unusable(monkeypatch):
+    monkeypatch.setenv("NVIDIA_VISIBLE_DEVICES", "void")
+    assert worker._cuda_is_usable() is False
+
+
+def test_cuda_driver_mismatch_retries_on_cpu(tmp_path, monkeypatch):
+    _reset()
+    model_dir = tmp_path / "faster-whisper-large-v3"
+    model_dir.mkdir()
+    monkeypatch.setattr(worker, "FASTER_WHISPER_MODEL_PATH", str(model_dir))
+    monkeypatch.setattr(worker, "FASTER_WHISPER_DEVICE", "cuda")
+    monkeypatch.setattr(worker, "_cuda_is_usable", lambda: True)
+    monkeypatch.setattr(worker, "_resolve_compute_type", lambda device: "int8")
+
+    seen = []
+
+    class _FakeModel:
+        def __init__(self, model_id, **kwargs):
+            seen.append(kwargs.get("device"))
+            if kwargs.get("device") == "cuda":
+                raise RuntimeError(
+                    "CUDA failed with error CUDA driver version is "
+                    "insufficient for CUDA runtime version"
+                )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper",
+        types.SimpleNamespace(WhisperModel=_FakeModel),
+    )
+    model = worker._load()
+    assert model is not None
+    assert seen == ["cuda", "cpu"]
+    assert worker._load_error is None
+
+
+def test_cuda_error_is_detected():
+    err = RuntimeError(
+        "CUDA failed with error CUDA driver version is insufficient "
+        "for CUDA runtime version"
+    )
+    assert worker._is_cuda_error(err) is True
+    assert worker._is_cuda_error(RuntimeError("file not found")) is False

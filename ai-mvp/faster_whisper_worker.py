@@ -5,6 +5,7 @@ Supports Hindi, English, and Hinglish in a single model (no per-language NeMo ro
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -50,11 +51,33 @@ _LANG_CODE = {
 
 
 def _cuda_is_usable() -> bool:
-    """False when CUDA is hidden (NVIDIA_VISIBLE_DEVICES=void) or missing."""
+    """False when CUDA is hidden, missing, or the driver cannot run the runtime.
+
+    ``torch.cuda.is_available()`` can be True on this host while CTranslate2
+    still fails with "CUDA driver version is insufficient". Treat a hidden
+    GPU (NVIDIA_VISIBLE_DEVICES=void) as unusable without probing.
+    """
+    visible = os.environ.get("NVIDIA_VISIBLE_DEVICES", "").strip().lower()
+    if visible in ("void", "none", "-1"):
+        return False
     try:
         return bool(torch.cuda.is_available())
     except Exception:
         return False
+
+
+def _is_cuda_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "cuda",
+            "cudnn",
+            "cublas",
+            "gpu",
+            "driver version is insufficient",
+        )
+    )
 
 
 def _resolve_device() -> str:
@@ -108,6 +131,31 @@ def _model_id() -> str:
     return FASTER_WHISPER_MODEL_SIZE
 
 
+def _instantiate(device: str):
+    from faster_whisper import WhisperModel
+
+    compute_type = _resolve_compute_type(device)
+    kwargs: dict = {
+        "device": device,
+        "compute_type": compute_type,
+        "download_root": str(FASTER_WHISPER_DOWNLOAD_ROOT),
+    }
+    if device == "cpu":
+        # Stop CTranslate2 touching a broken CUDA driver when we asked for CPU.
+        os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+        if FASTER_WHISPER_CPU_THREADS > 0:
+            kwargs["cpu_threads"] = FASTER_WHISPER_CPU_THREADS
+    model = WhisperModel(_model_id(), **kwargs)
+    logger.info(
+        "faster-whisper loaded: model=%s device=%s compute=%s threads=%s",
+        _model_id(),
+        device,
+        compute_type,
+        kwargs.get("cpu_threads", "default"),
+    )
+    return model
+
+
 def _load():
     global _model, _load_error
     if _model is not None:
@@ -115,25 +163,17 @@ def _load():
     if _load_error:
         raise RuntimeError(_load_error)
     try:
-        from faster_whisper import WhisperModel
-
         device = _resolve_device()
-        compute_type = _resolve_compute_type(device)
-        kwargs: dict = {
-            "device": device,
-            "compute_type": compute_type,
-            "download_root": str(FASTER_WHISPER_DOWNLOAD_ROOT),
-        }
-        if device == "cpu" and FASTER_WHISPER_CPU_THREADS > 0:
-            kwargs["cpu_threads"] = FASTER_WHISPER_CPU_THREADS
-        _model = WhisperModel(_model_id(), **kwargs)
-        logger.info(
-            "faster-whisper loaded: model=%s device=%s compute=%s threads=%s",
-            _model_id(),
-            device,
-            compute_type,
-            kwargs.get("cpu_threads", "default"),
-        )
+        try:
+            _model = _instantiate(device)
+        except Exception as exc:
+            if device != "cpu" and _is_cuda_error(exc):
+                logger.warning(
+                    "CUDA load failed (%s); retrying on CPU int8", exc
+                )
+                _model = _instantiate("cpu")
+            else:
+                raise
         return _model
     except Exception as exc:
         _load_error = str(exc)
@@ -141,8 +181,9 @@ def _load():
 
 
 def release_faster_whisper() -> None:
-    global _model
+    global _model, _load_error
     _model = None
+    _load_error = None
 
 
 def _run_transcribe(
