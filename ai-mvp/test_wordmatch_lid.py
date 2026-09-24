@@ -4,7 +4,15 @@ Feeds realistic banking-call transcripts (native script, romanized, and
 code-mixed) through score_transcript and asserts the right language wins.
 """
 
-from wordmatch_lid import score_transcript
+from pathlib import Path
+
+from wordmatch_lid import (
+    bengali_blocked_by_devanagari,
+    detect_language_wordmatch,
+    kannada_blocked_by_devanagari,
+    marathi_overrides_hindi,
+    score_transcript,
+)
 
 
 def _winner(text: str) -> str:
@@ -106,3 +114,75 @@ def test_scores_accumulate_and_matches_logged():
     scores, matched = score_transcript("আপনার টাকা জমা হয়েছে ধন্যবাদ")
     assert scores["Bengali"] > 0
     assert matched["Bengali"], "matched words must be recorded for debugging"
+
+
+def test_customer_marathi_overrides_hindi_agent():
+    parts = [
+        ("agent#1", "नमस्कार मैं आपकी क्या मदद कर सकता हूँ आपका खाता बताइए"),
+        ("customer#1", "होय माझे खाते आहे तुम्ही सांगा मला पाहिजे"),
+    ]
+    assert marathi_overrides_hindi(parts) is True
+
+
+def test_hindi_customer_does_not_become_marathi():
+    parts = [
+        ("agent#1", "नमस्कार मैं आपकी क्या मदद कर सकता हूँ"),
+        ("customer#1", "हाँ जी मैं बोल रहा हूँ आपका खाता चेक कीजिए"),
+    ]
+    assert marathi_overrides_hindi(parts) is False
+
+
+def test_devanagari_blocks_bengali_label():
+    text = "नमस्कार मैं आपकी क्या मदद कर सकता हूँ आपका खाता"
+    assert bengali_blocked_by_devanagari(text) is True
+    assert bengali_blocked_by_devanagari("নমস্কার আমি আপনার কি সাহায্য করতে পারি") is False
+    assert kannada_blocked_by_devanagari(text) is True
+    assert kannada_blocked_by_devanagari("ನಾನು ನನ್ನ ಖಾತೆ ಇದೆ") is False
+
+
+def test_false_kannada_script_loses_to_forced_hindi(tmp_path, monkeypatch):
+    snippet = tmp_path / "a.wav"
+    snippet.write_bytes(b"RIFF")
+    monkeypatch.setattr(
+        "wordmatch_lid._extract_snippets",
+        lambda _path: [("agent#1", snippet)],
+    )
+
+    def _auto(_path):
+        return "ನಾನು ನನ್ನ ಖಾತೆ ಇದೆ ಹಣ"
+
+    def _forced(_path, code):
+        if code == "hi":
+            return "नमस्कार मैं आपकी क्या मदद कर सकता हूँ आपका खाता"
+        return "hello there"
+
+    language, _debug = detect_language_wordmatch(Path("call.wav"), _auto, _forced)
+    assert language == "Hindi"
+
+
+def test_real_kannada_survives_forced_hindi_check(tmp_path, monkeypatch):
+    snippet = tmp_path / "a.wav"
+    snippet.write_bytes(b"RIFF")
+    monkeypatch.setattr(
+        "wordmatch_lid._extract_snippets",
+        lambda _path: [("agent#1", snippet)],
+    )
+    kannada = "ನಾನು ನನ್ನ ಖಾತೆ ಇದೆ ನಿಮ್ಮ ಸಹಾಯ ಬೇಕು ಧನ್ಯವಾದ"
+
+    def _auto(_path):
+        return kannada
+
+    def _forced(_path, code):
+        if code == "kn":
+            return kannada
+        return "hello"
+
+    language, _debug = detect_language_wordmatch(Path("call.wav"), _auto, _forced)
+    assert language == "Kannada"
+
+
+def test_marathi_native_beats_hindi_full_sentence():
+    text = ("नमस्कार मी बँकेतून बोलतोय तुमचा हप्ता थकबाकी आहे तो लवकर भरा "
+            "काय तुम्हाला काही अडचण आहे का धन्यवाद")
+    assert _winner(text) == "Marathi"
+

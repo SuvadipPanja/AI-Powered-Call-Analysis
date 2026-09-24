@@ -1,0 +1,14 @@
+# Auto Upload follows the live controller.
+# { success: true } means the call started. Do not pause the queue.
+# Does not change scoring, language detection, or the controller.
+#
+#   docker tag sp-backend:prod sp-backend:pre-auto-upload-ack
+#   docker build -t sp-backend:prod -f docker/Dockerfile.auto-upload-ack.patch .
+ARG BASE=sp-backend:pre-auto-upload-ack
+FROM ${BASE}
+WORKDIR /app
+COPY auto-upload-ack/aiDispatchProtocol.js /app/services/aiDispatchProtocol.js
+COPY auto-upload-ack/autoUploadService.js /app/services/autoUploadService.js
+RUN node /app/tools/build-integrity-manifest.js /app /app/integrity-manifest.json \
+ && grep -n "legacyController" /app/services/aiDispatchProtocol.js \
+ && grep -n "already sent and is still processing" /app/services/autoUploadService.js
