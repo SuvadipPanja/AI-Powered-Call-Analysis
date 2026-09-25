@@ -8,12 +8,13 @@ jest.mock("react-chartjs-2", () => ({
 }));
 
 jest.mock("../reports/ReportChartCard", () => function MockReportChartCard({
-  title, subtitle, className = "", empty, emptyMessage, children,
+  title, subtitle, stat, className = "", empty, emptyMessage, children,
 }) {
   return (
     <article className={`report-chart-card ${className}`.trim()}>
       {subtitle && <span className="report-chart-card__eyebrow">{subtitle}</span>}
       <h3 className="report-chart-card__title">{title}</h3>
+      {stat && <span>{stat}</span>}
       {empty ? <div className="report-chart-card__state--empty">{emptyMessage}</div> : children}
     </article>
   );
@@ -34,9 +35,9 @@ describe("LanguageMixCard", () => {
     expect(screen.getByText("AUDIO LANGUAGE")).toBeInTheDocument();
   });
 
-  it("renders the center total (113 calls) and each language row", () => {
+  it("announces the total (113 calls) on the donut and renders each language row", () => {
     render(<LanguageMixCard items={SAMPLE} />);
-    expect(screen.getByText("113")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Language mix, 113 calls\./ })).toBeInTheDocument();
     expect(screen.getByText("Hindi")).toBeInTheDocument();
     expect(screen.getByText("Marathi")).toBeInTheDocument();
     expect(screen.getByText("Bengali")).toBeInTheDocument();
@@ -54,13 +55,13 @@ describe("LanguageMixCard", () => {
 
   it("omits the donut and shows an honest empty state when there are 0 calls", () => {
     render(<LanguageMixCard items={[]} />);
-    expect(screen.queryByTestId("stub-doughnut")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Language mix/i })).not.toBeInTheDocument();
     expect(screen.getByText(/No language data/i)).toBeInTheDocument();
   });
 
-  it("omits the donut when every language is Unknown", () => {
+  it("draws the donut when the only tagged language is Unknown", () => {
     render(<LanguageMixCard items={[{ name: "Unknown", count: 40 }]} />);
-    expect(screen.getByTestId("stub-doughnut")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Language mix/i })).toBeInTheDocument();
     expect(screen.getByText("Unknown")).toBeInTheDocument();
     expect(screen.getAllByText("40").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/No language data/i)).not.toBeInTheDocument();
@@ -68,7 +69,7 @@ describe("LanguageMixCard", () => {
 
   it("uses a backend-upgrade message when languageMix is missing", () => {
     render(<LanguageMixCard items={undefined} />);
-    expect(screen.queryByTestId("stub-doughnut")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Language mix/i })).not.toBeInTheDocument();
     expect(screen.getByText(/Language mix needs the latest backend/i)).toBeInTheDocument();
   });
 

@@ -1,0 +1,8 @@
+# Stamp a blank analysis center from the upload. One file. Do not COPY the rest of ai-mvp.
+# Build context = this production/ folder. FROM the rollback tag, not :prod.
+#
+#   docker tag sp-ai-controller:prod sp-ai-controller:pre-analysis-center
+#   docker build -t sp-ai-controller:prod -f docker/Dockerfile.analysis-center.patch .
+FROM sp-ai-controller:pre-analysis-center
+WORKDIR /app
+COPY analysis-center/db.py /app/db.py

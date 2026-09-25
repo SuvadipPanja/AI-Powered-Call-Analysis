@@ -1,41 +1,57 @@
-const AI_ONLY_COLOR = "#0f766e";
+const AI_COLOR = "#0f766e";
 const MANUAL_COLOR = "#d97706";
 
+function toScore(value) {
+  if (value == null) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.round(num * 10) / 10;
+}
+
+function callLabel(count, verb) {
+  return `${count} call${count === 1 ? "" : "s"} ${verb}`;
+}
+
+/** Score-shaped view of auditCoverage: the plotted value is the average score,
+ *  the caption is how many calls that average came from. */
 export function buildAuditCoverageBreakdown(coverage, tokens = {}) {
   const missing = coverage == null || typeof coverage !== "object";
   if (missing) {
-    return { rows: [], total: 0, hasData: false, missing: true, insight: undefined };
+    return { rows: [], total: 0, hasData: false, missing: true, gap: null };
   }
 
   const aiOnly = Number(coverage.aiOnly) || 0;
   const manualReviewed = Number(coverage.manualReviewed) || 0;
   const total = aiOnly + manualReviewed;
-  const hasData = total > 0;
+  const avgAi = toScore(coverage.avgAi);
+  const avgManual = toScore(coverage.avgManual);
+  const hasData = total > 0 && avgAi != null;
   if (!hasData) {
-    return { rows: [], total: 0, hasData: false, missing: false, insight: undefined };
+    return { rows: [], total, hasData: false, missing: false, gap: null };
   }
 
   const rows = [
     {
-      name: "AI scored only",
-      count: aiOnly,
-      color: AI_ONLY_COLOR,
-      percent: Math.round((aiOnly / total) * 100),
-      drilldownToken: tokens.aiOnly || null,
+      key: "ai",
+      name: "AI score",
+      score: avgAi,
+      count: total,
+      countLabel: callLabel(total, "scored"),
+      color: AI_COLOR,
+      drilldownToken: tokens.allScored || tokens.aiOnly || null,
     },
     {
-      name: "Manually audited",
+      key: "manual",
+      name: "Manual score",
+      score: avgManual,
       count: manualReviewed,
+      countLabel: manualReviewed > 0 ? callLabel(manualReviewed, "audited") : "Not audited yet",
       color: MANUAL_COLOR,
-      percent: Math.round((manualReviewed / total) * 100),
-      drilldownToken: tokens.manualReviewed || null,
+      drilldownToken: manualReviewed > 0 ? tokens.manualReviewed || null : null,
     },
   ];
 
-  const hasAvgs = coverage.avgAi != null && coverage.avgManual != null;
-  const insight = hasAvgs
-    ? `Avg AI ${coverage.avgAi} · Avg manual ${coverage.avgManual} on audited calls`
-    : undefined;
+  const gap = avgManual != null ? Math.round((avgAi - avgManual) * 10) / 10 : null;
 
-  return { rows, total, hasData, missing: false, insight };
+  return { rows, total, hasData: true, missing: false, gap };
 }

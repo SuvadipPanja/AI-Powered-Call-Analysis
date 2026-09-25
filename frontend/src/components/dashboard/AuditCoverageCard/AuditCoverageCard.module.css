@@ -1,0 +1,146 @@
+.card {
+  --ac-text: #172a43;
+  --ac-muted: #68778a;
+  --ac-border: #dce4ec;
+  background: #ffffff;
+  color: var(--ac-text);
+  border: 1px solid var(--ac-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(23, 42, 67, 0.06);
+  padding: 16px 18px 8px;
+  min-width: 0;
+}
+
+:global([data-theme="dark"]) .card,
+:global([data-scheme="dark"]) .card {
+  --ac-text: #e7eef8;
+  --ac-muted: #9baabd;
+  --ac-border: #24354b;
+  background: #0d1726;
+  box-shadow: none;
+}
+
+.head { margin-bottom: 6px; }
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ac-text);
+  font-weight: 700;
+}
+
+.title {
+  margin: 2px 0 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--ac-muted);
+  font-weight: 500;
+}
+
+:global([data-theme="dark"]) .gaugeTrack,
+:global([data-scheme="dark"]) .gaugeTrack { stroke: #24354b; }
+
+.auditBody {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.gaugeCol {
+  display: grid;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.gaugeRow,
+.gaugeBtn {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.gaugeBtn { cursor: pointer; }
+
+.gauge {
+  display: block;
+  width: 132px;
+  height: auto;
+  overflow: visible;
+}
+
+.gaugeTrack {
+  fill: none;
+  stroke: #e7eef4;
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+.gaugeTrackManual {
+  fill: none;
+  stroke: #e7c98a;
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+:global([data-theme="dark"]) .gaugeTrack,
+:global([data-scheme="dark"]) .gaugeTrack { stroke: #2a3c52; }
+
+.gaugeValue,
+.gaugeShine {
+  fill: none;
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+.gaugeShine {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 3;
+  transform: translateY(-1px);
+}
+
+.readout { display: grid; gap: 2px; }
+
+.readoutLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ac-muted);
+}
+
+.readoutAi,
+.readoutManual,
+.readoutWait {
+  font-size: 28px;
+  line-height: 1.05;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.readoutAi { color: #3aa0c8; }
+.readoutManual { color: #c9923a; }
+.readoutWait { color: #e39a32; font-size: 18px; font-weight: 650; }
+
+.readoutNote,
+.readoutDash {
+  font-size: 12px;
+  color: var(--ac-muted);
+}
+
+.info { color: var(--ac-muted); }

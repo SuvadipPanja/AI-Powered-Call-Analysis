@@ -1,0 +1,198 @@
+.card {
+  --lm-text: #1b2a4a;
+  --lm-sub: #4d5b76;
+  --lm-muted: #68778a;
+  --lm-border: #dce4ec;
+  background: #ffffff;
+  color: var(--lm-text);
+  border: 1px solid var(--lm-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(23, 42, 67, 0.06);
+  padding: 16px 18px 14px;
+  min-width: 0;
+}
+
+:global([data-theme="dark"]) .card,
+:global([data-scheme="dark"]) .card {
+  --lm-text: #e7eef8;
+  --lm-sub: #aebbd0;
+  --lm-muted: #9baabd;
+  --lm-border: #24354b;
+  background: #0d1726;
+  box-shadow: none;
+}
+
+.head { margin-bottom: 6px; }
+
+.eyebrow {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--lm-text);
+  font-weight: 700;
+}
+
+.title {
+  margin: 2px 0 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--lm-sub);
+  font-weight: 500;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 1fr);
+  gap: 8px 18px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.donutWrap {
+  position: relative;
+  width: 100%;
+  max-width: 230px;
+  margin: 0 auto;
+}
+
+.donut {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.donutShadow { fill: rgba(40, 56, 110, 0.24); }
+
+.holeStopTop { stop-color: #dfe5f7; stop-opacity: 1; }
+.holeStopEdge { stop-color: #f4f7fd; stop-opacity: 0; }
+
+.globeShadow { fill: rgba(92, 112, 196, 0.38); }
+
+:global([data-theme="dark"]) .donutShadow,
+:global([data-scheme="dark"]) .donutShadow { fill: rgba(0, 0, 0, 0.6); }
+
+:global([data-theme="dark"]) .holeStopTop,
+:global([data-scheme="dark"]) .holeStopTop { stop-color: #1b2a47; }
+
+:global([data-theme="dark"]) .holeStopEdge,
+:global([data-scheme="dark"]) .holeStopEdge { stop-color: #0d1726; stop-opacity: 0; }
+
+:global([data-theme="dark"]) .globeShadow,
+:global([data-scheme="dark"]) .globeShadow { fill: rgba(0, 0, 0, 0.6); }
+
+.segment { cursor: pointer; }
+.segment:hover { filter: brightness(1.05); }
+
+.rimLight {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.innerLight {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.innerGlow {
+  fill: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+}
+
+.edgeLight {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 0.9;
+  pointer-events: none;
+}
+
+.tip {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, calc(-100% - 8px));
+  display: grid;
+  gap: 1px;
+  min-width: 88px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #1b2a4a;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.legend {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.row,
+.rowBtn {
+  display: grid;
+  grid-template-columns: 11px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 1px 0;
+  line-height: 1.45;
+  border: 0;
+  background: transparent;
+  color: var(--lm-text);
+  font: inherit;
+  text-align: left;
+}
+
+.rowBtn { cursor: pointer; border-radius: 8px; }
+.rowBtn:hover { background: rgba(101, 127, 232, 0.07); }
+.rowBtn:focus-visible { outline: 2px solid #657fe8; outline-offset: 2px; }
+
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(27, 42, 74, 0.25);
+}
+
+.name { font-size: 13.5px; font-weight: 500; }
+
+.count,
+.pct {
+  font-variant-numeric: tabular-nums;
+  font-size: 13.5px;
+  color: var(--lm-text);
+}
+
+.count { font-weight: 650; }
+
+.count { min-width: 2rem; text-align: right; }
+.pct { min-width: 2.8rem; text-align: right; }
+
+.globeFloat { animation: lm-float 4.8s ease-in-out infinite; }
+
+@keyframes lm-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.2px); }
+}
+
+@container (max-width: 420px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globeFloat, .segment { animation: none; transition: none; }
+}

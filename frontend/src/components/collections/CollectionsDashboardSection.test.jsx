@@ -31,6 +31,8 @@ describe('CollectionsDashboardSection', () => {
         ptpStrongCount: 8,
         ptpWeakCount: 4,
         ptpRate: 30,
+        rpcRate: 91.2,
+        rpcFailCount: 3,
         fatalCount: 3,
         redAlertCount: 2,
         ztpCount: 1,
@@ -62,10 +64,16 @@ describe('CollectionsDashboardSection', () => {
     expect(screen.queryByText('Weightage by group')).not.toBeInTheDocument();
 
     await waitFor(() => {
-      const cards = container.querySelectorAll('.collections-dash__charts > .report-chart-card');
+      const cards = container.querySelectorAll([
+        '.collections-dash__charts > .report-chart-card',
+        '.collections-dash__charts > .quality-rag-card',
+        '.collections-dash__charts > .campaign-mix-card',
+        '.collections-dash__charts > .language-mix-card',
+        '.collections-dash__charts > .ai-vs-manual-card',
+      ].join(', '));
       expect(cards).toHaveLength(5);
       expect(cards[0]).toHaveTextContent('Quality grade (RAG)');
-      expect(cards[1]).toHaveTextContent('Campaign (AI: PDM / COLL)');
+      expect(cards[1]).toHaveTextContent('Campaign mix');
       expect(cards[2]).toHaveTextContent('Language mix');
       expect(cards[3]).toHaveTextContent('AI vs Manual');
       expect(cards[4]).toHaveTextContent('Disposition distribution');
@@ -85,11 +93,24 @@ describe('CollectionsDashboardSection', () => {
     expect(screen.getByText('AUDIT COVERAGE')).toBeInTheDocument();
   });
 
+  it('publishes RPC snapshot for the top KPI strip', async () => {
+    const onSnapshot = jest.fn();
+    render(<CollectionsDashboardSection filters={{}} onSnapshot={onSnapshot} />);
+    await waitFor(() => {
+      expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+        kpis: expect.objectContaining({ rpcRate: 91.2, rpcFailCount: 3 }),
+      }));
+    });
+  });
+
   it('replaces PTP conversion with Strong and Weak PTP cards', async () => {
     const onDrilldown = jest.fn();
     render(<CollectionsDashboardSection filters={{}} onDrilldown={onDrilldown} />);
 
     await screen.findByText('PTP secured');
+    expect(screen.queryByText('PTP rate')).not.toBeInTheDocument();
+    expect(screen.getByText('30%')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.queryByText('PTP conversion')).not.toBeInTheDocument();
     expect(screen.queryByText('Open PTP calls')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/view 8 strong ptp/i)).toBeInTheDocument();
